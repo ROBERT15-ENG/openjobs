@@ -124,6 +124,7 @@ def verify_password(password, pw_hash):
     return check_password_hash(pw_hash, password)
 
 @app.route('/api/auth/register', methods=['POST'])
+@limiter.limit('5 per hour', exempt_when=lambda: False)
 def register():
     data = request.json or {}
     name = data.get('name', '').strip()
@@ -153,6 +154,7 @@ def register():
     return jsonify({'success': True, 'message': 'Registered successfully'}), 201
 
 @app.route('/api/auth/login', methods=['POST'])
+@limiter.limit('10 per minute', exempt_when=lambda: False)
 def login():
     data = request.json or {}
     email = data.get('email', '')
@@ -729,11 +731,13 @@ def get_applications():
     return jsonify([dict(a) for a in apps])
 
 @app.route('/api/applications', methods=['POST'])
+@require_auth
+@limiter.limit('30 per hour', exempt_when=lambda: False)
 def apply_job():
     data = request.json
     db = get_db()
     job_id  = data.get('job_id')
-    user_id = data.get('user_id', 1)
+    user_id = request.user_id  # always from JWT — no fallback, no override
     notes   = data.get('notes', '')
     resume_text = data.get('resume_text', '')
 

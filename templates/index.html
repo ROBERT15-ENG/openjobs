@@ -321,11 +321,26 @@
     footer { border-top: 1px solid var(--border); padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.8rem; }
 
     /* ── RESPONSIVE ── */
+    .hamburger {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text);
+      cursor: pointer;
+      padding: 0.4rem;
+      border-radius: 8px;
+      transition: background 0.2s;
+    }
+    .hamburger:hover { background: var(--bg-card); }
+    @media (max-width: 768px) {
+      .hamburger { display: flex !important; align-items: center; justify-content: center; }
+    }
     @media (max-width: 768px) {
       .main-layout { grid-template-columns: 1fr !important; padding: 0.75rem; gap: 1rem; }
       .sidebar { position: static; margin-bottom: 1rem; }
       .stats-bar { gap: 1rem; flex-wrap: wrap; }
-      nav { display: none; }
+      nav { display: none; flex-direction: column; position: absolute; top: 60px; left: 0; right: 0; background: var(--bg); border-bottom: 1px solid var(--border); padding: 1rem; z-index: 100; }
+      nav.open { display: flex; }
       .header-actions .btn-ghost { display: none; }
       .logo-sub { display: none; }
       .search-box { flex-direction: column; border-radius: 14px; }
@@ -367,15 +382,20 @@
       <div class="logo-sub">AI-Powered Career Platform</div>
     </div>
     <nav>
-      <a href="#" class="active">Find Jobs</a>
+      <a href="/">Find Jobs</a>
       <a href="#">Companies</a>
       <a href="#">Salary Guide</a>
       <a href="#">Learning</a>
-      <a href="#">For Employers</a>
+      <a href="/templates/employer.html">For Employers</a>
     </nav>
     <div class="header-actions">
       <a href="#" class="btn btn-ghost">Post a Job</a>
       <a href="#" class="btn btn-primary">Sign Up Free</a>
+      <button class="hamburger" id="hamburgerBtn" onclick="toggleMobileNav()" aria-label="Toggle menu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
     </div>
   </div>
 </header>
@@ -830,6 +850,10 @@
   function escHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function toggleMobileNav() {
+    document.querySelector('nav').classList.toggle('open');
   }
 
   // Keyboard close modal
