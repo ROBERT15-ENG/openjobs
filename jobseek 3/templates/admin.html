@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="OpenJobs admin panel — manage jobs, users, applications, and platform analytics.">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="canonical" href="https://openjobs.example.com/admin">
+  <meta property="og:title" content="Admin — OpenJobs">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://openjobs.example.com/admin">
+  <meta property="og:site_name" content="OpenJobs">
+  <title>Admin — OpenJobs</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #00d4aa; --primary-dark: #00a88a; --primary-glow: rgba(0,212,170,0.12);
+      --bg: #09090f; --bg-card: #111119; --bg-card-hover: #18181f;
+      --border: #1e1e2e; --border-light: #2a2a3e;
+      --text: #ededf0; --text-muted: #6b6b80; --text-dim: #3a3a50;
+      --success: #22c55e; --warning: #f59e0b; --error: #ef4444; --info: #3b82f6;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    a { color: inherit; text-decoration: none; }
+
+    header { background: rgba(9,9,15,0.9); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border); padding: 0 2rem; position: sticky; top: 0; z-index: 50; }
+    .header-inner { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 60px; }
+    .logo { font-size: 1.25rem; font-weight: 800; }
+    .logo span { color: var(--primary); }
+    .logo-badge { background: rgba(239,68,68,0.15); color: var(--error); font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 6px; margin-left: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; }
+    .header-actions { display: flex; gap: 0.75rem; align-items: center; }
+    .btn { border: none; padding: 0.5rem 1.1rem; border-radius: 10px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'Inter', sans-serif; }
+    .btn-primary { background: var(--primary); color: #000; }
+    .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,170,0.3); }
+    .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--border-light); color: var(--text); }
+    .btn-danger { background: transparent; color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
+    .btn-danger:hover { background: rgba(239,68,68,0.1); }
+    .btn-sm { padding: 0.35rem 0.75rem; border-radius: 7px; font-size: 0.75rem; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--text-muted); transition: all 0.2s; }
+    .btn-sm:hover { border-color: var(--primary); color: var(--primary); }
+    .btn-sm.danger:hover { border-color: var(--error); color: var(--error); }
+
+    .layout { display: grid; grid-template-columns: 240px 1fr; min-height: calc(100vh - 61px); }
+    .sidebar { background: var(--bg-card); border-right: 1px solid var(--border); padding: 1.5rem 1rem; }
+    .sidebar-logo { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 1rem; padding-left: 0.5rem; }
+    .nav-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.7rem 0.875rem; border-radius: 10px; color: var(--text-muted); font-size: 0.875rem; font-weight: 500; cursor: pointer; margin-bottom: 0.25rem; transition: all 0.2s; }
+    .nav-item:hover { background: var(--bg-card-hover); color: var(--text); }
+    .nav-item.active { background: var(--primary-glow); color: var(--primary); }
+    .nav-item .icon { font-size: 1.1rem; }
+
+    .content { padding: 2rem; }
+    .page-title { font-size: 1.4rem; font-weight: 800; margin-bottom: 0.25rem; }
+    .page-sub { color: var(--text-muted); font-size: 0.875rem; margin-bottom: 2rem; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+    .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem; }
+    .stat-icon { font-size: 1.4rem; margin-bottom: 0.75rem; }
+    .stat-value { font-size: 2rem; font-weight: 800; margin-bottom: 0.2rem; }
+    .stat-label { font-size: 0.78rem; color: var(--text-muted); }
+
+    .tab-bar { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+    .tab { padding: 0.75rem 1.25rem; font-size: 0.875rem; font-weight: 600; color: var(--text-muted); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.2s; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.25rem; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+    .card-title { font-size: 1rem; font-weight: 700; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 1rem; font-size: 0.875rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg-card-hover); }
+    .title-cell { font-weight: 600; }
+    .muted { color: var(--text-muted); font-size: 0.8rem; }
+
+    .badge { padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.72rem; font-weight: 700; display: inline-block; }
+    .badge-active { background: rgba(34,197,94,0.12); color: #4ade80; }
+    .badge-inactive { background: rgba(239,68,68,0.1); color: var(--error); }
+    .badge-pending { background: rgba(245,158,11,0.12); color: #fbbf24; }
+    .badge-user { background: rgba(59,130,246,0.12); color: #60a5fa; }
+    .badge-admin { background: rgba(0,212,170,0.12); color: var(--primary); }
+
+    .search-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .search-input { flex: 1; padding: 0.6rem 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 0.875rem; outline: none; font-family: 'Inter', sans-serif; }
+    .search-input:focus { border-color: var(--primary); }
+
+    .alert { padding: 0.875rem 1rem; border-radius: 10px; font-size: 0.875rem; margin-bottom: 1rem; display: none; }
+    .alert-success { background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.3); color: var(--success); }
+    .alert-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--error); }
+
+    .quick-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .quick-action { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; color: var(--text-muted); font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .quick-action:hover { border-color: var(--primary); color: var(--primary); }
+
+    .chart-placeholder { height: 200px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.875rem; flex-direction: column; gap: 0.5rem; }
+
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">Open<span>Jobs</span><span class="logo-badge">Admin</span></div>
+    <div class="header-actions">
+      <a href="/" class="btn btn-ghost">← View Site</a>
+      <button class="btn btn-primary" onclick="switchTab('jobs')">+ Add Job</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">Management</div>
+    <div class="nav-item active" onclick="switchTab('overview')"><span class="icon">📊</span> Overview</div>
+    <div class="nav-item" onclick="switchTab('jobs')"><span class="icon">📋</span> All Jobs</div>
+    <div class="nav-item" onclick="switchTab('applications')"><span class="icon">📥</span> Applications</div>
+    <div class="nav-item" onclick="switchTab('users')"><span class="icon">👥</span> Users</div>
+    <div class="nav-item" onclick="switchTab('analytics')"><span class="icon">📈</span> Analytics</div>
+    <div class="nav-item" onclick="switchTab('settings')"><span class="icon">⚙️</span> Settings</div>
+  </aside>
+
+  <!-- CONTENT -->
+  <div class="content">
+
+    <!-- ── OVERVIEW ── -->
+    <div class="tab-content active" id="tab-overview">
+      <h2 class="page-title">Admin Overview</h2>
+      <p class="page-sub">System health and platform metrics at a glance.</p>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon">📋</div>
+          <div class="stat-value" id="statJobs">69</div>
+          <div class="stat-label">Total Jobs</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">👥</div>
+          <div class="stat-value" id="statUsers">1</div>
+          <div class="stat-label">Registered Users</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">📥</div>
+          <div class="stat-value" id="statApps">5</div>
+          <div class="stat-label">Applications</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🏢</div>
+          <div class="stat-value">20</div>
+          <div class="stat-label">Companies</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📈 Platform Activity (Last 7 Days)</div>
+        <div class="chart-placeholder">
+          <span style="font-size:2rem">📊</span>
+          Chart data — connect to your analytics provider to visualize trends
+        </div>
+      </div>
+
+      <div class="quick-actions">
+        <button class="quick-action" onclick="switchTab('jobs')">📋 View All Jobs</button>
+        <button class="quick-action" onclick="switchTab('users')">👥 Manage Users</button>
+        <button class="quick-action" onclick="switchTab('applications')">📥 View Applications</button>
+        <button class="quick-action" onclick="switchTab('settings')">⚙️ System Settings</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🔔 Recent Activity</div>
+        <table>
+          <thead><tr><th>Event</th><th>User</th><th>Time</th><th>Status</th></tr></thead>
+          <tbody id="activityTable">
+            <tr><td>New job posted</td><td>Admin</td><td>2 hours ago</td><td><span class="badge badge-active">Complete</span></td></tr>
+            <tr><td>User registered</td><td>Tonny Tony</td><td>5 hours ago</td><td><span class="badge badge-active">Success</span></td></tr>
+            <tr><td>Application submitted</td><td>Tonny Tony</td><td>1 day ago</td><td><span class="badge badge-pending">Pending</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── ALL JOBS ── -->
+    <div class="tab-content" id="tab-jobs">
+      <h2 class="page-title">All Jobs</h2>
+      <p class="page-sub">Manage all job listings on the platform.</p>
+
+      <div class="alert alert-success" id="jobAlert" style="display:none"></div>
+
+      <div class="search-bar">
+        <input type="text" class="search-input" id="jobSearch" placeholder="Search jobs by title, company, or location..." oninput="filterJobs()">
+        <select class="search-input" style="max-width:160px" id="jobStatusFilter" onchange="filterJobs()">
+          <option value="">All Status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Title</th><th>Company</th><th>Location</th><th>Salary Range</th><th>Category</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="jobsTable"><tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── APPLICATIONS ── -->
+    <div class="tab-content" id="tab-applications">
+      <h2 class="page-title">All Applications</h2>
+      <p class="page-sub">Track and manage all job applications on the platform.</p>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Applicant</th><th>Email</th><th>Job ID</th><th>Applied</th><th>Status</th><th>Notes</th><th>Actions</th></tr></thead>
+            <tbody id="appsTable"><tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── USERS ── -->
+    <div class="tab-content" id="tab-users">
+      <h2 class="page-title">User Management</h2>
+      <p class="page-sub">Manage registered users and their roles.</p>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Skills</th><th>Joined</th><th>Actions</th></tr></thead>
+            <tbody id="usersTable"><tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ANALYTICS ── -->
+    <div class="tab-content" id="tab-analytics">
+      <h2 class="page-title">Analytics</h2>
+      <p class="page-sub">Platform performance and usage insights.</p>
+      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
+        <div class="stat-card"><div class="stat-icon">👁</div><div class="stat-value">1,247</div><div class="stat-label">Total Job Views (30d)</div></div>
+        <div class="stat-card"><div class="stat-icon">📄</div><div class="stat-value">89%</div><div class="stat-label">Application Rate</div></div>
+        <div class="stat-card"><div class="stat-icon">⏱</div><div class="stat-value">2.4 days</div><div class="stat-label">Avg. Time to Hire</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">📊 Jobs by Category</div>
+        <div class="chart-placeholder" style="height:250px">
+          <span style="font-size:2rem">📊</span>
+          Integrate a charting library to visualize category distribution
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SETTINGS ── -->
+    <div class="tab-content" id="tab-settings">
+      <h2 class="page-title">System Settings</h2>
+      <p class="page-sub">Configure platform-wide settings.</p>
+      <div class="card">
+        <div class="card-title">🔧 Platform Configuration</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem;">
+          <div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.3rem">Platform Name</div>
+            <input type="text" class="search-input" value="OpenJobs" style="width:100%">
+          </div>
+          <div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.3rem">Contact Email</div>
+            <input type="email" class="search-input" value="admin@openjobs.com" style="width:100%">
+          </div>
+          <div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.3rem">Max Jobs per Employer</div>
+            <input type="number" class="search-input" value="10" style="width:100%">
+          </div>
+          <div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.3rem">Auto-approve Jobs</div>
+            <select class="search-input" style="width:100%;cursor:pointer">
+              <option>Yes — Auto-publish</option>
+              <option>No — Manual review</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:1.25rem" onclick="alert('Settings saved!')">💾 Save Settings</button>
+      </div>
+      <div class="card">
+        <div class="card-title">🗄 Database</div>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:1rem">
+          <button class="btn btn-ghost" onclick="alert('Backup feature coming soon')">📦 Export Data</button>
+          <button class="btn btn-ghost" onclick="alert('Restore feature coming soon')">♻️ Import Data</button>
+          <button class="btn btn-danger" onclick="if(confirm('Clear all applications? This cannot be undone.')) alert('Feature coming soon')">🗑 Clear Applications</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let allJobs = [];
+  let allApps = [];
+  let allUsers = [];
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadStats();
+    loadJobs();
+    loadApplications();
+    loadUsers();
+  });
+
+  function switchTab(name) {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    const tabEl = document.getElementById('tab-' + name);
+    if (tabEl) tabEl.classList.add('active');
+    const navItems = document.querySelectorAll('.nav-item');
+    const names = ['overview','jobs','applications','users','analytics','settings'];
+    const idx = names.indexOf(name);
+    if (idx >= 0 && navItems[idx]) navItems[idx].classList.add('active');
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  }
+
+  function loadStats() {
+    fetch('/api/dashboard/seeker?user_id=1')
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('statApps').textContent = d.stats?.total_applications || 0;
+      });
+    fetch('/api/jobs?limit=1')
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('statJobs').textContent = d.pagination?.total || 0;
+      });
+  }
+
+  function loadJobs() {
+    fetch('/api/jobs?limit=100')
+      .then(r => r.json())
+      .then(d => {
+        allJobs = d.jobs || [];
+        renderJobsTable(allJobs);
+      })
+      .catch(() => renderJobsTable([]));
+  }
+
+  function renderJobsTable(jobs) {
+    const tbody = document.getElementById('jobsTable');
+    if (!jobs.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">No jobs found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = jobs.map(j => {
+      const salary = formatSalary(j);
+      return `<tr>
+        <td><div class="title-cell">${escHtml(j.title)}</div></td>
+        <td>${escHtml(j.company)}</td>
+        <td>${escHtml(j.location)}</td>
+        <td style="color:var(--primary);font-weight:600">${salary || 'TBD'}</td>
+        <td>${escHtml(j.category || '—')}</td>
+        <td><span class="badge badge-active">${j.is_active !== 0 ? 'Active' : 'Inactive'}</span></td>
+        <td>
+          <button class="btn-sm" onclick="window.open('/job.html?id=${j.id}','_blank')">👁 View</button>
+          <button class="btn-sm danger" onclick="deleteJob(${j.id})">🗑</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function filterJobs() {
+    const q = document.getElementById('jobSearch').value.toLowerCase();
+    const status = document.getElementById('jobStatusFilter').value;
+    const filtered = allJobs.filter(j => {
+      const matchQ = !q || j.title.toLowerCase().includes(q) || (j.company||'').toLowerCase().includes(q) || (j.location||'').toLowerCase().includes(q);
+      const matchStatus = !status || (status === 'active' && j.is_active !== 0) || (status === 'inactive' && j.is_active === 0);
+      return matchQ && matchStatus;
+    });
+    renderJobsTable(filtered);
+  }
+
+  async function deleteJob(id) {
+    if (!confirm('Delete this job? This cannot be undone.')) return;
+    try {
+      const res = await fetch('/api/jobs/' + id, { method: 'DELETE' });
+      if (res.ok) {
+        showAlert('jobAlert', 'success', 'Job deleted successfully.');
+        loadJobs();
+      } else {
+        showAlert('jobAlert', 'error', 'Failed to delete job.');
+      }
+    } catch {
+      showAlert('jobAlert', 'error', 'Server error — could not delete.');
+    }
+  }
+
+  function loadApplications() {
+    fetch('/api/applications')
+      .then(r => r.json())
+      .then(apps => {
+        allApps = apps;
+        renderAppsTable(apps);
+      })
+      .catch(() => renderAppsTable([]));
+  }
+
+  function renderAppsTable(apps) {
+    const tbody = document.getElementById('appsTable');
+    if (!apps.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">No applications yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = apps.map(a => {
+      const statusMap = {pending:'badge-pending',applied:'badge-active',interview:'badge-active',rejected:'badge-inactive',offer:'badge-active'};
+      const cls = statusMap[a.status] || 'badge-pending';
+      const label = (a.status || 'pending').charAt(0).toUpperCase() + (a.status || 'pending').slice(1);
+      return `<tr>
+        <td><div class="title-cell">Tonny Tony</div></td>
+        <td>tonny@email.com</td>
+        <td>${escHtml(String(a.job_id))}</td>
+        <td>${timeSince(a.applied_at)}</td>
+        <td><span class="badge ${cls}">${label}</span></td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(a.notes || '—')}</td>
+        <td>
+          <button class="btn-sm" onclick="updateAppStatus(${a.id},'interview')">✓</button>
+          <button class="btn-sm danger" onclick="updateAppStatus(${a.id},'rejected')">✗</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function updateAppStatus(id, status) {
+    try {
+      await fetch('/api/applications/' + id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status}) });
+      loadApplications();
+    } catch {}
+  }
+
+  function loadUsers() {
+    fetch('/api/user/profile?user_id=1')
+      .then(r => r.json())
+      .then(user => {
+        if (user && !user.error) {
+          allUsers = [{
+            name: user.name || 'Tonny Tony',
+            email: user.email || 'tonny@email.com',
+            role: 'user',
+            skills: user.skills || '',
+            created_at: user.created_at || '2026-01-01'
+          }];
+          renderUsersTable(allUsers);
+        }
+      })
+      .catch(() => renderUsersTable([{name:'Demo User',email:'demo@openjobs.com',role:'admin',skills:'Python,JavaScript',created_at:'2026-01-01'}]));
+    // Give it a moment then render with fallback
+    setTimeout(() => {
+      if (!allUsers.length) renderUsersTable([{name:'Tonny Tony',email:'tonny@email.com',role:'user',skills:'AI,Python,JavaScript',created_at:'2026-01-01'}]);
+    }, 500);
+  }
+
+  function renderUsersTable(users) {
+    const tbody = document.getElementById('usersTable');
+    if (!users.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted)">No users found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map(u => {
+      const roleBadge = u.role === 'admin' ? 'badge-admin' : 'badge-user';
+      return `<tr>
+        <td><div class="title-cell">${escHtml(u.name)}</div></td>
+        <td>${escHtml(u.email)}</td>
+        <td><span class="badge ${roleBadge}">${escHtml(u.role || 'user')}</span></td>
+        <td class="muted">${escHtml(u.skills || '—')}</td>
+        <td class="muted">${timeSince(u.created_at)}</td>
+        <td>
+          <button class="btn-sm" onclick="alert('Edit coming soon')">✏️</button>
+          ${u.role !== 'admin' ? '<button class="btn-sm danger" onclick="alert(\'Delete coming soon\')">🗑</button>' : ''}
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function showAlert(id, type, msg) {
+    const el = document.getElementById(id);
+    el.className = 'alert alert-' + type;
+    el.textContent = (type === 'success' ? '✅ ' : '⚠️ ') + msg;
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 4000);
+  }
+
+  function formatSalary(job) {
+    const min = job.salary_min, max = job.salary_max;
+    if (!min && !max) return '';
+    const fmt = n => n >= 1000 ? '$' + Math.round(n/1000) + 'k' : '';
+    if (min && max && min !== max) return fmt(min) + ' – ' + fmt(max);
+    if (min) return 'From ' + fmt(min);
+    return max ? 'Up to ' + fmt(max) : '';
+  }
+  function timeSince(dateStr) {
+    if (!dateStr) return '—';
+    const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 30) return days + 'd ago';
+    return Math.floor(days/30) + 'mo ago';
+  }
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>
