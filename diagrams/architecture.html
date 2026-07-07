@@ -1,0 +1,384 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenJobs — Code Architecture</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --muted: #7d8590;
+    --line: #30363d;
+    --neutral: #161b22;
+    --input: #1f3a5f;
+    --process: #2d1b4e;
+    --storage: #14332a;
+    --external: #3d2a00;
+    --risk: #3d1515;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --purple: #bc8cff;
+    --yellow: #d29922;
+    --red: #f85149;
+    --teal: #39d0c3;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f0f4f8;
+      --fg: #1c2128;
+      --muted: #57606a;
+      --line: #d0d7de;
+      --neutral: #ffffff;
+      --input: #dbeafe;
+      --process: #ede9fe;
+      --storage: #d1fae5;
+      --external: #fef3c7;
+      --risk: #fee2e2;
+      --accent: #1d4ed8;
+      --green: #15803d;
+      --purple: #7c3aed;
+      --yellow: #92400e;
+      --red: #dc2626;
+      --teal: #0f766e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  main { max-width: 1400px; margin: 0 auto; padding: 32px 24px; }
+  h1 { font-size: 22px; font-weight: 700; margin: 0 0 6px; color: var(--fg); }
+  .subtitle { font-size: 13px; color: var(--muted); margin: 0 0 32px; }
+  .legend {
+    display: flex; gap: 20px; flex-wrap: wrap;
+    margin-bottom: 28px; font-size: 12px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+  svg { width: 100%; height: auto; display: block; }
+  .node-label { font-size: 12px; font-weight: 600; fill: var(--fg); }
+  .node-sub { font-size: 10px; fill: var(--muted); }
+  .node-icon { font-size: 11px; }
+  .edge { stroke: var(--line); stroke-width: 1.5; fill: none; }
+  .arrow { fill: var(--line); }
+  .zone-label { font-size: 11px; font-weight: 700; fill: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+  .step { font-size: 10px; fill: var(--muted); }
+  .score-box { font-size: 10px; fill: var(--muted); }
+</style>
+<main>
+
+<h1>OpenJobs — Code Architecture</h1>
+<p class="subtitle">Full data flow: Resume Upload → AI Matching → For You Recommendations</p>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>Browser / Client</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--purple)"></div>Flask API Routes</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Keyword Engine</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--teal)"></div>Ollama AI</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div>Database / Storage</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Scrapers / External</div>
+</div>
+
+<svg viewBox="0 0 1200 820" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- ===================== ZONE BACKGROUNDS ===================== -->
+  <!-- Zone: Client -->
+  <rect x="10" y="10" width="280" height="380" rx="10" fill="var(--input)" fill-opacity="0.12" stroke="var(--accent)" stroke-width="1" stroke-opacity="0.25" stroke-dasharray="6 4"/>
+  <!-- Zone: Flask API -->
+  <rect x="310" y="10" width="290" height="660" rx="10" fill="var(--process)" fill-opacity="0.12" stroke="var(--purple)" stroke-width="1" stroke-opacity="0.25" stroke-dasharray="6 4"/>
+  <!-- Zone: AI Engine -->
+  <rect x="620" y="10" width="260" height="660" rx="10" fill="var(--storage)" fill-opacity="0.12" stroke="var(--green)" stroke-width="1" stroke-opacity="0.25" stroke-dasharray="6 4"/>
+  <!-- Zone: Scrapers -->
+  <rect x="900" y="10" width="290" height="280" rx="10" fill="var(--external)" fill-opacity="0.12" stroke="var(--yellow)" stroke-width="1" stroke-opacity="0.25" stroke-dasharray="6 4"/>
+  <!-- Zone: Database -->
+  <rect x="900" y="310" width="290" height="360" rx="10" fill="var(--storage)" fill-opacity="0.12" stroke="var(--green)" stroke-width="1" stroke-opacity="0.25" stroke-dasharray="6 4"/>
+
+  <!-- Zone Labels -->
+  <text class="zone-label" x="20" y="28">Browser / Client</text>
+  <text class="zone-label" x="320" y="28">Flask API (server.py)</text>
+  <text class="zone-label" x="630" y="28">AI Engine</text>
+  <text class="zone-label" x="910" y="28">Scrapers</text>
+  <text class="zone-label" x="910" y="328">Database (SQLite)</text>
+
+  <!-- ===================== CLIENT LAYER ===================== -->
+
+  <!-- Upload Resume Form -->
+  <rect x="30" y="45" width="240" height="64" rx="8" fill="var(--neutral)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text class="node-label" x="150" y="65" text-anchor="middle">📄 Resume Upload Form</text>
+  <text class="node-sub" x="150" y="81" text-anchor="middle">job.html · multipart/form-data</text>
+  <text class="node-sub" x="150" y="96" text-anchor="middle">↓ POST /api/resume/upload</text>
+
+  <!-- Profile Tab -->
+  <rect x="30" y="125" width="240" height="58" rx="8" fill="var(--neutral)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text class="node-label" x="150" y="145" text-anchor="middle">👤 Profile Tab</text>
+  <text class="node-sub" x="150" y="161" text-anchor="middle">user.html · skills, location, resume</text>
+  <text class="node-sub" x="150" y="176" text-anchor="middle">↓ PATCH /api/user/profile</text>
+
+  <!-- For You Tab -->
+  <rect x="30" y="200" width="240" height="58" rx="8" fill="var(--neutral)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text class="node-label" x="150" y="220" text-anchor="middle">🎯 For You Tab</text>
+  <text class="node-sub" x="150" y="236" text-anchor="middle">user.html · dashboard data</text>
+  <text class="node-sub" x="150" y="251" text-anchor="middle">↓ GET /api/dashboard/seeker</text>
+
+  <!-- Job Cards (rendered) -->
+  <rect x="30" y="275" width="240" height="100" rx="8" fill="var(--neutral)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text class="node-label" x="150" y="295" text-anchor="middle">📋 Job Cards Rendered</text>
+  <text class="node-sub" x="150" y="311" text-anchor="middle">match_score · matched_skills</text>
+  <text class="node-sub" x="150" y="327" text-anchor="middle">ai_verdict · missing_skills</text>
+  <text class="node-sub" x="150" y="343" text-anchor="middle">apply · save buttons</text>
+
+  <!-- ===================== API ROUTES ===================== -->
+
+  <!-- POST /api/resume/upload -->
+  <rect x="325" y="45" width="260" height="90" rx="8" fill="var(--neutral)" stroke="var(--purple)" stroke-width="1.5"/>
+  <text class="node-label" x="455" y="65" text-anchor="middle" fill="var(--purple)">POST /api/resume/upload</text>
+  <text class="node-sub" x="455" y="82" text-anchor="middle">→ pdfplumber / python-docx</text>
+  <text class="node-sub" x="455" y="96" text-anchor="middle">→ _extract_skills_fast()</text>
+  <text class="node-sub" x="455" y="110" text-anchor="middle">→ UPDATE users.skills + resume_text</text>
+  <text class="node-sub" x="455" y="124" text-anchor="middle">→ Background: Ollama parse_resume()</text>
+
+  <!-- Auth: JWT decode -->
+  <rect x="325" y="150" width="260" height="55" rx="8" fill="var(--neutral)" stroke="var(--purple)" stroke-width="1.5"/>
+  <text class="node-label" x="455" y="168" text-anchor="middle" fill="var(--purple)">require_auth decorator</text>
+  <text class="node-sub" x="455" y="184" text-anchor="middle">_decode_token() → user_id · BLOCKED_TOKENS check</text>
+
+  <!-- GET /api/dashboard/seeker -->
+  <rect x="325" y="220" width="260" height="72" rx="8" fill="var(--neutral)" stroke="var(--purple)" stroke-width="1.5"/>
+  <text class="node-label" x="455" y="240" text-anchor="middle" fill="var(--purple)">GET /api/dashboard/seeker</text>
+  <text class="node-sub" x="455" y="256" text-anchor="middle">→ SELECT skills, resume_text FROM users</text>
+  <text class="node-sub" x="455" y="270" text-anchor="middle">→ rank_jobs_for_resume(jobs, resume)</text>
+  <text class="node-sub" x="455" y="284" text-anchor="middle">→ return top 4 ranked + stats</text>
+
+  <!-- Auth routes -->
+  <rect x="325" y="308" width="125" height="50" rx="8" fill="var(--neutral)" stroke="var(--purple)" stroke-width="1.5"/>
+  <text class="node-label" x="387" y="326" text-anchor="middle" fill="var(--purple)" style="font-size:11px">POST /api/auth/login</text>
+  <text class="node-sub" x="387" y="341" text-anchor="middle">JWT issued</text>
+
+  <rect x="460" y="308" width="125" height="50" rx="8" fill="var(--neutral)" stroke="var(--purple)" stroke-width="1.5"/>
+  <text class="node-label" x="522" y="326" text-anchor="middle" fill="var(--purple)" style="font-size:11px">POST /api/auth/logout</text>
+  <text class="node-sub" x="522" y="341" text-anchor="middle">BLOCKED_TOKENS.add()</text>
+
+  <!-- Job CRUD -->
+  <rect x="325" y="374" width="260" height="110" rx="8" fill="var(--neutral)" stroke="var(--purple)" stroke-width="1.5"/>
+  <text class="node-label" x="455" y="394" text-anchor="middle" fill="var(--purple)">Job CRUD</text>
+  <text class="node-sub" x="455" y="410" text-anchor="middle">GET    /api/jobs           — list</text>
+  <text class="node-sub" x="455" y="423" text-anchor="middle">POST   /api/jobs           — create</text>
+  <text class="node-sub" x="455" y="436" text-anchor="middle">PATCH   /api/jobs/:id       — update</text>
+  <text class="node-sub" x="455" y="449" text-anchor="middle">DELETE  /api/jobs/:id       — soft del</text>
+  <text class="node-sub" x="455" y="462" text-anchor="middle">GET    /api/jobs/:id       — detail</text>
+
+  <!-- Applications -->
+  <rect x="325" y="500" width="260" height="80" rx="8" fill="var(--neutral)" stroke="var(--purple)" stroke-width="1.5"/>
+  <text class="node-label" x="455" y="520" text-anchor="middle" fill="var(--purple)">Applications</text>
+  <text class="node-sub" x="455" y="536" text-anchor="middle">POST   /api/apply          — submit</text>
+  <text class="node-sub" x="455" y="549" text-anchor="middle">GET    /api/applications   — list</text>
+  <text class="node-sub" x="455" y="562" text-anchor="middle">PATCH  /api/applications/:id — status</text>
+
+  <!-- Saved Jobs -->
+  <rect x="325" y="596" width="260" height="58" rx="8" fill="var(--neutral)" stroke="var(--purple)" stroke-width="1.5"/>
+  <text class="node-label" x="455" y="616" text-anchor="middle" fill="var(--purple)">Saved Jobs</text>
+  <text class="node-sub" x="455" y="632" text-anchor="middle">POST /api/saved_jobs  · DELETE /api/saved_jobs  · GET /api/saved_jobs</text>
+
+  <!-- ===================== AI ENGINE ===================== -->
+
+  <!-- semantic_matcher.py -->
+  <rect x="635" y="45" width="230" height="150" rx="8" fill="var(--neutral)" stroke="var(--green)" stroke-width="1.5"/>
+  <text class="node-label" x="750" y="65" text-anchor="middle" fill="var(--green)">semantic_matcher.py</text>
+  <text class="node-sub" x="750" y="82" text-anchor="middle" fill="var(--teal)">rank_jobs_for_resume()  ← main entry</text>
+  <text class="node-sub" x="750" y="97" text-anchor="middle">keyword_score() — returns</text>
+  <text class="node-sub" x="750" y="109" text-anchor="middle">  (score, [matched], [missing])</text>
+  <text class="node-sub" x="750" y="124" text-anchor="middle">SKILL_ALIASES — 60+ mappings</text>
+  <text class="node-sub" x="750" y="139" text-anchor="middle">_normalize() — tokenize + expand</text>
+  <text class="node-sub" x="750" y="154" text-anchor="middle">ollama_rescore() — AI rescore</text>
+  <text class="node-sub" x="750" y="169" text-anchor="middle" fill="var(--yellow)">⚡ Smart: Ollama only for</text>
+  <text class="node-sub" x="750" y="182" text-anchor="middle" fill="var(--yellow)">borderline 1-3 keyword matches</text>
+
+  <!-- Keyword Match (branch) -->
+  <rect x="635" y="212" width="230" height="70" rx="8" fill="var(--neutral)" stroke="var(--green)" stroke-width="1.5"/>
+  <text class="node-label" x="750" y="232" text-anchor="middle" fill="var(--green)">✓ keyword_score ≥ 4</text>
+  <text class="node-sub" x="750" y="248" text-anchor="middle">Score ≥ 72 pts — strong match</text>
+  <text class="node-sub" x="750" y="261" text-anchor="middle" fill="var(--green)">→ Skip Ollama · Return instantly</text>
+  <text class="node-sub" x="750" y="274" text-anchor="middle" style="font-size:9px;color:var(--muted)">FREE · ~1ms per job</text>
+
+  <!-- Borderline (Ollama) -->
+  <rect x="635" y="298" width="230" height="82" rx="8" fill="var(--neutral)" stroke="var(--yellow)" stroke-width="1.5"/>
+  <text class="node-label" x="750" y="318" text-anchor="middle" fill="var(--yellow)">⚠ keyword_score 1–3</text>
+  <text class="node-sub" x="750" y="334" text-anchor="middle">Score 18–54 pts — borderline</text>
+  <text class="node-sub" x="750" y="347" text-anchor="middle" fill="var(--teal)">→ Ollama semantic analysis</text>
+  <text class="node-sub" x="750" y="360" text-anchor="middle" fill="var(--teal)">→ Rescore + AI verdict + synonyms</text>
+  <text class="node-sub" x="750" y="373" text-anchor="middle" style="font-size:9px;color:var(--muted)">COST: ~5s per job · 30% of scan</text>
+
+  <!-- Zero match -->
+  <rect x="635" y="396" width="230" height="58" rx="8" fill="var(--neutral)" stroke="var(--red)" stroke-width="1.5"/>
+  <text class="node-label" x="750" y="416" text-anchor="middle" fill="var(--red)">✗ keyword_score = 0</text>
+  <text class="node-sub" x="750" y="432" text-anchor="middle">Clear mismatch — skip Ollama</text>
+  <text class="node-sub" x="750" y="445" text-anchor="middle" fill="var(--green)">→ Score = 0 · skip · no cost</text>
+
+  <!-- Ollama -->
+  <rect x="635" y="470" width="230" height="60" rx="8" fill="var(--neutral)" stroke="var(--teal)" stroke-width="1.5"/>
+  <text class="node-label" x="750" y="490" text-anchor="middle" fill="var(--teal)">🧠 Ollama (localhost:11434)</text>
+  <text class="node-sub" x="750" y="506" text-anchor="middle">model: gemma3:4b · 45s timeout</text>
+  <text class="node-sub" x="750" y="519" text-anchor="middle">Returns: match_score · verdict · synonyms</text>
+
+  <!-- ai_matcher.py (background) -->
+  <rect x="635" y="546" width="230" height="70" rx="8" fill="var(--neutral)" stroke="var(--green)" stroke-width="1.5"/>
+  <text class="node-label" x="750" y="566" text-anchor="middle" fill="var(--green)">ai_matcher.py  (background thread)</text>
+  <text class="node-sub" x="750" y="582" text-anchor="middle">parse_resume() — richer extraction</text>
+  <text class="node-sub" x="750" y="595" text-anchor="middle">extract_skills() — gap analysis</text>
+  <text class="node-sub" x="750" y="608" text-anchor="middle">→ Updates users.skills (enriched)</text>
+
+  <!-- Score sorter -->
+  <rect x="635" y="632" width="230" height="44" rx="8" fill="var(--neutral)" stroke="var(--green)" stroke-width="1.5"/>
+  <text class="node-label" x="750" y="652" text-anchor="middle" fill="var(--green)">Sort: match_score ↓ · Top 4</text>
+
+  <!-- ===================== SCRAPERS ===================== -->
+
+  <!-- Scraper runners -->
+  <rect x="915" y="45" width="260" height="100" rx="8" fill="var(--neutral)" stroke="var(--yellow)" stroke-width="1.5"/>
+  <text class="node-label" x="1045" y="65" text-anchor="middle" fill="var(--yellow)">scrapers/run_all.py</text>
+  <text class="node-sub" x="1045" y="81" text-anchor="middle">→ linkedin_scraper.py</text>
+  <text class="node-sub" x="1045" y="94" text-anchor="middle">→ indeed_scraper.py</text>
+  <text class="node-sub" x="1045" y="107" text-anchor="middle">→ remotive.py</text>
+  <text class="node-sub" x="1045" y="120" text-anchor="middle" fill="var(--red)">⚠ SEEK scraper MISSING</text>
+
+  <!-- POST /api/jobs -->
+  <rect x="915" y="160" width="260" height="44" rx="8" fill="var(--neutral)" stroke="var(--purple)" stroke-width="1.5"/>
+  <text class="node-label" x="1045" y="180" text-anchor="middle" fill="var(--purple)">→ POST /api/jobs  (ingest scraped)</text>
+
+  <!-- ai_filter.py -->
+  <rect x="915" y="220" width="260" height="55" rx="8" fill="var(--neutral)" stroke="var(--red)" stroke-width="1.5"/>
+  <text class="node-label" x="1045" y="240" text-anchor="middle" fill="var(--red)">ai_filter.py</text>
+  <text class="node-sub" x="1045" y="256" text-anchor="middle">Ollama quality scoring · scam detection</text>
+
+  <!-- ===================== DATABASE ===================== -->
+
+  <!-- jobs table -->
+  <rect x="915" y="330" width="260" height="78" rx="8" fill="var(--neutral)" stroke="var(--yellow)" stroke-width="1.5"/>
+  <text class="node-label" x="1045" y="350" text-anchor="middle" fill="var(--yellow)">📋 jobs</text>
+  <text class="node-sub" x="925" y="366" text-anchor="start">id · title · company · location</text>
+  <text class="node-sub" x="925" y="379" text-anchor="start">salary_min/max · category</text>
+  <text class="node-sub" x="925" y="392" text-anchor="start">skills · description · score</text>
+  <text class="node-sub" x="925" y="405" text-anchor="start">is_active · posted_at</text>
+
+  <!-- users table -->
+  <rect x="915" y="423" width="260" height="78" rx="8" fill="var(--neutral)" stroke="var(--yellow)" stroke-width="1.5"/>
+  <text class="node-label" x="1045" y="443" text-anchor="middle" fill="var(--yellow)">👤 users</text>
+  <text class="node-sub" x="925" y="459" text-anchor="start">id · name · email · password_hash</text>
+  <text class="node-sub" x="925" y="472" text-anchor="start">phone · skills · resume_text</text>
+  <text class="node-sub" x="925" y="485" text-anchor="start">preferred_location · cv_link</text>
+  <text class="node-sub" x="925" y="498" text-anchor="start">role · plan · visa_required</text>
+
+  <!-- applications table -->
+  <rect x="915" y="516" width="260" height="60" rx="8" fill="var(--neutral)" stroke="var(--yellow)" stroke-width="1.5"/>
+  <text class="node-label" x="1045" y="536" text-anchor="middle" fill="var(--yellow)">📬 applications</text>
+  <text class="node-sub" x="925" y="552" text-anchor="start">id · job_id · user_id · status</text>
+  <text class="node-sub" x="925" y="565" text-anchor="start">applied_at · notes · resume_text</text>
+
+  <!-- skills_taxonomy -->
+  <rect x="915" y="591" width="260" height="52" rx="8" fill="var(--neutral)" stroke="var(--green)" stroke-width="1.5"/>
+  <text class="node-label" x="1045" y="611" text-anchor="middle" fill="var(--green)">🏷 skills_taxonomy  (42 skills)</text>
+  <text class="node-sub" x="925" y="627" text-anchor="start">name · aliases · category</text>
+
+  <!-- BLOCKED_TOKENS -->
+  <rect x="915" y="658" width="260" height="38" rx="8" fill="var(--neutral)" stroke="var(--red)" stroke-width="1.5"/>
+  <text class="node-label" x="1045" y="676" text-anchor="middle" fill="var(--red)">🚫 BLOCKED_TOKENS (in-memory set)</text>
+
+  <!-- ===================== ARROWS ===================== -->
+
+  <!-- Resume upload → API -->
+  <path class="edge" d="M 270 77 L 320 77"/>
+  <polygon class="arrow" points="320,73 326,77 320,81"/>
+
+  <!-- Profile → API -->
+  <path class="edge" d="M 270 154 L 320 171"/>
+  <polygon class="arrow" points="320,167 326,171 320,175"/>
+
+  <!-- For You → API -->
+  <path class="edge" d="M 270 229 L 320 256"/>
+  <polygon class="arrow" points="320,252 326,256 320,260"/>
+
+  <!-- API → semantic_matcher -->
+  <path class="edge" d="M 585 256 L 630 120"/>
+  <polygon class="arrow" points="630,116 636,120 630,124"/>
+
+  <!-- semantic_matcher → keyword ≥ 4 -->
+  <path class="edge" d="M 750 195 L 750 212"/>
+  <polygon class="arrow" points="746,212 750,218 754,212"/>
+
+  <!-- semantic_matcher → borderline -->
+  <path class="edge" d="M 750 195 L 750 298" stroke="var(--yellow)"/>
+  <polygon class="arrow" fill="var(--yellow)" points="746,298 750,304 754,298"/>
+
+  <!-- semantic_matcher → zero -->
+  <path class="edge" d="M 750 195 L 750 396"/>
+  <polygon class="arrow" points="746,396 750,402 754,396"/>
+
+  <!-- Borderline → Ollama -->
+  <path class="edge" d="M 750 380 L 750 470" stroke="var(--yellow)"/>
+  <polygon class="arrow" fill="var(--yellow)" points="746,470 750,476 754,470"/>
+
+  <!-- Ollama → Score sorter -->
+  <path class="edge" d="M 750 530 L 750 632"/>
+  <polygon class="arrow" points="746,632 750,638 754,632"/>
+
+  <!-- API → Database jobs -->
+  <path class="edge" d="M 585 410 L 910 369"/>
+  <polygon class="arrow" points="910,365 916,369 910,373"/>
+
+  <!-- API → Database users -->
+  <path class="edge" d="M 585 120 L 910 462"/>
+  <polygon class="arrow" points="910,458 916,462 910,466"/>
+
+  <!-- API → Database applications -->
+  <path class="edge" d="M 585 530 L 910 546"/>
+  <polygon class="arrow" points="910,542 916,546 910,550"/>
+
+  <!-- Scraper → POST /api/jobs -->
+  <path class="edge" d="M 915 95 L 915 160"/>
+  <polygon class="arrow" points="911,160 915,166 919,160"/>
+
+  <!-- POST /api/jobs → ai_filter -->
+  <path class="edge" d="M 915 182 L 915 220"/>
+  <polygon class="arrow" points="911,220 915,226 919,220"/>
+
+  <!-- ai_filter → jobs table -->
+  <path class="edge" d="M 915 247 L 915 330"/>
+  <polygon class="arrow" points="911,330 915,336 919,330"/>
+
+  <!-- rank_jobs_for_resume → Job Cards -->
+  <path class="edge" d="M 865 654 L 270 325"/>
+  <polygon class="arrow" points="274,325 268,321 268,329"/>
+
+  <!-- ===================== STEP NUMBERS ===================== -->
+  <circle cx="295" cy="77" r="9" fill="var(--accent)"/>
+  <text x="295" y="81" text-anchor="middle" font-size="10" font-weight="700" fill="white">1</text>
+
+  <circle cx="320" cy="120" r="9" fill="var(--purple)"/>
+  <text x="320" y="124" text-anchor="middle" font-size="10" font-weight="700" fill="white">2</text>
+
+  <circle cx="630" cy="120" r="9" fill="var(--green)"/>
+  <text x="630" y="124" text-anchor="middle" font-size="10" font-weight="700" fill="white">3</text>
+
+  <circle cx="750" cy="390" r="9" fill="var(--teal)"/>
+  <text x="750" y="394" text-anchor="middle" font-size="10" font-weight="700" fill="white">4</text>
+
+  <circle cx="270" cy="325" r="9" fill="var(--accent)"/>
+  <text x="270" y="329" text-anchor="middle" font-size="10" font-weight="700" fill="white">5</text>
+
+  <!-- Step labels bottom -->
+  <text class="step" x="150" y="395" text-anchor="middle">① Upload resume</text>
+  <text class="step" x="455" y="165" text-anchor="middle">② Extract skills (keyword)</text>
+  <text class="step" x="750" y="42" text-anchor="middle">③ Score &amp; rank (smart)</text>
+  <text class="step" x="750" y="445" text-anchor="middle" fill="var(--teal)">④ Ollama (borderline only)</text>
+  <text class="step" x="150" y="388" text-anchor="middle">⑤ For You tab results</text>
+
+  <!-- Cost annotation -->
+  <rect x="860" y="300" width="160" height="36" rx="6" fill="var(--storage)" fill-opacity="0.6" stroke="var(--green)" stroke-width="1"/>
+  <text class="node-label" x="940" y="315" text-anchor="middle" fill="var(--green)" style="font-size:10px">50-job scan cost:</text>
+  <text class="node-sub" x="940" y="329" text-anchor="middle" fill="var(--green)" style="font-size:10px">Before: 250s · After: ~50s</text>
+
+</svg>
+</main>

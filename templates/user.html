@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Your OpenJobs dashboard — track applications, manage saved jobs, update your profile, and monitor your job search progress.">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="canonical" href="https://openjobs.example.com/user">
+  <meta property="og:title" content="My Dashboard — OpenJobs">
+  <meta property="og:description" content="Track your job applications and manage your career profile on OpenJobs.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://openjobs.example.com/user">
+  <meta property="og:site_name" content="OpenJobs">
+  <title>My Dashboard — OpenJobs</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #00d4aa; --primary-dark: #00a88a; --primary-glow: rgba(0,212,170,0.12);
+      --bg: #09090f; --bg-card: #111119; --bg-card-hover: #18181f;
+      --border: #1e1e2e; --border-light: #2a2a3e;
+      --text: #ededf0; --text-muted: #6b6b80; --text-dim: #3a3a50;
+      --success: #22c55e; --warning: #f59e0b; --error: #ef4444; --info: #3b82f6;
+      --purple: #a855f7;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6; }
+
+    /* HEADER */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(9,9,15,0.9); backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+    }
+    .header-inner { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 64px; }
+    .logo { font-size: 1.35rem; font-weight: 800; }
+    .logo span { color: var(--primary); }
+    .logo-sub { font-size: 0.65rem; color: var(--text-muted); font-weight: 400; }
+    nav { display: flex; gap: 0.25rem; align-items: center; }
+    nav a { color: var(--text-muted); text-decoration: none; font-size: 0.875rem; font-weight: 500; padding: 0.5rem 0.875rem; border-radius: 8px; transition: all 0.2s; }
+    nav a:hover { color: var(--text); background: var(--bg-card); }
+    nav a.active { color: var(--primary); background: var(--primary-glow); }
+    .header-right { display: flex; align-items: center; gap: 1rem; }
+    .avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #00a88a); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; color: #000; cursor: pointer; }
+    .notif-btn { position: relative; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-muted); font-size: 1.1rem; transition: all 0.2s; }
+    .notif-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .notif-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--error); border: 2px solid var(--bg); }
+
+    /* PAGE LAYOUT */
+    .page-wrap { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+    .page-header { margin-bottom: 2rem; }
+    .greeting { font-size: 1.6rem; font-weight: 800; margin-bottom: 0.25rem; }
+    .greeting span { color: var(--primary); }
+    .greeting-sub { color: var(--text-muted); font-size: 0.9rem; }
+
+    /* TABS */
+    .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin-bottom: 2rem; }
+    .tab { padding: 0.75rem 1.25rem; font-size: 0.875rem; font-weight: 600; color: var(--text-muted); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.2s; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* STATS GRID */
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+    .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 1.25rem; }
+    .stat-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; }
+    .stat-icon { font-size: 1.5rem; }
+    .stat-trend { font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 6px; }
+    .trend-up { background: rgba(34,197,94,0.1); color: #4ade80; }
+    .trend-neutral { background: rgba(107,107,128,0.1); color: var(--text-muted); }
+    .stat-value { font-size: 2rem; font-weight: 800; margin-bottom: 0.2rem; }
+    .stat-label { font-size: 0.8rem; color: var(--text-muted); }
+
+    /* PROGRESS BARS */
+    .progress-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; }
+    .progress-title { font-size: 1rem; font-weight: 700; margin-bottom: 1.25rem; }
+    .progress-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+    .progress-label { font-size: 0.8rem; color: var(--text-muted); min-width: 120px; }
+    .progress-bar { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--primary), #00ff88); transition: width 0.8s ease-out; }
+    .progress-pct { font-size: 0.8rem; font-weight: 700; color: var(--primary); min-width: 40px; text-align: right; }
+
+    /* CARDS */
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.25rem; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .card-title { font-size: 1rem; font-weight: 700; }
+
+    /* APPLICATION LIST */
+    .app-item { display: flex; gap: 1rem; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--border); transition: background 0.2s; }
+    .app-item:last-child { border-bottom: none; padding-bottom: 0; }
+    .app-item:hover { background: var(--bg-card-hover); margin: 0 -1.5rem; padding-left: 1.5rem; padding-right: 1.5rem; border-radius: 8px; }
+    .app-logo { width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(135deg, rgba(0,212,170,0.15), rgba(0,212,170,0.05)); border: 1px solid rgba(0,212,170,0.2); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1rem; color: var(--primary); flex-shrink: 0; }
+    .app-info { flex: 1; min-width: 0; }
+    .app-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .app-company { font-size: 0.8rem; color: var(--text-muted); }
+    .app-meta { display: flex; gap: 1rem; margin-top: 4px; }
+    .app-meta-item { font-size: 0.72rem; color: var(--text-muted); display: flex; align-items: center; gap: 3px; }
+    .app-status { padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.72rem; font-weight: 700; flex-shrink: 0; }
+    .status-applied { background: rgba(59,130,246,0.15); color: #60a5fa; }
+    .status-pending { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .status-screening { background: rgba(168,85,247,0.15); color: #c084fc; }
+    .status-interview { background: rgba(0,212,170,0.15); color: var(--primary); }
+    .status-rejected { background: rgba(239,68,68,0.1); color: var(--error); }
+    .status-offer { background: rgba(34,197,94,0.15); color: #4ade80; }
+
+    /* JOB RECOMMENDATIONS */
+    .rec-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+    .rec-card { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem; cursor: pointer; transition: all 0.25s; }
+    .rec-card:hover { border-color: var(--primary); background: var(--bg-card-hover); transform: translateY(-2px); }
+    .rec-top { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
+    .rec-title { font-weight: 700; font-size: 0.9rem; }
+    .rec-company { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+    .rec-salary { font-size: 0.9rem; font-weight: 700; color: var(--primary); margin-bottom: 0.5rem; }
+    .rec-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .rec-tag { padding: 0.15rem 0.5rem; border-radius: 5px; background: rgba(0,212,170,0.07); border: 1px solid rgba(0,212,170,0.15); color: var(--primary); font-size: 0.7rem; font-weight: 600; }
+
+    /* PROFILE EDITOR */
+    .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .profile-field { margin-bottom: 1rem; }
+    .profile-label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.4rem; }
+    .profile-input { width: 100%; padding: 0.75rem 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.2s; font-family: 'Inter', sans-serif; }
+    .profile-input:focus { border-color: var(--primary); }
+    .profile-textarea { width: 100%; padding: 0.75rem 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 0.9rem; outline: none; resize: vertical; min-height: 100px; font-family: 'Inter', sans-serif; transition: border-color 0.2s; }
+    .profile-textarea:focus { border-color: var(--primary); }
+    .skill-tags-input { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; min-height: 48px; align-items: center; }
+    .skill-tag { display: flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.6rem; border-radius: 6px; background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.25); color: var(--primary); font-size: 0.78rem; font-weight: 600; }
+    .skill-tag button { background: none; border: none; color: inherit; cursor: pointer; font-size: 0.9rem; padding: 0; line-height: 1; opacity: 0.7; }
+    .skill-tag button:hover { opacity: 1; }
+    .skill-add { border: 1px dashed var(--border); border-radius: 6px; padding: 0.25rem 0.6rem; color: var(--text-muted); font-size: 0.78rem; cursor: pointer; background: none; font-family: 'Inter', sans-serif; }
+    .skill-add:hover { border-color: var(--primary); color: var(--primary); }
+
+    .btn-save-profile { background: var(--primary); color: #000; border: none; padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 700; cursor: pointer; transition: all 0.2s; font-family: 'Inter', sans-serif; }
+    .btn-save-profile:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,170,0.3); }
+
+    /* ALERTS */
+    .alert-banner { background: linear-gradient(90deg, rgba(0,212,170,0.08), rgba(0,212,170,0.02)); border: 1px solid rgba(0,212,170,0.2); border-radius: 14px; padding: 1rem 1.25rem; display: flex; align-items: center; gap: 0.75rem; margin-bottom: 2rem; }
+    .alert-banner .icon { font-size: 1.25rem; }
+    .alert-banner .text { flex: 1; font-size: 0.875rem; }
+    .alert-banner .text strong { color: var(--primary); }
+    .alert-banner .cta { background: var(--primary); color: #000; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.8rem; font-weight: 700; cursor: pointer; border: none; text-decoration: none; display: inline-block; transition: all 0.2s; }
+    .alert-banner .cta:hover { background: var(--primary-dark); }
+
+    /* EMPTY STATE */
+    .empty-state { text-align: center; padding: 3rem; color: var(--text-muted); }
+    .empty-state .emoji { font-size: 2.5rem; margin-bottom: 0.75rem; }
+    .empty-state h3 { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 0.4rem; }
+    .empty-state p { font-size: 0.875rem; }
+
+    /* FOOTER */
+    footer { border-top: 1px solid var(--border); padding: 1.5rem 2rem; text-align: center; color: var(--text-muted); font-size: 0.78rem; }
+
+    @media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } .rec-grid { grid-template-columns: 1fr; } .profile-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr 1fr; } nav { display: none; } }
+    @media (max-width: 480px) {
+      .tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; gap: 0; }
+      .tabs::-webkit-scrollbar { display: none; }
+      .tab { white-space: nowrap; padding: 0.75rem 0.875rem; font-size: 0.8rem; }
+      .profile-grid { grid-template-columns: 1fr; }
+      .rec-grid { grid-template-columns: 1fr; }
+      .job-card { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="header-inner">
+    <div>
+      <div class="logo">Open<span>Jobs</span></div>
+      <div class="logo-sub">AI-Powered Career Platform</div>
+    </div>
+    <nav>
+      <a href="/">🏠 Home</a>
+      <a href="/user" class="active">📊 Dashboard</a>
+      <a href="/">🔍 Find Jobs</a>
+      <a href="/">💼 Companies</a>
+      <a href="/">📚 Learning</a>
+    </nav>
+    <div class="header-right">
+      <button class="notif-btn">
+        🔔
+        <div class="notif-dot"></div>
+      </button>
+      <div class="avatar" id="userAvatar">T</div>
+    </div>
+  </div>
+</header>
+
+<div class="page-wrap">
+
+  <!-- PAGE HEADER -->
+  <div class="page-header">
+    <div class="alert-banner" id="alertBanner">
+      <div class="icon">🎯</div>
+      <div class="text">Complete your profile to <strong>increase your match rate to 95%+</strong></div>
+      <button class="cta" onclick="switchTab('profile')">Complete Profile →</button>
+    </div>
+    <div class="greeting">Welcome back, <span id="userName">Tonny</span> 👋</div>
+    <div class="greeting-sub" id="greetingSub">Here's what's happening with your job search today.</div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('overview')">📊 Overview</button>
+    <button class="tab" onclick="switchTab('applications')">📋 Applications</button>
+    <button class="tab" onclick="switchTab('saved')">⭐ Saved Jobs</button>
+    <button class="tab" onclick="switchTab('recommendations')">🎯 For You</button>
+    <button class="tab" onclick="switchTab('profile')">👤 Profile</button>
+  </div>
+
+  <!-- ── OVERVIEW ── -->
+  <div class="tab-content active" id="tab-overview">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-card-top">
+          <div class="stat-icon">📋</div>
+          <div class="stat-trend trend-up">↑ 2 this week</div>
+        </div>
+        <div class="stat-value" id="statApps">0</div>
+        <div class="stat-label">Total Applications</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-top">
+          <div class="stat-icon">⏳</div>
+          <div class="stat-trend trend-neutral">In progress</div>
+        </div>
+        <div class="stat-value" id="statPending">0</div>
+        <div class="stat-label">Pending Review</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-top">
+          <div class="stat-icon">🤝</div>
+          <div class="stat-trend trend-up">Active</div>
+        </div>
+        <div class="stat-value" id="statInterviews">0</div>
+        <div class="stat-label">Interviews</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-top">
+          <div class="stat-icon">⭐</div>
+          <div class="stat-trend trend-neutral">Saved</div>
+        </div>
+        <div class="stat-value" id="statSaved">0</div>
+        <div class="stat-label">Saved Jobs</div>
+      </div>
+    </div>
+
+    <!-- Profile Completion -->
+    <div class="progress-section">
+      <div class="progress-title">📝 Profile Completion</div>
+      <div class="progress-row">
+        <div class="progress-label">Profile</div>
+        <div class="progress-bar"><div class="progress-fill" id="profileBar" style="width:60%"></div></div>
+        <div class="progress-pct" id="profilePct">60%</div>
+      </div>
+      <div class="progress-row">
+        <div class="progress-label">Skills Added</div>
+        <div class="progress-bar"><div class="progress-fill" style="background:linear-gradient(90deg,#a855f7,#c084fc)" id="skillsBar"></div></div>
+        <div class="progress-pct" id="skillsPct">0%</div>
+      </div>
+      <div class="progress-row">
+        <div class="progress-label">Resume Uploaded</div>
+        <div class="progress-bar"><div class="progress-fill" style="background:linear-gradient(90deg,#3b82f6,#60a5fa)" id="resumeBar"></div></div>
+        <div class="progress-pct" id="resumePct">0%</div>
+      </div>
+    </div>
+
+    <!-- Recent Applications -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📋 Recent Applications</div>
+        <button class="tab" style="padding:0.4rem 0.875rem;font-size:0.8rem;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text-muted)" onclick="switchTab('applications')">View All →</button>
+      </div>
+      <div id="recentApps"><div class="empty-state"><div class="emoji">📋</div><h3>No applications yet</h3><p>Start applying to jobs to see them here</p></div></div>
+    </div>
+
+    <!-- Recommended Jobs -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🎯 Jobs For You</div>
+        <button class="tab" style="padding:0.4rem 0.875rem;font-size:0.8rem;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text-muted)" onclick="switchTab('recommendations')">See All →</button>
+      </div>
+      <div class="rec-grid" id="recJobs"><div class="empty-state"><div class="emoji">⏳</div><h3>Loading recommendations...</h3></div></div>
+    </div>
+  </div>
+
+  <!-- ── APPLICATIONS ── -->
+  <div class="tab-content" id="tab-applications">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;">
+      <div style="font-weight:700;font-size:1rem;">All Applications</div>
+      <div style="display:flex;gap:0.5rem;">
+        <select style="padding:0.5rem 0.875rem;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:0.8rem" id="appFilter" onchange="renderApplications()">
+          <option value="">All Status</option>
+          <option value="applied">Applied</option>
+          <option value="pending">Pending</option>
+          <option value="screening">Screening</option>
+          <option value="interview">Interview</option>
+          <option value="rejected">Rejected</option>
+          <option value="offer">Offer</option>
+        </select>
+      </div>
+    </div>
+    <div class="card" id="allAppsCard"><div id="allAppsList"></div></div>
+  </div>
+
+  <!-- ── SAVED JOBS ── -->
+  <div class="tab-content" id="tab-saved">
+    <div style="margin-bottom:1.5rem;font-weight:700;font-size:1rem;">⭐ Saved Jobs</div>
+    <div class="rec-grid" id="savedJobsList"><div class="empty-state"><div class="emoji">⭐</div><h3>No saved jobs yet</h3><p>Save jobs you like from the browse page</p></div></div>
+  </div>
+
+  <!-- ── RECOMMENDATIONS ── -->
+  <div class="tab-content" id="tab-recommendations">
+    <div style="margin-bottom:1.5rem;font-weight:700;font-size:1rem;">🎯 Jobs Matched To Your Profile</div>
+    <div class="rec-grid" id="allRecJobs"><div class="empty-state"><div class="emoji">⏳</div><h3>Loading...</h3></div></div>
+  </div>
+
+  <!-- ── PROFILE ── -->
+  <div class="tab-content" id="tab-profile">
+    <div class="card">
+      <div class="card-header"><div class="card-title">👤 Personal Information</div></div>
+      <div class="profile-grid">
+        <div class="profile-field">
+          <div class="profile-label">Full Name</div>
+          <input type="text" class="profile-input" id="profileName" placeholder="Your full name">
+        </div>
+        <div class="profile-field">
+          <div class="profile-label">Email</div>
+          <input type="email" class="profile-input" id="profileEmail" placeholder="you@example.com" readonly style="opacity:0.5">
+        </div>
+        <div class="profile-field">
+          <div class="profile-label">Location</div>
+          <input type="text" class="profile-input" id="profileLocation" placeholder="e.g. Nairobi, Kenya">
+        </div>
+        <div class="profile-field">
+          <div class="profile-label">Phone</div>
+          <input type="tel" class="profile-input" id="profilePhone" placeholder="+254 700 000 000">
+        </div>
+        <div class="profile-field" style="grid-column:1/-1">
+          <div class="profile-label">Professional Headline</div>
+          <input type="text" class="profile-input" id="profileHeadline" placeholder="e.g. Full-stack Engineer | AI & Automation">
+        </div>
+        <div class="profile-field" style="grid-column:1/-1">
+          <div class="profile-label">Bio</div>
+          <textarea class="profile-textarea" id="profileBio" placeholder="Tell employers about yourself — your experience, what you're looking for, and what makes you unique..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">🛠 Skills</div></div>
+      <div class="skill-tags-input" id="skillsContainer">
+        <span class="skill-tag">Python <button onclick="removeSkill(this)">×</button></span>
+        <span class="skill-tag">JavaScript <button onclick="removeSkill(this)">×</button></span>
+        <span class="skill-tag">AI/LangChain <button onclick="removeSkill(this)">×</button></span>
+        <button class="skill-add" onclick="addSkillPrompt()">+ Add skill</button>
+      </div>
+      <input type="hidden" id="skillsJson" value='["Python","JavaScript","AI/LangChain"]'>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">💼 Work Preferences</div></div>
+      <div class="profile-grid">
+        <div class="profile-field">
+          <div class="profile-label">Desired Role</div>
+          <input type="text" class="profile-input" id="prefRole" placeholder="e.g. Senior Engineer">
+        </div>
+        <div class="profile-field">
+          <div class="profile-label">Expected Salary (AUD)</div>
+          <input type="text" class="profile-input" id="prefSalary" placeholder="e.g. 120,000">
+        </div>
+        <div class="profile-field">
+          <div class="profile-label">Work Type</div>
+          <select class="profile-input" id="prefWorkType" style="cursor:pointer">
+            <option value="">Any</option>
+            <option value="full_time">Full-time</option>
+            <option value="part_time">Part-time</option>
+            <option value="contract">Contract</option>
+            <option value="internship">Internship</option>
+          </select>
+        </div>
+        <div class="profile-field">
+          <div class="profile-label">Remote Preference</div>
+          <select class="profile-input" id="prefRemote" style="cursor:pointer">
+            <option value="">Any</option>
+            <option value="remote">Remote Only</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="onsite">On-site</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-save-profile" onclick="saveProfile()">💾 Save Profile</button>
+  </div>
+</div>
+
+<footer>OpenJobs Dashboard — ⚡ Built by Alex</footer>
+
+<script>
+  // ── INIT ──
+  let userProfile = { name: 'Tonny Tony', email: 'tonny@email.com', location: 'Nairobi, KE', skills: ['Python', 'JavaScript', 'AI/LangChain'] };
+  let dashboardData = null;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadDashboard();
+    loadUserProfile();
+  });
+
+  // ── LOAD DASHBOARD DATA ──
+  async function loadDashboard() {
+    try {
+      const res = await fetch('/api/dashboard/seeker?user_id=getCurrentUserId()');
+      if (!res.ok) throw new Error('API unavailable');
+      dashboardData = await res.json();
+      renderDashboard(dashboardData);
+    } catch {
+      // Demo fallback with mock data
+      dashboardData = {
+        stats: { total_jobs: 69, total_applications: 5, pending: 2, interviews: 1, saved: 3 },
+        recent_applications: [
+          { id: 1, job_id: 71, title: 'Systems Administrator', company: 'OpenJobs', location: 'Remote', salary_min: 80000, salary_max: 120000, status: 'interview', applied_at: '2026-06-28T10:00:00', notes: 'Technical round scheduled Jul 8' },
+          { id: 2, job_id: 70, title: 'Software Engineering Intern', company: 'OpenJobs', location: 'Remote', salary_min: 0, salary_max: 0, status: 'pending', applied_at: '2026-06-25T09:00:00', notes: '' },
+          { id: 3, job_id: 63, title: 'AutoCAD Drafter', company: 'Engineering Co', location: 'Sydney NSW', salary_min: 90000, salary_max: 90000, status: 'rejected', applied_at: '2026-06-20T14:00:00', notes: 'Position filled' },
+          { id: 4, job_id: 64, title: 'Fusion 360 Designer', company: 'TechFlow Australia', location: 'Melbourne VIC', salary_min: 95000, salary_max: 95000, status: 'screening', applied_at: '2026-07-01T11:00:00', notes: 'Recruiter call went well' },
+          { id: 5, job_id: 65, title: 'SolidWorks Engineer', company: 'MechTech', location: 'Brisbane QLD', salary_min: 110000, salary_max: 110000, status: 'applied', applied_at: '2026-06-30T08:00:00', notes: '' }
+        ],
+        recommended: [
+          { id: 72, title: 'DevOps Engineer', company: 'CloudScale', location: 'Remote', salary_min: 130000, salary_max: 160000, category: 'DevOps' },
+          { id: 73, title: 'AI Engineer', company: 'Neural Labs', location: 'Nairobi', salary_min: 180000, salary_max: 220000, category: 'AI/ML' },
+          { id: 74, title: 'Frontend Developer', company: 'Designify', location: 'Sydney NSW', salary_min: 95000, salary_max: 120000, category: 'Development' },
+          { id: 75, title: 'Data Scientist', company: 'DataFlow', location: 'Melbourne VIC', salary_min: 110000, salary_max: 140000, category: 'Data Science' }
+        ]
+      };
+      renderDashboard(dashboardData);
+    }
+  }
+
+  function loadUserProfile() {
+    fetch('/api/user/profile?user_id=getCurrentUserId()')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && !data.error) {
+          userProfile = data;
+          document.getElementById('userName').textContent = (data.name || 'Tonny').split(' ')[0];
+          document.getElementById('userAvatar').textContent = (data.name || 'T')[0].toUpperCase();
+          document.getElementById('profileName').value = data.name || '';
+          document.getElementById('profileEmail').value = data.email || '';
+        }
+      });
+  }
+
+  // ── RENDER ──
+  function renderDashboard(d) {
+    const s = d.stats || {};
+    document.getElementById('statApps').textContent = s.total_applications || 0;
+    document.getElementById('statPending').textContent = s.pending || 0;
+    document.getElementById('statInterviews').textContent = s.interviews || 0;
+    document.getElementById('statSaved').textContent = s.saved || 0;
+    renderRecentApps(d.recent_applications || []);
+    renderRecJobs(d.recommended || []);
+    renderAllRecJobs(d.recommended || []);
+    updateProgress(s);
+  }
+
+  function updateProgress(s) {
+    const apps = s.total_applications || 0;
+    const profile = Math.min(100, 40 + apps * 10);
+    const skills = userProfile.skills ? Math.min(100, userProfile.skills.length * 20) : 0;
+    document.getElementById('profileBar').style.width = profile + '%';
+    document.getElementById('profilePct').textContent = profile + '%';
+    document.getElementById('skillsBar').style.width = skills + '%';
+    document.getElementById('skillsPct').textContent = skills + '%';
+    document.getElementById('resumeBar').style.width = '0%';
+    document.getElementById('resumePct').textContent = '0%';
+
+    // Hide banner if profile is complete
+    if (profile >= 90) document.getElementById('alertBanner').style.display = 'none';
+  }
+
+  function renderRecentApps(apps) {
+    const el = document.getElementById('recentApps');
+    if (!apps.length) {
+      el.innerHTML = '<div class="empty-state"><div class="emoji">📋</div><h3>No applications yet</h3><p>Start applying to jobs to see them here</p></div>';
+      return;
+    }
+    el.innerHTML = apps.slice(0, 3).map(a => appItemHtml(a)).join('');
+  }
+
+  function renderApplications() {
+    const filter = document.getElementById('appFilter')?.value || '';
+    const apps = (dashboardData?.recent_applications || []).filter(a => !filter || a.status === filter);
+    const el = document.getElementById('allAppsList');
+    if (!apps.length) {
+      el.innerHTML = '<div class="empty-state"><div class="emoji">📋</div><h3>No applications</h3><p>No applications match this filter</p></div>';
+      return;
+    }
+    el.innerHTML = apps.map(a => appItemHtml(a)).join('');
+  }
+
+  function appItemHtml(a) {
+    const letter = (a.company || 'J')[0].toUpperCase();
+    const salary = formatSalaryRange(a.salary_min, a.salary_max);
+    const time = timeSince(a.applied_at);
+    const statusClass = 'status-' + (a.status || 'applied');
+    const statusLabel = (a.status || 'applied').charAt(0).toUpperCase() + (a.status || 'applied').slice(1);
+    return `
+      <div class="app-item">
+        <div class="app-logo">${letter}</div>
+        <div class="app-info">
+          <div class="app-title">${escHtml(a.title)}</div>
+          <div class="app-company">${escHtml(a.company)} · ${escHtml(a.location)}</div>
+          <div class="app-meta">
+            ${salary ? `<div class="app-meta-item">💰 ${salary}</div>` : ''}
+            <div class="app-meta-item">🕐 Applied ${time}</div>
+          </div>
+        </div>
+        <div>
+          <div class="app-status ${statusClass}">${statusLabel}</div>
+          ${a.notes ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;text-align:right;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.notes)}</div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  function renderRecJobs(jobs) {
+    const el = document.getElementById('recJobs');
+    if (!jobs.length) { el.innerHTML = '<div class="empty-state"><div class="emoji">🎯</div><h3>No recommendations yet</h3></div>'; return; }
+    el.innerHTML = jobs.slice(0, 4).map(j => recCardHtml(j)).join('');
+  }
+
+  function renderAllRecJobs(jobs) {
+    const el = document.getElementById('allRecJobs');
+    if (!jobs.length) { el.innerHTML = '<div class="empty-state"><div class="emoji">🎯</div><h3>Loading...</h3></div>'; return; }
+    el.innerHTML = jobs.slice(0, 8).map(j => recCardHtml(j)).join('');
+  }
+
+  function recCardHtml(j) {
+    const salary = formatSalaryRange(j.salary_min, j.salary_max);
+    return `
+      <div class="rec-card" onclick="window.location.href='/?job=${j.id}'">
+        <div class="rec-top">
+          <div class="rec-title">${escHtml(j.title)}</div>
+        </div>
+        <div class="rec-company">${escHtml(j.company)} · ${escHtml(j.location)}</div>
+        ${salary ? `<div class="rec-salary">${salary}</div>` : ''}
+        <div class="rec-tags">
+          ${j.category ? `<span class="rec-tag">${escHtml(j.category)}</span>` : ''}
+          <span class="rec-tag">Full-time</span>
+        </div>
+      </div>`;
+  }
+
+  // ── TABS ──
+  function getCurrentUserId() {
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (!token) return 1;
+      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return payload.user_id || 1;
+    } catch { return 1; }
+  }
+
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    // Activate clicked tab button
+    const btns = document.querySelectorAll('.tab');
+    const names = ['overview','applications','saved','recommendations','profile'];
+    const idx = names.indexOf(name);
+    if (idx >= 0 && btns[idx]) btns[idx].classList.add('active');
+    const content = document.getElementById('tab-' + name);
+    if (content) content.classList.add('active');
+    window.scrollTo({top: 0, behavior: 'smooth'});
+
+    if (name === 'saved') loadSavedJobs();
+    if (name === 'applications') renderApplications();
+  }
+
+  async function loadSavedJobs() {
+    try {
+      const res = await fetch('/api/saved_jobs?user_id=' + getCurrentUserId());
+      const jobs = await res.json();
+      const el = document.getElementById('savedJobsList');
+      if (!jobs.length) {
+        el.innerHTML = '<div class="empty-state"><div class="emoji">⭐</div><h3>No saved jobs yet</h3><p>Save jobs you like from the browse page</p></div>';
+        return;
+      }
+      el.innerHTML = jobs.map(j => recCardHtml(j)).join('');
+    } catch {
+      document.getElementById('savedJobsList').innerHTML = '<div class="empty-state"><div class="emoji">⚠️</div><h3>Could not load saved jobs</h3></div>';
+    }
+  }
+
+  // ── PROFILE ──
+  let skills = ['Python', 'JavaScript', 'AI/LangChain'];
+  function removeSkill(btn) {
+    const tag = btn.parentElement;
+    const skill = tag.textContent.replace('×','').trim();
+    skills = skills.filter(s => s !== skill);
+    tag.remove();
+  }
+  function addSkillPrompt() {
+    const skill = prompt('Enter a skill:');
+    if (skill && skill.trim()) {
+      skills.push(skill.trim());
+      const container = document.getElementById('skillsContainer');
+      const btn = container.querySelector('.skill-add');
+      const tag = document.createElement('span');
+      tag.className = 'skill-tag';
+      tag.innerHTML = skill.trim() + ' <button onclick="removeSkill(this)">×</button>';
+      container.insertBefore(tag, btn);
+    }
+  }
+  function saveProfile() {
+    const name = document.getElementById('profileName').value;
+    const location = document.getElementById('profileLocation').value;
+    const headline = document.getElementById('profileHeadline')?.value || '';
+    const bio = document.getElementById('profileBio')?.value || '';
+    userProfile = { ...userProfile, name, location, skills };
+    document.getElementById('userName').textContent = (name || 'Tonny').split(' ')[0];
+    document.getElementById('userAvatar').textContent = (name || 'T')[0].toUpperCase();
+    document.getElementById('greetingSub').textContent = 'Profile updated! Keep building your profile for better matches.';
+    // Update progress
+    document.getElementById('profileBar').style.width = '85%';
+    document.getElementById('profilePct').textContent = '85%';
+    document.getElementById('skillsBar').style.width = Math.min(100, skills.length * 25) + '%';
+    document.getElementById('skillsPct').textContent = Math.min(100, skills.length * 25) + '%';
+    alert('✅ Profile saved successfully!');
+  }
+
+  // ── UTILITIES ──
+  function formatSalaryRange(min, max) {
+    if (!min && !max) return '';
+    const fmt = n => n >= 1000 ? 'AUD ' + Math.round(n/1000) + 'k' : '';
+    if (min && max && min !== max) return fmt(min) + ' – ' + fmt(max);
+    if (min) return 'From ' + fmt(min);
+    if (max) return 'Up to ' + fmt(max);
+    return '';
+  }
+
+  function timeSince(dateStr) {
+    if (!dateStr) return 'recently';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const days = Math.floor(diff / 86400000);
+    if (days === 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 30) return days + ' days ago';
+    const months = Math.floor(days / 30);
+    return months + ' month' + (months>1?'s':'') + ' ago';
+  }
+
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+# Environment
+.env
+*.env
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*$py.class
+.Python
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Logs
+*.log
+logs/
+tmp/
+
+# Uploads
+uploads/
+*.pdf
+*.doc
+*.docx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Secrets / keys
+*.pem
+*.key
+*.crt
+credentials.json
+secrets.json
+
+# Memory / temp
+memory/
+*.bak
+*.tmp
+
+# Byte-compiled
+*.pyc

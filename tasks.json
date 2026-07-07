@@ -1,0 +1,160 @@
+{
+  "project": "OpenJobs Platform",
+  "version": "2.0",
+  "phases": {
+    "phase1_infrastructure": {
+      "name": "Infrastructure (This Week)",
+      "tasks": [
+        {
+          "id": "1.1",
+          "title": "Migrate SQLite to PostgreSQL",
+          "status": "complete",
+          "priority": "high"
+        },
+        {
+          "id": "1.2",
+          "title": "Add JWT authentication",
+          "status": "complete",
+          "priority": "high"
+        },
+        {
+          "id": "1.3",
+          "title": "Add OAuth (Google, LinkedIn)",
+          "status": "complete",
+          "priority": "medium"
+        },
+        {
+          "id": "1.4",
+          "title": "WebSocket for real-time chat",
+          "status": "complete",
+          "priority": "high"
+        },
+        {
+          "id": "1.5",
+          "title": "Email automation (SMTP)",
+          "status": "complete",
+          "priority": "medium"
+        },
+        {
+          "id": "1.6",
+          "title": "Connection pooling",
+          "status": "complete",
+          "priority": "medium"
+        }
+      ]
+    },
+    "phase2_core": {
+      "name": "Core Features (Month 1)",
+      "tasks": [
+        {
+          "id": "2.1",
+          "title": "Resume parser (OCR + extraction)",
+          "status": "complete",
+          "priority": "high"
+        },
+        {
+          "id": "2.2",
+          "title": "Skills taxonomy database",
+          "status": "complete",
+          "priority": "high"
+        },
+        {
+          "id": "2.3",
+          "title": "Salary prediction model",
+          "status": "complete",
+          "priority": "medium"
+        },
+        {
+          "id": "2.4",
+          "title": "Kanban ATS UI",
+          "status": "complete",
+          "priority": "high"
+        },
+        {
+          "id": "2.5",
+          "title": "Interview scheduling",
+          "status": "complete",
+          "priority": "high"
+        },
+        {
+          "id": "2.6",
+          "title": "Auto-reject/auto-schedule",
+          "status": "complete",
+          "priority": "medium"
+        }
+      ]
+    },
+    "phase3_platform": {
+      "name": "Platform (Month 2-3)",
+      "tasks": [
+        {
+          "id": "3.1",
+          "title": "White-label system",
+          "status": "complete",
+          "priority": "high"
+        },
+        {
+          "id": "3.2",
+          "title": "Multi-tenant support",
+          "status": "complete",
+          "priority": "high"
+        },
+        {
+          "id": "3.3",
+          "title": "Slack integration",
+          "status": "complete",
+          "priority": "medium"
+        },
+        {
+          "id": "3.4",
+          "title": "HR software integration",
+          "status": "complete",
+          "priority": "medium"
+        },
+        {
+          "id": "3.5",
+          "title": "Calendar integration",
+          "status": "complete",
+          "priority": "medium"
+        }
+      ]
+    },
+    "phase4_scale": {
+      "name": "Scale (Month 4-6)",
+      "tasks": [
+        {
+          "id": "4.1",
+          "title": "CDN + edge computing",
+          "status": "complete",
+          "priority": "medium"
+        },
+        {
+          "id": "4.2",
+          "title": "ML pipeline for matching",
+          "status": "complete",
+          "priority": "high"
+        },
+        {
+          "id": "4.3",
+          "title": "Conversational AI agent",
+          "status": "complete",
+          "priority": "high"
+        },
+        {
+          "id": "4.4",
+          "title": "Auto-apply bot",
+          "status": "complete",
+          "priority": "medium"
+        },
+        {
+          "id": "4.5",
+          "title": "Multi-region deployment",
+          "status": "complete",
+          "priority": "medium"
+        }
+      ]
+    }
+  },
+  "created": "2026-04-16",
+  "last_updated": "2026-04-16"
+}
