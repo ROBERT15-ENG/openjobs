@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Tools - OpenJobs</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary: #00d4aa; --primary-dark: #00a88a; --bg: #0a0a0f; --card: #12121a; --border: #1e1e2e; --text: #e4e4e7; --text-muted: #71717a; --success: #22c55e; --warning: #f59e0b; --error: #ef4444; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        
+        /* Header */
+        header { background: var(--card); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+        .logo { font-size: 1.5rem; font-weight: 700; color: var(--primary); }
+        .nav { display: flex; gap: 1.5rem; }
+        .nav a { color: var(--text-muted); text-decoration: none; font-weight: 500; transition: color 0.2s; }
+        .nav a:hover, .nav a.active { color: var(--primary); }
+        
+        /* Container */
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        
+        /* Hero */
+        .hero { text-align: center; padding: 3rem 0; }
+        .hero h1 { font-size: 2.5rem; margin-bottom: 1rem; background: linear-gradient(135deg, var(--primary), #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .hero p { color: var(--text-muted); font-size: 1.1rem; max-width: 600px; margin: 0 auto; }
+        
+        /* Status Bar */
+        .status-bar { display: flex; gap: 1rem; justify-content: center; margin: 2rem 0; flex-wrap: wrap; }
+        .status-item { background: var(--card); border: 1px solid var(--border); padding: 0.75rem 1.5rem; border-radius: 8px; display: flex; align-items: center; gap: 0.5rem; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .status-dot.online { background: var(--success); }
+        .status-dot.offline { background: var(--error); }
+        
+        /* Tools Grid */
+        .tools-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 2rem; }
+        .tool-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; transition: all 0.3s; }
+        .tool-card:hover { border-color: var(--primary); transform: translateY(-2px); }
+        .tool-icon { width: 48px; height: 48px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; margin-bottom: 1rem; }
+        .tool-card h3 { margin-bottom: 0.5rem; }
+        .tool-card p { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem; }
+        .tool-btn { background: var(--primary); color: var(--bg); border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; width: 100%; transition: background 0.2s; }
+        .tool-btn:hover { background: var(--primary-dark); }
+        
+        /* Chat Section */
+        .chat-section { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-top: 2rem; }
+        .chat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .chat-messages { height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: var(--bg); }
+        .message { padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 0.5rem; }
+        .message.user { background: var(--primary); color: var(--bg); margin-left: 20%; }
+        .message.ai { background: var(--card); border: 1px solid var(--border); margin-right: 20%; }
+        .chat-input { display: flex; gap: 0.5rem; }
+        .chat-input input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; color: var(--text); }
+        .chat-input button { background: var(--primary); border: none; padding: 0.75rem 1.5rem; border-radius: 8px; color: var(--bg); font-weight: 600; cursor: pointer; }
+        
+        /* Form */
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; color: var(--text-muted); }
+        .form-group textarea, .form-group input, .form-group select { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; color: var(--text); }
+        .form-group textarea { min-height: 120px; }
+        
+        /* Modal */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 200; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .modal-close { background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; }
+        
+        /* Tabs */
+        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
+        .tab { padding: 0.75rem 1.5rem; background: none; border: none; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+        .tab.active { color: var(--primary); border-color: var(--primary); }
+        
+        /* Results */
+        .result-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+        .score { font-size: 2rem; font-weight: 700; color: var(--primary); }
+        
+        /* Loading */
+        .loading { text-align: center; padding: 2rem; color: var(--text-muted); }
+        .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* Stats */
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin: 2rem 0; }
+        .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; text-align: center; }
+        .stat-value { font-size: 2rem; font-weight: 700; color: var(--primary); }
+        .stat-label { color: var(--text-muted); font-size: 0.9rem; }
+        
+        @media (max-width: 768px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .nav { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">⚡ OpenJobs AI</div>
+        <nav class="nav">
+            <a href="/">Jobs</a>
+            <a href="/companies">Companies</a>
+            <a href="/salary">Salary</a>
+            <a href="/user">Dashboard</a>
+            <a href="/employer">Employer</a>
+            <a href="#" class="active">AI Tools</a>
+        </nav>
+    </header>
+    
+    <div class="container">
+        <div class="hero">
+            <h1>🤖 AI-Powered Career Tools</h1>
+            <p>Smart resume matching, interview prep, cover letters, and career guidance powered by AI</p>
+        </div>
+        
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-dot" id="ollamaStatus"></span>
+                <span>Ollama AI</span>
+            </div>
+            <div class="status-item">
+                <span class="status-dot online"></span>
+                <span>ML Models: Active</span>
+            </div>
+            <div class="status-item">
+                <span class="status-dot online"></span>
+                <span>CDN: Enabled</span>
+            </div>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="jobsMatched">127</div>
+                <div class="stat-label">Jobs Matched</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="resumesScored">43</div>
+                <div class="stat-label">Resumes Scored</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="coverLetters">28</div>
+                <div class="stat-label">Cover Letters</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="interviewPrep">56</div>
+                <div class="stat-label">Interview Sessions</div>
+            </div>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('chat')">AI Chat</button>
+            <button class="tab" onclick="showTab('resume')">Resume Score</button>
+            <button class="tab" onclick="showTab('cover')">Cover Letter</button>
+            <button class="tab" onclick="showTab('interview')">Interview Prep</button>
+            <button class="tab" onclick="showTab('salary')">Salary Predict</button>
+        </div>
+        
+        <!-- AI Chat -->
+        <div id="chatTab" class="chat-section">
+            <div class="chat-header">
+                <h2>💬 Career Assistant</h2>
+                <button onclick="clearChat()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;">Clear Chat</button>
+            </div>
+            <div class="chat-messages" id="chatMessages">
+                <div class="message ai">Hi! I'm your AI career assistant. Ask me about jobs, salaries, resume tips, or interview prep!</div>
+            </div>
+            <div class="chat-input">
+                <input type="text" id="chatInput" placeholder="Ask anything about your career..." onkeypress="if(event.key==='Enter')sendChat()">
+                <button onclick="sendChat()">Send</button>
+            </div>
+        </div>
+        
+        <!-- Resume Score -->
+        <div id="resumeTab" class="chat-section" style="display:none;">
+            <h2>📄 Resume Analyzer</h2>
+            <div class="form-group">
+                <label>Job Description</label>
+                <textarea id="jobDesc" placeholder="Paste the job description here..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Your Resume</label>
+                <textarea id="resumeText" placeholder="Paste your resume text here..."></textarea>
+            </div>
+            <button class="tool-btn" onclick="scoreResume()">Analyze Resume</button>
+            <div id="resumeResult" class="result-box" style="display:none;">
+                <div class="score" id="scoreValue">0%</div>
+                <p id="scoreAnalysis"></p>
+            </div>
+        </div>
+        
+        <!-- Cover Letter -->
+        <div id="coverTab" class="chat-section" style="display:none;">
+            <h2>✍️ Cover Letter Generator</h2>
+            <div class="form-group">
+                <label>Job Title</label>
+                <input type="text" id="coverJobTitle" placeholder="e.g. Senior Software Engineer">
+            </div>
+            <div class="form-group">
+                <label>Company</label>
+                <input type="text" id="coverCompany" placeholder="e.g. Google">
+            </div>
+            <div class="form-group">
+                <label>Your Resume</label>
+                <textarea id="coverResume" placeholder="Paste your resume..."></textarea>
+            </div>
+            <button class="tool-btn" onclick="generateCoverLetter()">Generate Cover Letter</button>
+            <div id="coverResult" class="result-box" style="display:none;">
+                <pre id="coverLetterText" style="white-space:pre-wrap;font-family:inherit;"></pre>
+            </div>
+        </div>
+        
+        <!-- Interview Prep -->
+        <div id="interviewTab" class="chat-section" style="display:none;">
+            <h2>🎯 Interview Preparation</h2>
+            <div class="form-group">
+                <label>Job Title</label>
+                <input type="text" id="interviewJob" placeholder="e.g. Product Manager">
+            </div>
+            <div class="form-group">
+                <label>Your Resume (optional)</label>
+                <textarea id="interviewResume" placeholder="Paste your resume for personalized questions..."></textarea>
+            </div>
+            <button class="tool-btn" onclick="generateInterviewPrep()">Generate Questions</button>
+            <div id="interviewResult" class="result-box" style="display:none;">
+                <pre id="interviewQuestions" style="white-space:pre-wrap;font-family:inherit;"></pre>
+            </div>
+        </div>
+        
+        <!-- Salary Predict -->
+        <div id="salaryTab" class="chat-section" style="display:none;">
+            <h2>💰 Salary Predictor</h2>
+            <div class="form-group">
+                <label>Job Title</label>
+                <input type="text" id="salaryTitle" placeholder="e.g. Data Scientist">
+            </div>
+            <div class="form-group">
+                <label>Location</label>
+                <input type="text" id="salaryLocation" placeholder="e.g. Sydney, Australia">
+            </div>
+            <div class="form-group">
+                <label>Experience Level</label>
+                <select id="salaryLevel">
+                    <option value="junior">Junior (0-2 years)</option>
+                    <option value="mid">Mid-Level (3-5 years)</option>
+                    <option value="senior">Senior (5-8 years)</option>
+                    <option value="lead">Lead/Principal (8+ years)</option>
+                </select>
+            </div>
+            <button class="tool-btn" onclick="predictSalary()">Predict Salary</button>
+            <div id="salaryResult" class="result-box" style="display:none;">
+                <div class="score" id="salaryValue">$0</div>
+                <p id="salaryRange">Range: $0 - $0</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API = 'http://localhost:5700';
+        let chatHistory = [];
+        
+        // Check Ollama status
+        fetch(API + '/api/ai/ollama/status').then(r=>r.json()).then(d=>{
+            document.getElementById('ollamaStatus').className = 'status-dot ' + (d.available ? 'online' : 'offline');
+        });
+        
+        function showTab(tab) {
+            document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('chatTab').style.display = tab==='chat' ? 'block' : 'none';
+            document.getElementById('resumeTab').style.display = tab==='resume' ? 'block' : 'none';
+            document.getElementById('coverTab').style.display = tab==='cover' ? 'block' : 'none';
+            document.getElementById('interviewTab').style.display = tab==='interview' ? 'block' : 'none';
+            document.getElementById('salaryTab').style.display = tab==='salary' ? 'block' : 'none';
+        }
+        
+        function addMessage(msg, isUser) {
+            const div = document.createElement('div');
+            div.className = 'message ' + (isUser ? 'user' : 'ai');
+            div.textContent = msg;
+            document.getElementById('chatMessages').appendChild(div);
+            document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
+        }
+        
+        async function sendChat() {
+            const input = document.getElementById('chatInput');
+            const msg = input.value.trim();
+            if (!msg) return;
+            
+            addMessage(msg, true);
+            input.value = '';
+            
+            try {
+                const res = await fetch(API + '/api/ai/ollama/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: msg})
+                });
+                const data = await res.json();
+                addMessage(data.error || data.response || 'AI not available. Install Ollama to enable.', false);
+            } catch(e) {
+                addMessage('AI service unavailable. Install Ollama: brew install ollama', false);
+            }
+        }
+        
+        function clearChat() {
+            document.getElementById('chatMessages').innerHTML = '<div class="message ai">Chat cleared! Ask me anything about your career.</div>';
+        }
+        
+        async function scoreResume() {
+            const jobDesc = document.getElementById('jobDesc').value;
+            const resume = document.getElementById('resumeText').value;
+            
+            if (!jobDesc || !resume) { alert('Please fill in both fields'); return; }
+            
+            document.getElementById('resumeResult').style.display = 'block';
+            document.getElementById('scoreValue').textContent = 'Analyzing...';
+            
+            try {
+                const res = await fetch(API + '/api/ai/ollama/score/resume', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({job_description: jobDesc, resume_text: resume})
+                });
+                const data = await res.json();
+                document.getElementById('scoreValue').textContent = (data.score || 0) + '%';
+                document.getElementById('scoreAnalysis').textContent = data.analysis || data.error || '';
+            } catch(e) {
+                document.getElementById('scoreValue').textContent = 'N/A';
+                document.getElementById('scoreAnalysis').textContent = 'Ollama not running. Install it to enable AI features.';
+            }
+        }
+        
+        async function generateCoverLetter() {
+            const title = document.getElementById('coverJobTitle').value;
+            const company = document.getElementById('coverCompany').value;
+            const resume = document.getElementById('coverResume').value;
+            
+            if (!title || !company) { alert('Please fill in job title and company'); return; }
+            
+            document.getElementById('coverResult').style.display = 'block';
+            document.getElementById('coverLetterText').textContent = 'Generating...';
+            
+            try {
+                const res = await fetch(API + '/api/ai/ollama/generate/cover-letter', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({job_title: title, company: company, resume_text: resume})
+                });
+                const data = await res.json();
+                document.getElementById('coverLetterText').textContent = data.cover_letter || data.error || '';
+            } catch(e) {
+                document.getElementById('coverLetterText').textContent = 'Ollama not available. Install it to generate cover letters.';
+            }
+        }
+        
+        async function generateInterviewPrep() {
+            const job = document.getElementById('interviewJob').value;
+            if (!job) { alert('Please enter a job title'); return; }
+            
+            document.getElementById('interviewResult').style.display = 'block';
+            document.getElementById('interviewQuestions').textContent = 'Generating questions...';
+            
+            try {
+                const res = await fetch(API + '/api/ai/ollama/interview-prep', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({job_title: job})
+                });
+                const data = await res.json();
+                document.getElementById('interviewQuestions').textContent = data.questions || data.error || '';
+            } catch(e) {
+                document.getElementById('interviewQuestions').textContent = 'Ollama not available.';
+            }
+        }
+        
+        async function predictSalary() {
+            const title = document.getElementById('salaryTitle').value;
+            const location = document.getElementById('salaryLocation').value;
+            const level = document.getElementById('salaryLevel').value;
+            
+            if (!title) { alert('Please enter a job title'); return; }
+            
+            document.getElementById('salaryResult').style.display = 'block';
+            document.getElementById('salaryValue').textContent = 'Predicting...';
+            
+            try {
+                const res = await fetch(API + '/api/salary/predict', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({title: level + ' ' + title, location: location})
+                });
+                const data = await res.json();
+                const sal = data.predicted || 80000;
+                document.getElementById('salaryValue').textContent = '$' + sal.toLocaleString();
+                document.getElementById('salaryRange').textContent = 'Range: $' + Math.round(sal*0.85).toLocaleString() + ' - $' + Math.round(sal*1.15).toLocaleString();
+            } catch(e) {
+                document.getElementById('salaryValue').textContent = '$80,000';
+            }
+        }
+    </script>
+</body>
+</html>

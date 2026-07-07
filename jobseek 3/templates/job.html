@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://openjobs.example.com/job.html">
+  <meta property="og:title" content="Apply for Job — OpenJobs">
+  <meta property="og:description" content="Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://openjobs.example.com/job.html">
+  <meta property="og:site_name" content="OpenJobs">
+  <title>Apply — OpenJobs</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #00d4aa; --primary-dark: #00a88a; --primary-glow: rgba(0,212,170,0.12);
+      --bg: #09090f; --bg-card: #111119; --bg-card-hover: #18181f;
+      --border: #1e1e2e; --border-light: #2a2a3e;
+      --text: #ededf0; --text-muted: #6b6b80; --text-dim: #3a3a50;
+      --success: #22c55e; --warning: #f59e0b; --error: #ef4444; --info: #3b82f6;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    a { color: inherit; text-decoration: none; }
+
+    /* HEADER */
+    header { background: rgba(9,9,15,0.9); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border); padding: 0 2rem; position: sticky; top: 0; z-index: 50; }
+    .header-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 60px; }
+    .logo { font-size: 1.25rem; font-weight: 800; }
+    .logo span { color: var(--primary); }
+    .header-actions { display: flex; gap: 0.75rem; align-items: center; }
+    .btn { border: none; padding: 0.5rem 1.1rem; border-radius: 10px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'Inter', sans-serif; }
+    .btn-primary { background: var(--primary); color: #000; }
+    .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,170,0.3); }
+    .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--border-light); color: var(--text); }
+
+    /* PAGE */
+    .page { max-width: 1000px; margin: 0 auto; padding: 2rem; }
+    .back-link { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem; }
+    .back-link:hover { color: var(--primary); }
+
+    /* JOB HERO */
+    .job-hero { display: flex; gap: 1.25rem; align-items: flex-start; margin-bottom: 2rem; }
+    .job-logo { width: 64px; height: 64px; border-radius: 14px; background: linear-gradient(135deg, rgba(0,212,170,0.15), rgba(0,212,170,0.05)); border: 1px solid rgba(0,212,170,0.2); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.4rem; color: var(--primary); flex-shrink: 0; }
+    .job-meta { flex: 1; }
+    .job-title { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.3px; margin-bottom: 0.3rem; }
+    .job-company { font-size: 1rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+    .job-badges { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .badge { padding: 0.25rem 0.75rem; border-radius: 8px; font-size: 0.78rem; font-weight: 600; }
+    .badge-remote { background: rgba(34,197,94,0.12); color: #4ade80; }
+    .badge-onsite { background: rgba(245,158,11,0.12); color: #fbbf24; }
+    .badge-hybrid { background: rgba(59,130,246,0.12); color: #60a5fa; }
+    .badge-fulltime { background: rgba(0,212,170,0.12); color: var(--primary); }
+    .badge-parttime { background: rgba(168,85,247,0.12); color: #c084fc; }
+    .badge-contract { background: rgba(251,146,60,0.12); color: #fb923c; }
+    .badge-internship { background: rgba(236,72,153,0.12); color: #f472b6; }
+
+    /* ACTION BUTTONS */
+    .hero-actions { display: flex; gap: 0.75rem; flex-shrink: 0; }
+    .btn-save { background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted); padding: 0.7rem 1.25rem; border-radius: 12px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-save:hover { border-color: var(--primary); color: var(--primary); }
+    .btn-save.saved { color: var(--warning); border-color: var(--warning); }
+
+    /* LAYOUT */
+    .job-layout { display: grid; grid-template-columns: 1fr 340px; gap: 2rem; align-items: start; }
+
+    /* CARD */
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.25rem; }
+    .card-title { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 1rem; }
+    .card p { font-size: 0.9rem; color: var(--text); line-height: 1.75; white-space: pre-line; }
+
+    /* SKILLS */
+    .skills-wrap { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .skill-tag { padding: 0.35rem 0.875rem; border-radius: 8px; background: rgba(0,212,170,0.08); border: 1px solid rgba(0,212,170,0.2); color: var(--primary); font-size: 0.82rem; font-weight: 600; }
+
+    /* JOB DETAILS GRID */
+    .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .detail-item { display: flex; flex-direction: column; gap: 0.2rem; }
+    .detail-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .detail-value { font-size: 0.9rem; font-weight: 600; color: var(--text); }
+    .detail-value.salary { color: var(--primary); font-size: 1rem; }
+
+    /* APPLY FORM */
+    .apply-card { position: sticky; top: 80px; }
+    .apply-title { font-size: 1rem; font-weight: 700; margin-bottom: 1.25rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.4rem; }
+    .form-input, .form-textarea, .form-select { width: 100%; padding: 0.75rem 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 0.875rem; outline: none; transition: border-color 0.2s; font-family: 'Inter', sans-serif; }
+    .form-input:focus, .form-textarea:focus, .form-select:focus { border-color: var(--primary); }
+    .form-textarea { resize: vertical; min-height: 120px; }
+    .file-drop { border: 2px dashed var(--border); border-radius: 10px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all 0.2s; }
+    .file-drop:hover, .file-drop.dragover { border-color: var(--primary); background: var(--primary-glow); }
+    .file-drop input { display: none; }
+    .file-drop .icon { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .file-drop .text { font-size: 0.85rem; color: var(--text-muted); }
+    .file-drop .text strong { color: var(--primary); }
+    .btn-apply { width: 100%; padding: 0.875rem; background: var(--primary); color: #000; border: none; border-radius: 12px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.2s; font-family: 'Inter', sans-serif; margin-top: 0.5rem; }
+    .btn-apply:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,212,170,0.35); }
+    .btn-apply:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .alert { padding: 0.875rem 1rem; border-radius: 10px; font-size: 0.875rem; margin-bottom: 1rem; display: none; }
+    .alert-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--error); }
+    .alert-success { background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.3); color: var(--success); }
+
+    /* RELATED JOBS */
+    .related-job { display: flex; gap: 0.875rem; align-items: center; padding: 0.875rem 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.2s; border-radius: 8px; padding-left: 0.5rem; }
+    .related-job:last-child { border-bottom: none; }
+    .related-job:hover { background: var(--bg-card-hover); padding-left: 0.75rem; }
+    .related-logo { width: 40px; height: 40px; border-radius: 8px; background: linear-gradient(135deg, rgba(0,212,170,0.12), rgba(0,212,170,0.04)); border: 1px solid rgba(0,212,170,0.15); display: flex; align-items: center; justify-content: center; font-weight: 700; color: var(--primary); font-size: 0.9rem; flex-shrink: 0; }
+    .related-info { flex: 1; min-width: 0; }
+    .related-title { font-size: 0.875rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .related-company { font-size: 0.78rem; color: var(--text-muted); }
+    .related-salary { font-size: 0.8rem; font-weight: 700; color: var(--primary); white-space: nowrap; }
+
+    /* FOOTER */
+    footer { border-top: 1px solid var(--border); padding: 1.5rem 2rem; text-align: center; color: var(--text-muted); font-size: 0.78rem; margin-top: 3rem; }
+
+    @media (max-width: 768px) {
+      .job-layout { grid-template-columns: 1fr; }
+      .apply-card { position: static; }
+      .job-hero { flex-direction: column; }
+      .job-badges { flex-wrap: wrap; }
+    }
+    @media (max-width: 480px) {
+      /* Fixed bottom apply bar on mobile */
+      .apply-card .btn-apply { position: fixed; bottom: 16px; left: 16px; right: 16px; width: auto; z-index: 100; box-shadow: 0 -4px 24px rgba(0,0,0,0.5); }
+      .apply-card { padding-bottom: 80px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">Open<span>Jobs</span></div>
+    <div class="header-actions">
+      <a href="/" class="btn btn-ghost">← Back to Jobs</a>
+    </div>
+  </div>
+</header>
+
+<div class="page">
+  <a href="/" class="back-link">← Back to all jobs</a>
+
+  <div class="job-hero" id="jobHero">
+    <div class="job-logo" id="jobLogo">J</div>
+    <div class="job-meta">
+      <h1 class="job-title" id="jobTitle">Loading...</h1>
+      <div class="job-company" id="jobCompany"></div>
+      <div class="job-badges" id="jobBadges"></div>
+    </div>
+    <div class="hero-actions">
+      <button class="btn-save" id="saveBtn" onclick="toggleSave()">☆ Save</button>
+    </div>
+  </div>
+
+  <!-- LAYOUT -->
+  <div class="job-layout">
+
+    <!-- LEFT -->
+    <div>
+      <div class="card">
+        <div class="card-title">💼 About This Role</div>
+        <p id="jobDesc">Loading job description...</p>
+      </div>
+
+      <div class="card" id="skillsCard" style="display:none">
+        <div class="card-title">🛠 Skills Required</div>
+        <div class="skills-wrap" id="jobSkills"></div>
+      </div>
+
+      <div class="card" id="sellingCard" style="display:none">
+        <div class="card-title">✨ Why Join Us</div>
+        <p id="jobSelling"></p>
+      </div>
+
+      <!-- RELATED JOBS -->
+      <div class="card">
+        <div class="card-title">🔗 Similar Jobs</div>
+        <div id="relatedJobs">Loading...</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: APPLY -->
+    <div class="apply-card">
+      <div class="card">
+        <div class="apply-title">🚀 Apply for this Job</div>
+        <div class="alert alert-error" id="alertError"></div>
+        <div class="alert alert-success" id="alertSuccess"></div>
+
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" class="form-input" id="appName" placeholder="Your full name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" class="form-input" id="appEmail" placeholder="you@example.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone (optional)</label>
+          <input type="tel" class="form-input" id="appPhone" placeholder="+254 700 000 000">
+        </div>
+
+        <!-- File Upload -->
+        <div class="form-group">
+          <label class="form-label">Resume / CV</label>
+          <div class="file-drop" id="fileDrop" onclick="document.getElementById('resumeFile').click()">
+            <input type="file" id="resumeFile" accept=".pdf,.doc,.docx" onchange="handleFile(this)">
+            <div class="icon">📄</div>
+            <div class="text" id="fileLabel">Drag & drop or <strong>browse</strong><br><span style="font-size:0.75rem;color:var(--text-dim)">PDF, DOC, DOCX — max 5MB</span></div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Cover Letter (optional)</label>
+          <textarea class="form-textarea" id="coverLetter" placeholder="Tell the employer why you're a great fit for this role..."></textarea>
+        </div>
+
+        <button class="btn-apply" id="applyBtn" onclick="submitApplication()">Submit Application →</button>
+        <p style="text-align:center;font-size:0.75rem;color:var(--text-muted);margin-top:0.75rem;">Your info is kept private and only shared with the employer after you apply.</p>
+      </div>
+
+      <!-- JOB SUMMARY -->
+      <div class="card">
+        <div class="card-title">📋 Job Summary</div>
+        <div class="details-grid" id="jobDetails"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>OpenJobs — AI-Powered Job Matching · ⚡ Built by Alex</footer>
+
+<script>
+  // ── LOAD JOB ──
+  const params = new URLSearchParams(window.location.search);
+  const jobId = params.get('id') || 1;
+
+  let currentJob = null;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadJob(jobId);
+    loadRelated(jobId);
+  });
+
+  function loadJob(id) {
+    fetch('/api/jobs/' + id)
+      .then(r => r.ok ? r.json() : null)
+      .then(job => {
+        if (!job) { showError('Job not found'); return; }
+        currentJob = job;
+        renderJob(job);
+      })
+      .catch(() => {
+        // Demo data fallback
+        renderJob(getDemoJob(id));
+      });
+  }
+
+  function renderJob(job) {
+    document.title = job.title + ' — OpenJobs';
+    document.getElementById('jobLogo').textContent = (job.company || 'J')[0].toUpperCase();
+    document.getElementById('jobTitle').textContent = job.title;
+    document.getElementById('jobCompany').textContent = job.company + ' · ' + job.location;
+    document.getElementById('jobDesc').textContent = job.description || 'No description provided.';
+
+    // Track view server-side
+    try {
+      fetch('/api/jobs/' + jobId + '/view', { method: 'PATCH' });
+    } catch(e) {}
+
+    // Badges
+    const badges = [];
+    if (job.is_remote || (job.location||'').toLowerCase().includes('remote')) badges.push('<span class="badge badge-remote">🌎 Remote</span>');
+    else if (job.work_arrangement === 'hybrid') badges.push('<span class="badge badge-hybrid">🔀 Hybrid</span>');
+    else badges.push('<span class="badge badge-onsite">🏢 On-site</span>');
+    const wt = job.work_type;
+    if (wt === 'full_time') badges.push('<span class="badge badge-fulltime">Full-time</span>');
+    else if (wt === 'part_time') badges.push('<span class="badge badge-parttime">Part-time</span>');
+    else if (wt === 'contract') badges.push('<span class="badge badge-contract">Contract</span>');
+    else if (wt === 'internship') badges.push('<span class="badge badge-internship">Internship</span>');
+    if (job.category) badges.push('<span class="badge" style="background:rgba(0,212,170,0.08);color:var(--primary)">🏷 ' + escHtml(job.category) + '</span>');
+    document.getElementById('jobBadges').innerHTML = badges.join('');
+
+    // Skills
+    if (job.skills) {
+      const skills = job.skills.split(',').map(s => s.trim()).filter(Boolean);
+      document.getElementById('jobSkills').innerHTML = skills.map(s => `<span class="skill-tag">${escHtml(s)}</span>`).join('');
+      document.getElementById('skillsCard').style.display = '';
+    }
+
+    // Selling points
+    try {
+      const pts = JSON.parse(job.selling_points || '[]');
+      if (pts.length) {
+        document.getElementById('jobSelling').innerHTML = '<ul>' + pts.map(p => `<li style="margin-bottom:0.4rem">${escHtml(p)}</li>`).join('') + '</ul>';
+        document.getElementById('sellingCard').style.display = '';
+      }
+    } catch(e) {}
+
+    // Details grid
+    const salary = formatSalary(job);
+    document.getElementById('jobDetails').innerHTML = `
+      <div class="detail-item"><div class="detail-label">💰 Salary</div><div class="detail-value salary">${salary || 'Competitive'}</div></div>
+      <div class="detail-item"><div class="detail-label">📍 Location</div><div class="detail-value">${escHtml(job.location)}</div></div>
+      <div class="detail-item"><div class="detail-label">💼 Work Type</div><div class="detail-value">${escHtml(formatWorkType(job.work_type))}</div></div>
+      <div class="detail-item"><div class="detail-label">🕐 Posted</div><div class="detail-value">${timeSince(job.created_at)}</div></div>
+      ${job.category ? `<div class="detail-item"><div class="detail-label">🏷 Category</div><div class="detail-value">${escHtml(job.category)}</div></div>` : ''}
+    `;
+  }
+
+  function loadRelated(id) {
+    fetch('/api/jobs?limit=20')
+      .then(r => r.json())
+      .then(data => {
+        const related = (data.jobs || [])
+          .filter(j => j.id != id)
+          .filter(j => j.category === (currentJob && currentJob.category))
+          .slice(0, 4);
+        if (!related.length) {
+          related.push(...(data.jobs || []).filter(j => j.id != id).slice(0, 4));
+        }
+        document.getElementById('relatedJobs').innerHTML = related.map(j => `
+          <div class="related-job" onclick="window.location.href='/job.html?id=${j.id}'">
+            <div class="related-logo">${(j.company||'J')[0].toUpperCase()}</div>
+            <div class="related-info">
+              <div class="related-title">${escHtml(j.title)}</div>
+              <div class="related-company">${escHtml(j.company)} · ${escHtml(j.location)}</div>
+            </div>
+            <div class="related-salary">${formatSalary(j) || 'TBD'}</div>
+          </div>`).join('');
+      })
+      .catch(() => {
+        document.getElementById('relatedJobs').innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">No related jobs found</p>';
+      });
+  }
+
+  // ── APPLY ──
+  function handleFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const label = document.getElementById('fileLabel');
+    label.innerHTML = `<strong>${escHtml(file.name)}</strong><br><span style="font-size:0.75rem;color:var(--text-dim)">${(file.size/1024).toFixed(0)} KB</span>`;
+    document.getElementById('fileDrop').style.borderColor = 'var(--primary)';
+    document.getElementById('fileDrop').style.background = 'var(--primary-glow)';
+  }
+
+  function showAlert(type, msg) {
+    const err = document.getElementById('alertError');
+    const suc = document.getElementById('alertSuccess');
+    err.style.display = 'none'; suc.style.display = 'none';
+    const el = type === 'error' ? err : suc;
+    el.textContent = (type === 'error' ? '⚠️ ' : '✅ ') + msg;
+    el.style.display = 'flex';
+  }
+
+  async function submitApplication() {
+    const name  = document.getElementById('appName').value.trim();
+    const email = document.getElementById('appEmail').value.trim();
+    const cover = document.getElementById('coverLetter').value.trim();
+    const fileInput = document.getElementById('resumeFile');
+    const file = fileInput && fileInput.files[0];
+
+    if (!name || !email) { showAlert('error', 'Please fill in your name and email'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showAlert('error', 'Please enter a valid email address'); return; }
+
+    const btn = document.getElementById('applyBtn');
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+
+    try {
+      // If a resume file is selected, upload it first to get resume_text
+      let resumeText = '';
+      if (file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const authHeader = localStorage.getItem('token') || '';
+        const uploadRes = await fetch('/api/resume/upload', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + authHeader },
+          body: formData
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadRes.ok && uploadData.success) {
+          resumeText = uploadData.extracted?.skills
+            ? 'Skills: ' + uploadData.extracted.skills.join(', ')
+            : '';
+          showAlert('success', '✅ Resume uploaded and application submitted!');
+        } else {
+          showAlert('error', uploadData.error || 'Resume upload failed but applying anyway.');
+        }
+      }
+
+      // Submit application (with or without resume_text)
+      const res = await fetch('/api/applications', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ job_id: jobId, user_id: 1, notes: cover, resume_text: resumeText })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showAlert('success', 'Application submitted! Check your dashboard to track status.');
+        btn.textContent = '✅ Applied!';
+      } else {
+        showAlert('error', data.error || 'Something went wrong. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Submit Application →';
+      }
+    } catch {
+      showAlert('error', 'Network error. Check your connection and try again.');
+      btn.disabled = false;
+      btn.textContent = 'Submit Application →';
+    }
+  }
+
+  let saved = false;
+  function toggleSave() {
+    saved = !saved;
+    const btn = document.getElementById('saveBtn');
+    btn.classList.toggle('saved', saved);
+    btn.textContent = saved ? '★ Saved' : '☆ Save';
+    // In real app, POST to /api/saved_jobs
+  }
+
+  // ── UTILITIES ──
+  function formatSalary(job) {
+    const min = job.salary_min, max = job.salary_max, curr = job.salary_currency || 'AUD';
+    if (!min && !max) return '';
+    const fmt = n => n >= 1000 ? curr + ' ' + Math.round(n/1000) + 'k' : '';
+    if (min && max && min !== max) return fmt(min) + ' – ' + fmt(max);
+    if (min) return 'From ' + fmt(min);
+    return max ? 'Up to ' + fmt(max) : '';
+  }
+  function formatWorkType(wt) {
+    return {full_time:'Full-time',part_time:'Part-time',contract:'Contract',internship:'Internship'}[wt] || wt || 'Full-time';
+  }
+  function timeSince(dateStr) {
+    if (!dateStr) return 'Recently';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const days = Math.floor(diff / 86400000);
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 30) return days + ' days ago';
+    return Math.floor(days/30) + ' month' + (days>=60?'s':'') + ' ago';
+  }
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function showError(msg) {
+    document.getElementById('jobTitle').textContent = '⚠️ ' + msg;
+  }
+  function getDemoJob(id) {
+    return { id, title: 'Software Engineer', company: 'TechCorp', location: 'Remote', salary_min: 100000, salary_max: 140000, work_type: 'full_time', category: 'Software Development', description: 'Join our team to build next-generation software solutions. We are looking for passionate engineers who want to work on challenging problems and grow their skills.', created_at: '2026-06-15T00:00:00' };
+  }
+
+  // Drag & drop
+  const drop = document.getElementById('fileDrop');
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('dragover'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) { document.getElementById('resumeFile').files = e.dataTransfer.files; handleFile(document.getElementById('resumeFile')); } });
+</script>
+</body>
+</html>
