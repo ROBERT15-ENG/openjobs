@@ -139,50 +139,72 @@
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-icon">📋</div>
-          <div class="stat-value" id="statJobs">69</div>
-          <div class="stat-label">Total Jobs</div>
+          <div class="stat-value" id="sJobs">—</div>
+          <div class="stat-label">Active Jobs</div>
         </div>
         <div class="stat-card">
           <div class="stat-icon">👥</div>
-          <div class="stat-value" id="statUsers">1</div>
-          <div class="stat-label">Registered Users</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon">📥</div>
-          <div class="stat-value" id="statApps">5</div>
-          <div class="stat-label">Applications</div>
+          <div class="stat-value" id="sSeekers">—</div>
+          <div class="stat-label">Job Seekers</div>
         </div>
         <div class="stat-card">
           <div class="stat-icon">🏢</div>
-          <div class="stat-value">20</div>
-          <div class="stat-label">Companies</div>
+          <div class="stat-value" id="sEmployers">—</div>
+          <div class="stat-label">Employers</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">📥</div>
+          <div class="stat-value" id="sApps">—</div>
+          <div class="stat-label">Applications</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">👁</div>
+          <div class="stat-value" id="sViews">—</div>
+          <div class="stat-label">Total Job Views</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">💰</div>
+          <div class="stat-value" id="sAvgSalary">—</div>
+          <div class="stat-label">Avg Salary ($)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🔴</div>
+          <div class="stat-value" id="sRejected">—</div>
+          <div class="stat-label">Rejected</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">✅</div>
+          <div class="stat-value" id="sHired">—</div>
+          <div class="stat-label">Hired</div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">📈 Platform Activity (Last 7 Days)</div>
-        <div class="chart-placeholder">
-          <span style="font-size:2rem">📊</span>
-          Chart data — connect to your analytics provider to visualize trends
-        </div>
+        <div class="card-title">📈 Applications & Jobs Posted (Last 30 Days)</div>
+        <div id="activityChart" style="min-height:120px;display:flex;align-items:flex-end;gap:3px;padding:1rem 0;"></div>
+        <p id="chartEmpty" style="display:none;color:var(--text-muted);font-size:0.85rem;text-align:center;padding:2rem">No activity data yet</p>
       </div>
 
       <div class="quick-actions">
         <button class="quick-action" onclick="switchTab('jobs')">📋 View All Jobs</button>
         <button class="quick-action" onclick="switchTab('users')">👥 Manage Users</button>
         <button class="quick-action" onclick="switchTab('applications')">📥 View Applications</button>
-        <button class="quick-action" onclick="switchTab('settings')">⚙️ System Settings</button>
+        <button class="quick-action" onclick="switchTab('analytics')">📈 Deep Analytics</button>
       </div>
 
       <div class="card">
-        <div class="card-title">🔔 Recent Activity</div>
+        <div class="card-title">🔔 Recent Applications</div>
         <table>
-          <thead><tr><th>Event</th><th>User</th><th>Time</th><th>Status</th></tr></thead>
-          <tbody id="activityTable">
-            <tr><td>New job posted</td><td>Admin</td><td>2 hours ago</td><td><span class="badge badge-active">Complete</span></td></tr>
-            <tr><td>User registered</td><td>Tonny Tony</td><td>5 hours ago</td><td><span class="badge badge-active">Success</span></td></tr>
-            <tr><td>Application submitted</td><td>Tonny Tony</td><td>1 day ago</td><td><span class="badge badge-pending">Pending</span></td></tr>
-          </tbody>
+          <thead><tr><th>Job</th><th>Applicant</th><th>Applied</th><th>Status</th></tr></thead>
+          <tbody id="recentAppsTable"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title">👥 Recent Signups</div>
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead>
+          <tbody id="recentSignupsTable"></tbody>
         </table>
       </div>
     </div>
@@ -243,19 +265,43 @@
 
     <!-- ── ANALYTICS ── -->
     <div class="tab-content" id="tab-analytics">
-      <h2 class="page-title">Analytics</h2>
-      <p class="page-sub">Platform performance and usage insights.</p>
+      <h2 class="page-title">Deep Analytics</h2>
+      <p class="page-sub">Platform performance and insights — loaded live from the database.</p>
+
       <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
-        <div class="stat-card"><div class="stat-icon">👁</div><div class="stat-value">1,247</div><div class="stat-label">Total Job Views (30d)</div></div>
-        <div class="stat-card"><div class="stat-icon">📄</div><div class="stat-value">89%</div><div class="stat-label">Application Rate</div></div>
-        <div class="stat-card"><div class="stat-icon">⏱</div><div class="stat-value">2.4 days</div><div class="stat-label">Avg. Time to Hire</div></div>
-      </div>
-      <div class="card">
-        <div class="card-title">📊 Jobs by Category</div>
-        <div class="chart-placeholder" style="height:250px">
-          <span style="font-size:2rem">📊</span>
-          Integrate a charting library to visualize category distribution
+        <div class="stat-card">
+          <div class="stat-icon">🏆</div>
+          <div class="stat-value" id="aTopEmployer">—</div>
+          <div class="stat-label">Top Employer (by jobs)</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-icon">📁</div>
+          <div class="stat-value" id="aTopCategory">—</div>
+          <div class="stat-label">Top Category</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">💼</div>
+          <div class="stat-value" id="aTopWorkType">—</div>
+          <div class="stat-label">Most Common Work Type</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📂 Jobs by Category</div>
+        <div id="categoryBars" style="display:flex;flex-direction:column;gap:0.75rem;padding:0.5rem 0"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">💼 Jobs by Work Type</div>
+        <div id="workTypeBars" style="display:flex;flex-direction:column;gap:0.75rem;padding:0.5rem 0"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🏢 Top Employers by Job Listings</div>
+        <table>
+          <thead><tr><th>Employer</th><th>Email</th><th>Active Jobs</th></tr></thead>
+          <tbody id="topEmployersTable"></tbody>
+        </table>
       </div>
     </div>
 
@@ -326,16 +372,169 @@
   }
 
   function loadStats() {
-    fetch('/api/dashboard/seeker?user_id=1')
+    fetch('/api/admin/stats')
       .then(r => r.json())
       .then(d => {
-        document.getElementById('statApps').textContent = d.stats?.total_applications || 0;
-      });
-    fetch('/api/jobs?limit=1')
+        const s = d.summary || {};
+        document.getElementById('sJobs').textContent    = s.total_jobs || 0;
+        document.getElementById('sSeekers').textContent = s.total_seekers || 0;
+        document.getElementById('sEmployers').textContent = s.total_employers || 0;
+        document.getElementById('sApps').textContent   = s.total_applications || 0;
+        document.getElementById('sViews').textContent  = (s.total_views || 0).toLocaleString();
+        document.getElementById('sAvgSalary').textContent =
+          s.avg_salary ? '$' + Math.round(s.avg_salary).toLocaleString() : '—';
+        const byStatus = d.apps_by_status || {};
+        document.getElementById('sRejected').textContent = byStatus.rejected || 0;
+        document.getElementById('sHired').textContent    = byStatus.hired || 0;
+
+        // Activity chart
+        renderActivityChart(d.apps_over_time || [], d.jobs_over_time || []);
+
+        // Recent applications
+        renderRecentTable('recentAppsTable', d.recent_applications || [], row => {
+          const day = timeAgo(row.applied_at);
+          return `<tr>
+            <td><div class="title-cell">${escHtml(row.job_title || '—')}</div></td>
+            <td>${escHtml(row.seeker_name || row.seeker_email || '—')}</td>
+            <td class="muted">${day}</td>
+            <td>${statusBadge(row.status)}</td>
+          </tr>`;
+        });
+
+        // Recent signups
+        renderRecentTable('recentSignupsTable', d.recent_signups || [], row => {
+          const day = timeAgo(row.created_at);
+          const roleBadge = row.role === 'employer'
+            ? '<span class="badge badge-admin">Employer</span>'
+            : '<span class="badge badge-user">Seeker</span>';
+          return `<tr>
+            <td>${escHtml(row.name || '—')}</td>
+            <td>${escHtml(row.email || '—')}</td>
+            <td>${roleBadge}</td>
+            <td class="muted">${day}</td>
+          </tr>`;
+        });
+      })
+      .catch(() => {});
+
+    // Fill analytics tab insights
+    fetch('/api/admin/stats')
       .then(r => r.json())
       .then(d => {
-        document.getElementById('statJobs').textContent = d.pagination?.total || 0;
-      });
+        // Top employer
+        const te = (d.top_employers || [])[0];
+        if (te) document.getElementById('aTopEmployer').textContent = te.name || te.email || '—';
+
+        // Top category
+        const tc = (d.by_category || [])[0];
+        if (tc) document.getElementById('aTopCategory').textContent = tc.category || '—';
+
+        // Top work type
+        const tw = (d.by_work_type || [])[0];
+        if (tw) document.getElementById('aTopWorkType').textContent = tw.work_type || '—';
+
+        // Category bars
+        const cats = d.by_category || [];
+        const maxCat = Math.max(...cats.map(c => c.cnt), 1);
+        const catContainer = document.getElementById('categoryBars');
+        catContainer.innerHTML = cats.map(c => {
+          const pct = Math.round(c.cnt / maxCat * 100);
+          return `<div style="display:flex;align-items:center;gap:1rem">
+            <div style="width:120px;font-size:0.8rem;flex-shrink:0">${escHtml(c.category||'—')}</div>
+            <div style="flex:1;height:28px;background:var(--bg);border-radius:6px;overflow:hidden">
+              <div style="width:${pct}%;height:100%;background:var(--primary);opacity:0.7;border-radius:6px;display:flex;align-items:center;padding:0 0.5rem">
+                <span style="font-size:0.75rem;font-weight:700">${c.cnt}</span>
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+
+        // Work type bars
+        const wts = d.by_work_type || [];
+        const maxWT = Math.max(...wts.map(w => w.cnt), 1);
+        const wtContainer = document.getElementById('workTypeBars');
+        wtContainer.innerHTML = wts.map(w => {
+          const pct = Math.round(w.cnt / maxWT * 100);
+          return `<div style="display:flex;align-items:center;gap:1rem">
+            <div style="width:100px;font-size:0.8rem;flex-shrink:0;text-transform:capitalize">${escHtml(w.work_type||'—')}</div>
+            <div style="flex:1;height:28px;background:var(--bg);border-radius:6px;overflow:hidden">
+              <div style="width:${pct}%;height:100%;background:#3b82f6;opacity:0.7;border-radius:6px;display:flex;align-items:center;padding:0 0.5rem">
+                <span style="font-size:0.75rem;font-weight:700">${w.cnt}</span>
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+
+        // Top employers table
+        const tbody = document.getElementById('topEmployersTable');
+        tbody.innerHTML = (d.top_employers || []).map(te => `
+          <tr>
+            <td class="title-cell">${escHtml(te.name || '—')}</td>
+            <td class="muted">${escHtml(te.email || '—')}</td>
+            <td><span class="badge badge-active">${te.job_count}</span></td>
+          </tr>`).join('');
+      })
+      .catch(() => {});
+  }
+
+  function renderActivityChart(appsData, jobsData) {
+    const container = document.getElementById('activityChart');
+    if (!appsData.length && !jobsData.length) {
+      document.getElementById('chartEmpty').style.display = 'block';
+      container.style.display = 'none';
+      return;
+    }
+    // Build a map of all dates
+    const dates = [...new Set([...appsData.map(d=>d.day), ...jobsData.map(d=>d.day)])].sort();
+    const maxApps = Math.max(...appsData.map(d=>d.cnt), 1);
+    const maxJobs = Math.max(...jobsData.map(d=>d.cnt), 1);
+    const appMap = Object.fromEntries(appsData.map(d=>[d.day, d.cnt]));
+    const jobMap = Object.fromEntries(jobsData.map(d=>[d.day, d.cnt]));
+    const maxDays = 14; // last 14 visible dates
+    const slice = dates.slice(-maxDays);
+    container.innerHTML = slice.map(day => {
+      const appH = Math.max(4, Math.round((appMap[day]||0) / maxApps * 100));
+      const jobH = Math.max(4, Math.round((jobMap[day]||0) / maxJobs * 100));
+      return `<div style="flex:1;display:flex;flex-direction:column;gap:3px;align-items:center" title="${day}: ${appMap[day]||0} apps, ${jobMap[day]||0} jobs">
+        <div style="width:100%;display:flex;flex-direction:column;gap:3px;align-items:center">
+          <div style="width:100%;height:${appH}px;background:rgba(0,212,170,0.6);border-radius:3px 3px 0 0;min-height:4px" title="Apps: ${appMap[day]||0}"></div>
+          <div style="width:100%;height:${jobH}px;background:rgba(59,130,246,0.5);border-radius:0 0 3px 3px;min-height:4px" title="Jobs: ${jobMap[day]||0}"></div>
+        </div>
+        <div style="font-size:0.6rem;color:var(--text-muted);margin-top:4px">${day.slice(5)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderRecentTable(tbodyId, rows, renderRow) {
+    const tbody = document.getElementById(tbodyId);
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:1.5rem;color:var(--text-muted)">No data yet</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map(renderRow).join('');
+  }
+
+  function timeAgo(iso) {
+    if (!iso) return '—';
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return m + 'm ago';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    const d = Math.floor(h / 24);
+    return d + 'd ago';
+  }
+
+  function statusBadge(s) {
+    const map = {applied:'badge-pending', screening:'badge-pending', interview:'badge-user', offer:'badge-active', hired:'badge-active', rejected:'badge-inactive', withdrawn:'badge-inactive'};
+    const cls = map[s] || 'badge-pending';
+    return `<span class="badge ${cls}">${s || 'unknown'}</span>`;
+  }
+
+  function escHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   function loadJobs() {
