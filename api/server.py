@@ -777,8 +777,7 @@ def get_jobs():
     for j in jobs:
         row = dict(j)
         row['views'] = row.pop('view_count', 0)
-        if not row.get('salary'):
-            row['salary'] = _fmt_salary(row.get('salary_min'), row.get('salary_max'), row.get('salary_currency', 'AUD'))
+        row['salary'] = _fmt_salary(row.get('salary_min'), row.get('salary_max'), row.get('salary_currency', 'AUD'))
         result.append(row)
 
     return jsonify({
@@ -830,7 +829,7 @@ def create_job():
             data.get('company'),
             data.get('location'),
             data.get('description'),
-            data.get('salary') or _fmt_salary(data.get('salary_min'), data.get('salary_max'), data.get('salary_currency', 'AUD')),
+            data.get('salary') or '',
             data.get('category', 'General'),
             1,
             datetime.datetime.now().isoformat(),
