@@ -138,5 +138,25 @@ def send_employer_new_application(to_email: str, employer_name: str, applicant_n
     return send_email(to_email, f"📥 New Application: {job_title}", html_body)
 
 
+
+def send_rejection_email(to_email: str, applicant_name: str, job_title: str, company: str) -> dict:
+    """Send a rejection notification when employer moves candidate to rejected."""
+    html_body = f"""
+    <html><body style="font-family:Arial,sans-serif;background:#0f0f0f;color:#fff;padding:20px;">
+        <div style="max-width:600px;margin:0 auto;">
+            <h1 style="color:#ff6b6b;">❌ Application Update</h1>
+            <p>Hi <strong>{_safe(applicant_name)}</strong>,</p>
+            <p>Thank you for applying for the <strong>{_safe(job_title)}</strong> role at <strong>{_safe(company)}</strong>.</p>
+            <p>After careful review, we've decided to move forward with other candidates at this time. We encourage you to apply for other roles that match your skills — new positions are posted daily.</p>
+            <p style="margin-top:24px;color:#888;font-size:13px;">This decision is not a reflection of your abilities. We wish you the very best in your job search.</p>
+            <hr style="border-color:#333;margin:24px 0;">
+            <p style="color:#888;font-size:13px;">Best regards,<br>The {company} Team</p>
+            <p style="color:#555;font-size:12px;margin-top:16px;">You're receiving this because you applied for a position on OpenJobs. <a href="{APP_URL}" style="color:#00d4ff;">View all open positions</a></p>
+        </div>
+    </body></html>
+    """
+    return send_email(to_email, f"Update on your application: {job_title}", html_body)
+
+
 if __name__ == "__main__":
     print(f"SMTP Configured: {is_configured()}")

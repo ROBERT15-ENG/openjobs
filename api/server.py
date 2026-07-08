@@ -1244,6 +1244,28 @@ def move_kanban_card(job_id):
     now = datetime.datetime.now().isoformat()
     db.execute("UPDATE applications SET status=?, updated_at=? WHERE id=? AND job_id=?",
                (new_status, now, app_id, job_id))
+
+    # Send rejection email to seeker if moving to rejected
+    seeker_email = None
+    if new_status == 'rejected':
+        row = db.execute(
+            "SELECT u.email, u.name, j.title, j.company FROM applications a "
+            "JOIN users u ON u.id = a.user_id JOIN jobs j ON j.id = a.job_id WHERE a.id = ?",
+            (app_id,)
+        ).fetchone()
+        if row and row['email']:
+            seeker_email = row['email']
+            try:
+                from email_notifier import send_rejection_email
+                send_rejection_email(
+                    row['email'],
+                    row['name'] or 'Applicant',
+                    row['title'],
+                    row['company']
+                )
+            except Exception as e:
+                print(f"[kanban] rejection email error: {e}")
+
     db.commit()
     db.close()
     return jsonify({'success': True, 'status': new_status})
