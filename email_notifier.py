@@ -119,5 +119,24 @@ def send_application_confirm(to_email: str, job_title: str, company: str) -> dic
     return send_email(to_email, f"✅ Application Sent: {job_title}", html_body)
 
 
+
+def send_employer_new_application(to_email: str, employer_name: str, applicant_name: str, job_title: str, company: str, job_url: str) -> dict:
+    """Notify employer that a new application has been received."""
+    html_body = f"""
+    <html><body style="font-family:Arial,sans-serif;background:#0f0f0f;color:#fff;padding:20px;">
+        <div style="max-width:600px;margin:0 auto;">
+            <h1 style="color:#00d4ff;">📥 New Application Received</h1>
+            <p>Hi <strong>{_safe(employer_name)}</strong>,</p>
+            <p><strong>{_safe(applicant_name)}</strong> just applied for <strong>{_safe(job_title)}</strong> at <strong>{_safe(company)}</strong>.</p>
+            <div style="margin:24px 0;">
+                <a href="{job_url}" style="background:#00d4ff;color:#000;padding:12px 24px;text-decoration:none;border-radius:8px;font-weight:bold;">Review Application</a>
+            </div>
+            <p style="color:#888;font-size:13px;">Log in to your OpenJobs dashboard to view the full application, resume, and move them through the hiring pipeline.</p>
+        </div>
+    </body></html>
+    """
+    return send_email(to_email, f"📥 New Application: {job_title}", html_body)
+
+
 if __name__ == "__main__":
     print(f"SMTP Configured: {is_configured()}")

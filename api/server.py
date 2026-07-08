@@ -1074,21 +1074,76 @@ def get_applications():
 @require_auth
 def quick_apply(job_id):
     db = get_db()
-    user = db.execute("SELECT name, email FROM users WHERE id = ?", (request.user_id,)).fetchone()
+    user = db.execute("SELECT name, email, resume_text, kyc_status, cv_link FROM users WHERE id = ?",
+                      (request.user_id,)).fetchone()
     job = db.execute("SELECT title, company FROM jobs WHERE id = ?", (job_id,)).fetchone()
+
     if not user or not job:
+        db.close()
         return jsonify({'error': 'Not found'}), 404
+
+    # Gate: resume required
+    if not user['cv_link'] and not user['resume_text']:
+        db.close()
+        return jsonify({
+            'error': 'no_resume',
+            'message': 'Upload a resume before applying. Visit your profile to upload one.'
+        }), 422
+
+    # Gate: KYC must be verified
+    if user['kyc_status'] != 'verified':
+        db.close()
+        return jsonify({
+            'error': 'kyc_required',
+            'message': 'Complete KYC verification before applying. Visit your profile to complete it.'
+        }), 403
+
+    # Gate: no duplicate applications
     existing = db.execute("SELECT id FROM applications WHERE job_id = ? AND user_id = ?",
                           (job_id, request.user_id)).fetchone()
     if existing:
+        db.close()
         return jsonify({'error': 'Already applied'}), 409
+
     cover = "Hi, I'm " + str(user['name']) + ". I'm interested in the " + str(job['title']) + " role at " + str(job['company']) + "."
     db.execute("INSERT INTO applications (job_id, user_id, status, applied_at, cover_note) VALUES (?, ?, 'pending', ?, ?)",
                (job_id, request.user_id, datetime.datetime.now().isoformat(), cover))
     db.execute("UPDATE jobs SET application_count = application_count + 1 WHERE id = ?", (job_id,))
     db.commit()
+
+    # Get employer info before closing db
+    employer = db.execute(
+        "SELECT u.name, u.email FROM users u JOIN jobs j ON j.employer_id = u.id WHERE j.id = ?",
+        (job_id,)
+    ).fetchone()
     db.close()
-    return jsonify({'success': True, 'message': 'Applied for ' + str(job['title']) + ' at ' + str(job['company'])})
+
+    # Send confirmation to seeker
+    try:
+        from email_notifier import send_application_confirm
+        send_application_confirm(user['email'], job['title'], job['company'])
+    except Exception as e:
+        print(f"[apply] seeker confirmation error: {e}")
+
+    # Notify employer
+    try:
+        if employer and employer['email']:
+            from email_notifier import send_employer_new_application
+            send_employer_new_application(
+                employer['email'],
+                employer['name'] or 'Employer',
+                user['name'],
+                job['title'],
+                job['company'],
+                f"{APP_URL}/employer"
+            )
+    except Exception as e:
+        print(f"[apply] employer notification error: {e}")
+
+    return jsonify({
+        'success': True,
+        'message': 'Applied for ' + str(job['title']) + ' at ' + str(job['company'])
+    })
 
 
 @require_auth
