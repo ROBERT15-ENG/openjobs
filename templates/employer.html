@@ -27,7 +27,7 @@
     .btn-primary { background: var(--primary); color: #000; }
     .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,170,0.3); }
     .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
-    .app-sort-btn.active { background: var(--primary-glow) !important; border-color: var(--primary) !important; color: var(--primary) !important; }
+    .app-sort-btn.active, .app-filter-btn.active { background: var(--primary-glow) !important; border-color: var(--primary) !important; color: var(--primary) !important; }
     .btn-ghost:hover { border-color: var(--border-light); color: var(--text); }
     .btn-danger { background: transparent; color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
     .btn-danger:hover { background: rgba(239,68,68,0.1); }
@@ -335,8 +335,15 @@
     <div class="tab-content" id="tab-applications">
       <h2 class="page-title">Applications</h2>
       <p class="page-sub">Review and manage applicants for your jobs.</p>
-      <div id="appSortBar" style="display:none; align-items:center; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap;">
-        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Sort by:</span>
+      <div id="appFilterBar" style="display:none; align-items:center; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap;">
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Filter:</span>
+        <button class="btn-ghost btn-sm app-filter-btn active" data-filter="all" onclick="filterApps('all')">All</button>
+        <button class="btn-ghost btn-sm app-filter-btn" data-filter="pending" onclick="filterApps('pending')">Pending</button>
+        <button class="btn-ghost btn-sm app-filter-btn" data-filter="reviewing" onclick="filterApps('reviewing')">Reviewing</button>
+        <button class="btn-ghost btn-sm app-filter-btn" data-filter="interview" onclick="filterApps('interview')">Interview</button>
+        <button class="btn-ghost btn-sm app-filter-btn" data-filter="hired" onclick="filterApps('hired')">Hired</button>
+        <button class="btn-ghost btn-sm app-filter-btn" data-filter="rejected" onclick="filterApps('rejected')">Rejected</button>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-left:0.5rem;">Sort:</span>
         <button class="btn-ghost btn-sm app-sort-btn active" data-sort="applied_at" onclick="sortApps('applied_at')">Newest</button>
         <button class="btn-ghost btn-sm app-sort-btn" data-sort="applicant_name" onclick="sortApps('applicant_name')">Name A→Z</button>
         <button class="btn-ghost btn-sm app-sort-btn" data-sort="status" onclick="sortApps('status')">Status</button>
@@ -621,8 +628,26 @@
     } catch { el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><h3>Could not load jobs</h3></div>'; }
   }
 
-  // ── APPLICATION SORTER ───────────────────────────────────────────────────
-  var _sortCol = 'applied_at', _sortDir = -1;
+  // ── APPLICATION FILTER + SORTER ──────────────────────────────────────────
+  var _sortCol = 'applied_at', _sortDir = -1, _filterStatus = 'all';
+
+  function filterApps(status) {
+    _filterStatus = status;
+    document.querySelectorAll('.app-filter-btn').forEach(function(b) {
+      b.classList.toggle('active', b.dataset.filter === status);
+    });
+    var tbody = document.querySelector('#allApplications table tbody');
+    if (!tbody) return;
+    var rows = tbody.querySelectorAll('tr');
+    var visible = 0;
+    rows.forEach(function(r) {
+      var show = status === 'all' || r.dataset.status === status;
+      r.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    document.getElementById('appCountLabel').textContent =
+      visible + ' of ' + window._allApplications.length + ' applicant' + (window._allApplications.length !== 1 ? 's' : '');
+  }
 
   function sortApps(col) {
     if (_sortCol === col) { _sortDir = _sortDir * -1; }
@@ -664,11 +689,15 @@
       window._allApplications = apps;
       if (!apps.length) {
         el.innerHTML = '<div class="empty-state"><div class="icon">📥</div><h3>No applications yet</h3></div>';
-        document.getElementById('appSortBar').style.display = 'none';
+        document.getElementById('appFilterBar').style.display = 'none';
         return;
       }
-      document.getElementById('appSortBar').style.display = 'flex';
+      document.getElementById('appFilterBar').style.display = 'flex';
       document.getElementById('appCountLabel').textContent = apps.length + ' applicant' + (apps.length !== 1 ? 's' : '');
+      _filterStatus = 'all';
+      document.querySelectorAll('.app-filter-btn').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.filter === 'all');
+      });
       el.innerHTML = '<div class="card"><div class="table-wrap"><table>' +
         '<thead><tr><th>Applicant</th><th>Job</th><th>Status</th><th>Applied</th><th>Actions</th></tr></thead>' +
         '<tbody>' + apps.map(a => '<tr ' +
