@@ -88,6 +88,8 @@ except Exception:
     _USING_REDIS_BLOCKLIST = False
     print("[auth] Redis unavailable — blocklist resets on restart (use Redis for persistence)")
 
+BLOCKED_TOKENS = set()  # in-memory fallback, reset on restart
+
 def _block_token(token):
     """Add a token to the blocklist."""
     if _USING_REDIS_BLOCKLIST:
@@ -95,9 +97,7 @@ def _block_token(token):
         # Keep blocked tokens for 7 days (max token age)
         _redis_client.setex(f"blocked:{token}", 7 * 24 * 3600, "1")
     else:
-        _block_token(token)
-
-BLOCKED_TOKENS = set()  # in-memory fallback, reset on restart
+        BLOCKED_TOKENS.add(token)  # in-memory fallback, reset on restart
 
 def _is_token_blocked(token):
     """Check if a token is in the blocklist."""
@@ -555,26 +555,47 @@ def upload_resume():
     import re
     dob_patterns = [
         r'(?:DOB|Date\s*of\s*Birth|Born)[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
-        r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
+        r'Born[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
     ]
     nationality_patterns = [
         r'Nationality[:\s]+([A-Za-z\s]+)',
         r'Citizen of ([A-Za-z\s]+)',
     ]
+    country_patterns = [
+        r'(?:Country|Residence)[:\s]+([A-Za-z\s]+)',
+        r'(?:Country of) (?:Origin|Nationality)[:\s]+([A-Za-z\s]+)',
+    ]
+    county_patterns = [
+        r'County[:\s]+([A-Za-z\s]+)',
+        r'Region[:\s]+([A-Za-z\s]+)',
+    ]
+    address_patterns = [
+        r'(?:Address|Location|Residing)[:\s]+([^\n]{10,80})',
+    ]
     extracted_kyc = {}
     for pat in dob_patterns:
         m = re.search(pat, text, re.IGNORECASE)
-        if m: extracted_kyc['dob'] = m.group(1); break
+        if m: extracted_kyc['dob'] = m.group(1).strip(); break
     for pat in nationality_patterns:
         m = re.search(pat, text, re.IGNORECASE)
         if m: extracted_kyc['nationality'] = m.group(1).strip(); break
+    for pat in country_patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m: extracted_kyc['country'] = m.group(1).strip(); break
+    for pat in county_patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m: extracted_kyc['county'] = m.group(1).strip(); break
+    for pat in address_patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m: extracted_kyc['address'] = m.group(1).strip(); break
 
     # Save extracted KYC hints (user reviews and confirms)
     if extracted_kyc:
         db_kyc = sqlite3.connect(db_path)
         for k, v in extracted_kyc.items():
-            col = 'dob' if k == 'dob' else 'nationality'
-            db_kyc.execute(f'UPDATE users SET {col} = ? WHERE id = ?', (v, request.user_id))
+            col = k if k in ('dob','nationality','country','county','address') else None
+            if col:
+                db_kyc.execute(f'UPDATE users SET {col} = ? WHERE id = ?', (v, request.user_id))
         db_kyc.commit()
         db_kyc.close()
 
@@ -1915,7 +1936,7 @@ def _kyc_verify_magic(filepath):
 def kyc_status():
     """Return current KYC status and required documents for this user role."""
     db = get_db()
-    user = db.execute("SELECT kyc_status, kyc_doc_type, kyc_doc_number, dob, nationality FROM users WHERE id = ?",
+    user = db.execute("SELECT kyc_status, kyc_doc_type, kyc_doc_number, dob, nationality, country, county, salutation, phone, email, address FROM users WHERE id = ?",
                       (request.user_id,)).fetchone()
     docs = db.execute("SELECT doc_type, uploaded_at, status FROM kyc_documents WHERE user_id = ?",
                       (request.user_id,)).fetchall()
@@ -1927,6 +1948,12 @@ def kyc_status():
         'kyc_status': user['kyc_status'] if user else 'pending',
         'dob': user['dob'] if user else None,
         'nationality': user['nationality'] if user else None,
+        'country': user['country'] if user else None,
+        'county': user['county'] if user else None,
+        'salutation': user['salutation'] if user else None,
+        'phone': user['phone'] if user else None,
+        'email': user['email'] if user else None,
+        'address': user['address'] if user else None,
         'required_docs': required,
         'uploaded_docs': uploaded,
         'missing_docs': missing,
@@ -1936,9 +1963,13 @@ def kyc_status():
 @app.route('/api/kyc/personal', methods=['PATCH'])
 @require_auth
 def kyc_personal():
-    """Update KYC personal info: dob, nationality, address, tax_file_number, visa_status."""
+    """Update KYC personal info: name, salutation, phone, email, address, country, county, dob, nationality, visa_status."""
     data = request.json or {}
-    fields = ['dob', 'nationality', 'address', 'tax_file_number', 'visa_status']
+    fields = [
+        'name', 'salutation', 'phone', 'email',
+        'address', 'country', 'county',
+        'dob', 'nationality', 'visa_status'
+    ]
     updates = {}
     for f in fields:
         if f in data:
