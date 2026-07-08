@@ -551,6 +551,33 @@ def upload_resume():
     db.commit()
     db.close()
 
+    # ── Extract KYC fields from resume text ─────────────────────────────────
+    import re
+    dob_patterns = [
+        r'(?:DOB|Date\s*of\s*Birth|Born)[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
+        r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
+    ]
+    nationality_patterns = [
+        r'Nationality[:\s]+([A-Za-z\s]+)',
+        r'Citizen of ([A-Za-z\s]+)',
+    ]
+    extracted_kyc = {}
+    for pat in dob_patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m: extracted_kyc['dob'] = m.group(1); break
+    for pat in nationality_patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m: extracted_kyc['nationality'] = m.group(1).strip(); break
+
+    # Save extracted KYC hints (user reviews and confirms)
+    if extracted_kyc:
+        db_kyc = sqlite3.connect(db_path)
+        for k, v in extracted_kyc.items():
+            col = 'dob' if k == 'dob' else 'nationality'
+            db_kyc.execute(f'UPDATE users SET {col} = ? WHERE id = ?', (v, request.user_id))
+        db_kyc.commit()
+        db_kyc.close()
+
     # ── Extract skills immediately using keyword matching ───────────────────────
     db_path = os.path.join(os.path.dirname(__file__), '..', 'jobs.db')
     extracted_skills = _extract_skills_fast(text)
@@ -1863,6 +1890,164 @@ def employer_applications():
 
 
 # ── RESUME TEXT EXTRACTION ─────────────────────────────────────────────────
+
+
+# ============ KYC — KNOW YOUR CUSTOMER =======================================
+ALLOWED_DOC_EXT = {'.pdf', '.jpg', '.jpeg', '.png'}
+KYC_UPLOAD_DIR  = os.path.join(os.path.dirname(__file__), '..', 'kyc_uploads')
+os.makedirs(KYC_UPLOAD_DIR, exist_ok=True)
+
+def _kyc_verify_magic(filepath):
+    """Verify file magic bytes for KYC documents."""
+    try:
+        with open(filepath, 'rb') as f:
+            header = f.read(8)
+        if not header: return False
+        jpg = b'\xff\xd8\xff'
+        png = b'\x89PNG'
+        pdf = b'%PDF'
+        return header.startswith(jpg) or header.startswith(png) or header.startswith(pdf)
+    except: return False
+
+
+@app.route('/api/kyc/status', methods=['GET'])
+@require_auth
+def kyc_status():
+    """Return current KYC status and required documents for this user role."""
+    db = get_db()
+    user = db.execute("SELECT kyc_status, kyc_doc_type, kyc_doc_number, dob, nationality FROM users WHERE id = ?",
+                      (request.user_id,)).fetchone()
+    docs = db.execute("SELECT doc_type, uploaded_at, status FROM kyc_documents WHERE user_id = ?",
+                      (request.user_id,)).fetchall()
+    db.close()
+    required = ['passport', 'national_id', 'drivers_license']
+    uploaded = [dict(d) for d in docs]
+    missing  = [r for r in required if r not in [d['doc_type'] for d in docs]]
+    return jsonify({
+        'kyc_status': user['kyc_status'] if user else 'pending',
+        'dob': user['dob'] if user else None,
+        'nationality': user['nationality'] if user else None,
+        'required_docs': required,
+        'uploaded_docs': uploaded,
+        'missing_docs': missing,
+    })
+
+
+@app.route('/api/kyc/personal', methods=['PATCH'])
+@require_auth
+def kyc_personal():
+    """Update KYC personal info: dob, nationality, address, tax_file_number, visa_status."""
+    data = request.json or {}
+    fields = ['dob', 'nationality', 'address', 'tax_file_number', 'visa_status']
+    updates = {}
+    for f in fields:
+        if f in data:
+            updates[f] = data[f]
+    if not updates:
+        return jsonify({'error': 'No valid fields provided'}), 400
+    cols = ', '.join(f'{k} = ?' for k in updates)
+    vals = list(updates.values()) + [request.user_id]
+    db = get_db()
+    db.execute(f'UPDATE users SET {cols} WHERE id = ?', vals)
+    db.commit()
+    db.close()
+    return jsonify({'success': True, 'updated': list(updates.keys())})
+
+
+@app.route('/api/kyc/document', methods=['POST'])
+@require_auth
+def kyc_upload_doc():
+    """Upload a KYC identity document (passport, national ID, or driver's license)."""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    file = request.files['file']
+    doc_type = request.form.get('doc_type', '').strip().lower()
+    doc_number = request.form.get('doc_number', '').strip()
+    valid_types = ['passport', 'national_id', 'drivers_license']
+    if doc_type not in valid_types:
+        return jsonify({'error': f'doc_type must be one of: {valid_types}'}), 400
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_DOC_EXT:
+        return jsonify({'error': f'File type not allowed. Upload PDF, JPG, or PNG.'}), 400
+
+    safe_user = f"user_{request.user_id}"
+    filename  = f"{safe_user}_{doc_type}_{int(datetime.datetime.now().timestamp())}{ext}"
+    filepath  = os.path.join(KYC_UPLOAD_DIR, filename)
+    file.save(filepath)
+
+    try:
+        if os.path.getsize(filepath) > 10 * 1024 * 1024:
+            os.remove(filepath)
+            return jsonify({'error': 'File too large. Max 10 MB.'}), 400
+        if not _kyc_verify_magic(filepath):
+            os.remove(filepath)
+            return jsonify({'error': 'File content does not match its type.'}), 400
+    except:
+        if os.path.exists(filepath): os.remove(filepath)
+        return jsonify({'error': 'Could not process file.'}), 400
+
+    db = get_db()
+    db.execute("""
+        INSERT INTO kyc_documents (user_id, doc_type, doc_number, file_path, uploaded_at, status)
+        VALUES (?, ?, ?, ?, ?, 'pending')
+        ON CONFLICT(user_id, doc_type) DO UPDATE SET
+            doc_number = excluded.doc_number,
+            file_path  = excluded.file_path,
+            uploaded_at = excluded.uploaded_at,
+            status = 'pending'
+    """, (request.user_id, doc_type, doc_number, filename, datetime.datetime.now().isoformat()))
+    # Mark KYC as submitted if all docs are now present
+    required = ['passport', 'national_id', 'drivers_license']
+    uploaded = [r['doc_type'] for r in db.execute(
+        "SELECT doc_type FROM kyc_documents WHERE user_id = ?", (request.user_id,)).fetchall()]
+    if all(r in uploaded for r in required):
+        db.execute("UPDATE users SET kyc_status = 'submitted' WHERE id = ?", (request.user_id,))
+    db.commit()
+    db.close()
+    return jsonify({'success': True, 'filename': filename, 'doc_type': doc_type}), 201
+
+
+@app.route('/api/kyc/admin/list', methods=['GET'])
+@require_auth
+def kyc_admin_list():
+    """Admin endpoint: list all users with pending KYC for review."""
+    if request.user_role != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+    db = get_db()
+    users = db.execute("""
+        SELECT u.id, u.name, u.email, u.kyc_status, u.dob, u.nationality,
+               u.visa_status, u.created_at,
+               GROUP_CONCAT(d.doc_type, ', ') as docs
+        FROM users u
+        LEFT JOIN kyc_documents d ON d.user_id = u.id
+        WHERE u.kyc_status IN ('submitted', 'pending')
+        GROUP BY u.id
+        ORDER BY u.created_at DESC
+    """).fetchall()
+    db.close()
+    return jsonify({'users': [dict(u) for u in users]})
+
+
+@app.route('/api/kyc/admin/verify/<int:user_id>', methods=['POST'])
+@require_auth
+def kyc_admin_verify(user_id):
+    """Admin: approve or reject a user's KYC."""
+    if request.user_role != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+    data = request.json or {}
+    action = data.get('action', '')  # 'verify' or 'reject'
+    if action not in ('verify', 'reject'):
+        return jsonify({'error': "action must be 'verify' or 'reject'"}), 400
+    new_status = 'verified' if action == 'verify' else 'rejected'
+    db = get_db()
+    db.execute("UPDATE users SET kyc_status = ? WHERE id = ?", (new_status, user_id))
+    db.execute("UPDATE kyc_documents SET status = ? WHERE user_id = ?", (new_status, user_id))
+    db.commit()
+    db.close()
+    return jsonify({'success': True, 'kyc_status': new_status})
+
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5700))
