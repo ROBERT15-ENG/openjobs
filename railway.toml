@@ -1,0 +1,16 @@
+[deploy]
+buildCommand = "pip install --no-cache-dir -r requirements.txt"
+startCommand = "cd api && python3 server.py"
+
+[deploy.metadata]
+dockerfile = """
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+WORKDIR /app/api
+ENV PORT=5700
+EXPOSE 5700
+CMD ["python3", "server.py"]
+"""

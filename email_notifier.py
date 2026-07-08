@@ -61,7 +61,7 @@ def send_job_alert(to_email: str, user_name: str, jobs: list, keywords: str) -> 
             <p>Hi {user_name}, we found {len(jobs)} new jobs matching your criteria:</p>
             {jobs_html}
             <p style="margin-top: 20px; color: #888;">
-                <a href="http://localhost:5700/alerts.html" style="color: #00d4ff;">Manage your job alerts</a>
+                <a href="{APP_URL}/alerts.html" style="color: #00d4ff;">Manage your job alerts</a>
             </p>
         </div>
     </body>
@@ -79,7 +79,7 @@ def send_welcome_email(to_email: str, user_name: str) -> dict:
             <h1 style="color: #00d4ff;">🚀 Welcome to JobSeek!</h1>
             <p>Hi {}, ready to find your dream job?</p>
             <div style="margin: 30px 0;">
-                <a href="http://localhost:5700" style="background: #00d4ff; color: #000; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">Browse Jobs</a>
+                <a href="{APP_URL}" style="background: #00d4ff; color: #000; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">Browse Jobs</a>
             </div>
             <p style="color: #888;">Set up job alerts to get notified when new jobs match your skills!</p>
         </div>
@@ -99,7 +99,7 @@ def send_application_confirm(to_email: str, job_title: str, company: str) -> dic
             <p>Your application for <strong>{job_title}</strong> at <strong>{company}</strong> has been submitted.</p>
             <p>We'll notify you when the employer responds.</p>
             <p style="margin-top: 30px; color: #888;">
-                <a href="http://localhost:5700/user.html" style="color: #00d4ff;">View your applications</a>
+                <a href="{APP_URL}/user.html" style="color: #00d4ff;">View your applications</a>
             </p>
         </div>
     </body>

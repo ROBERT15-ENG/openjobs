@@ -1,6 +1,7 @@
-from dotenv import load_dotenv
-load_dotenv()
 #!/usr/bin/env python3
+from dotenv import load_dotenv
+import os
+load_dotenv()
 import sqlite3, os, json, datetime, base64
 from functools import wraps
 from flask import Flask, request, jsonify, g
@@ -30,7 +31,10 @@ limiter = Limiter(
 )
 app.secret_key = os.environ.get('SECRET_KEY', 'dev_secret_key_change_in_production')
 
-DB_PATH = "/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/jobs.db"
+APP_URL = os.environ.get('APP_URL', APP_URL)
+OLLAMA_URL = os.environ.get('OLLAMA_URL', OLLAMA_URL)
+
+DB_PATH = os.environ.get('DATABASE_URL', os.path.join(os.path.dirname(__file__), '..', 'jobs.db'))
 
 def get_db():
     if 'db' not in g:
@@ -177,7 +181,7 @@ def login():
     return jsonify({'success': True, 'token': token, 'user': {'id': user['id'], 'name': user['name'], 'email': user['email'], 'role': user['role'], 'employer_id': user['id'] if user['role'] == 'employer' else None}})
 
 import sys
-sys.path.insert(0, '/Users/agentx/.openclaw/workspace/spyder-trader/jobseek')
+# semantic_matcher in same dir — no path hack needed
 from email_notifier import send_email
 import secrets
 
@@ -205,8 +209,8 @@ def forgot_password():
                (token, expires.isoformat(), user['id']))
     db.commit()
 
-    # Build reset link — assumes server accessible at localhost:5700
-    reset_link = f"http://localhost:5700/reset-password.html?token={token}"
+    # Build reset link
+    reset_link = f"{APP_URL}/reset-password.html?token={token}"
 
     user_name = user['name'] or email.split('@')[0]
     html = f"""
@@ -906,8 +910,8 @@ def create_checkout():
                 'quantity': 1
             }],
             'mode': 'payment',
-            'success_url': f'http://localhost:5700/employer?payment=success&job_id={job_id}',
-            'cancel_url': 'http://localhost:5700/employer',
+            'success_url': f'{APP_URL}/employer?payment=success&job_id={job_id}',
+            'cancel_url': f'{APP_URL}/employer',
             'metadata': {
                 'job_id': str(job_id),
                 'user_id': str(request.user_id),
@@ -930,14 +934,14 @@ def create_checkout():
 # ============ OLLAMA AI ============
 import requests
 try:
-    r = requests.get('http://localhost:11434/api/tags', timeout=2)
+    r = requests.get(f'{OLLAMA_URL}/api/tags', timeout=2)
     OLLAMA_AVAILABLE = r.status_code == 200
 except:
     OLLAMA_AVAILABLE = False
 
 @app.route('/api/ai/ollama/status', methods=['GET'])
 def ollama_status():
-    return jsonify({'available': OLLAMA_AVAILABLE, 'url': 'http://localhost:11434'})
+    return jsonify({'available': OLLAMA_AVAILABLE, 'url': OLLAMA_URL})
 
 @app.route('/api/ai/ollama/models', methods=['GET'])
 def list_ollama_models():
@@ -945,7 +949,7 @@ def list_ollama_models():
         return jsonify({'error': 'Ollama not running', 'models': []})
     try:
         import requests
-        resp = requests.get('http://localhost:11434/api/tags', timeout=5)
+        resp = requests.get(f'{OLLAMA_URL}/api/tags', timeout=5)
         return jsonify({'success': True, 'models': [m['name'] for m in resp.json().get('models', [])]})
     except Exception as e:
         return jsonify({'error': str(e)})
@@ -957,7 +961,7 @@ def ollama_chat():
     data = request.json
     try:
         import requests
-        resp = requests.post('http://localhost:11434/api/chat', json={'model': data.get('model', 'llama3.2'), 'messages': [{'role': 'user', 'content': data.get('message')}], 'stream': False}, timeout=30)
+        resp = requests.post(f'{OLLAMA_URL}/api/chat', json={'model': data.get('model', 'llama3.2'), 'messages': [{'role': 'user', 'content': data.get('message')}], 'stream': False}, timeout=30)
         return jsonify({'success': True, 'response': resp.json()['message']['content']})
     except Exception as e:
         return jsonify({'error': str(e)})
@@ -1070,7 +1074,7 @@ def admin_stats():
 
 @app.route('/ai')
 def ai_page():
-    with open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/ai.html', 'r') as f:
+    with open(os.path.join(TEMPLATES_DIR, 'ai.html'), 'r') as f:
         return f.read()
 
 
@@ -1078,7 +1082,7 @@ def ai_page():
 
 @app.route('/')
 def index():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/index.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/index.html') else jsonify({'msg':'OpenJobs API','endpoints':['/api/jobs','/api/companies','/api/ai/ollama/status']})
+    return open(os.path.join(TEMPLATES_DIR, 'index.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'index.html')) else jsonify({'msg':'OpenJobs API','endpoints':['/api/jobs','/api/companies','/api/ai/ollama/status']})
 
 @app.route('/robots.txt')
 def robots():
@@ -1087,52 +1091,52 @@ def robots():
 @app.route('/job.html')
 @app.route('/job')
 def job_page():
-    path = '/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/job.html'
+    path = os.path.join(TEMPLATES_DIR, 'job.html')
     return open(path).read() if os.path.exists(path) else jsonify({'error':'Template not found'})
 
 @app.route('/companies')
 def companies_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/company.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/company.html') else jsonify({'companies':[]})
+    return open(os.path.join(TEMPLATES_DIR, 'company.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'company.html')) else jsonify({'companies':[]})
 
 @app.route('/salary')
 def salary_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/salary.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/salary.html') else jsonify({'predict':True})
+    return open(os.path.join(TEMPLATES_DIR, 'salary.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'salary.html')) else jsonify({'predict':True})
 
 @app.route('/login')
 def login_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/login.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/login.html') else jsonify({'error':'Template not found'})
+    return open(os.path.join(TEMPLATES_DIR, 'login.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'login.html')) else jsonify({'error':'Template not found'})
 
 @app.route('/register')
 def register_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/register.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/register.html') else jsonify({'error':'Template not found'})
+    return open(os.path.join(TEMPLATES_DIR, 'register.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'register.html')) else jsonify({'error':'Template not found'})
 
 @app.route('/forgot-password')
 def forgot_password_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/forgot-password.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/forgot-password.html') else jsonify({'error':'Template not found'})
+    return open(os.path.join(TEMPLATES_DIR, 'forgot-password.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'forgot-password.html')) else jsonify({'error':'Template not found'})
 
 @app.route('/reset-password.html')
 def reset_password_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/reset-password.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/reset-password.html') else jsonify({'error':'Template not found'})
+    return open(os.path.join(TEMPLATES_DIR, 'reset-password.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'reset-password.html')) else jsonify({'error':'Template not found'})
 
 @app.route('/user')
 def user_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/user.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/user.html') else jsonify({'dashboard':True})
+    return open(os.path.join(TEMPLATES_DIR, 'user.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'user.html')) else jsonify({'dashboard':True})
 
 @app.route('/employer')
 def employer_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/employer.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/employer.html') else jsonify({'employer':True})
+    return open(os.path.join(TEMPLATES_DIR, 'employer.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'employer.html')) else jsonify({'employer':True})
 
 @app.route('/admin')
 def admin_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/admin.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/admin.html') else jsonify({'admin':True})
+    return open(os.path.join(TEMPLATES_DIR, 'admin.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'admin.html')) else jsonify({'admin':True})
 
 @app.route('/privacy')
 def privacy_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/privacy.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/privacy.html') else jsonify({'privacy':True})
+    return open(os.path.join(TEMPLATES_DIR, 'privacy.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'privacy.html')) else jsonify({'privacy':True})
 
 @app.route('/terms')
 def terms_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/terms.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/terms.html') else jsonify({'terms':True})
+    return open(os.path.join(TEMPLATES_DIR, 'terms.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'terms.html')) else jsonify({'terms':True})
 
 # ============ CAD API ============
 import ezdxf
@@ -1182,7 +1186,7 @@ def read_cad():
 
 @app.route('/cad')
 def cad_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/cad.html').read()
+    return open(os.path.join(TEMPLATES_DIR, 'cad.html')).read()
 
 
 
@@ -1530,4 +1534,5 @@ def employer_applications():
 # ── RESUME TEXT EXTRACTION ─────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5700, debug=False)
+    port = int(os.environ.get('PORT', 5700))
+    app.run(host='0.0.0.0', port=port, debug=False)
