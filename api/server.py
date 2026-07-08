@@ -97,11 +97,13 @@ def _block_token(token):
     else:
         _block_token(token)
 
+BLOCKED_TOKENS = set()  # in-memory fallback, reset on restart
+
 def _is_token_blocked(token):
     """Check if a token is in the blocklist."""
     if _USING_REDIS_BLOCKLIST:
         return bool(_redis_client.exists(f"blocked:{token}"))
-    return _is_token_blocked(token) or token in BLOCKED_TOKENS
+    return token in BLOCKED_TOKENS
 
 def _extract_skills_fast(text: str):
     """Fast keyword-based skill extraction against skills_taxonomy.
@@ -321,13 +323,6 @@ def confirm_email():
     db.execute("UPDATE users SET email_confirmed = 1, confirm_token = NULL, confirm_expires = NULL WHERE id = ?",
                (user['id'],))
     db.commit()
-    try:
-        db2 = get_db()
-        db2.execute('UPDATE jobs SET application_count = application_count + 1 WHERE id = ?', (job_id,))
-        db2.commit()
-        db2.close()
-    except:
-        pass
     db.close()
     return jsonify({'success': True, 'message': 'Email confirmed! You can now log in.'}), 200
 
@@ -1857,10 +1852,12 @@ def employer_applications():
                JOIN jobs j ON a.job_id = j.id
                LEFT JOIN users u ON a.user_id = u.id
                WHERE a.job_id IN ({ph})"""
+    params = list(job_ids)  # copy so we can safely append
     if status != 'all':
-        qry += f" AND a.status = '{status}'"
+        qry += " AND a.status = ?"
+        params.append(status)
     qry += " ORDER BY a.applied_at DESC"
-    apps = db.execute(qry, job_ids).fetchall()
+    apps = db.execute(qry, params).fetchall()
     db.close()
     return jsonify({'applications': [dict(a) for a in apps]})
 
