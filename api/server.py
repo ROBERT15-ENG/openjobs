@@ -1094,14 +1094,6 @@ def quick_apply(job_id):
         db.close()
         return jsonify({'error': 'Not found'}), 404
 
-    # Gate: resume required
-    if not user['cv_link'] and not user['resume_text']:
-        db.close()
-        return jsonify({
-            'error': 'no_resume',
-            'message': 'Upload a resume before applying. Visit your profile to upload one.'
-        }), 422
-
     # Gate: KYC must be verified
     if user['kyc_status'] != 'verified':
         db.close()
