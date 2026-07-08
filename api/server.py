@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from dotenv import load_dotenv
+
 import os
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), '..', 'templates')
 load_dotenv()
 import sqlite3, os, json, datetime, base64
 from functools import wraps
