@@ -1094,14 +1094,6 @@ def quick_apply(job_id):
         db.close()
         return jsonify({'error': 'Not found'}), 404
 
-    # Gate: KYC must be verified
-    if user['kyc_status'] != 'verified':
-        db.close()
-        return jsonify({
-            'error': 'kyc_required',
-            'message': 'Complete KYC verification before applying. Visit your profile to complete it.'
-        }), 403
-
     # Gate: no duplicate applications
     existing = db.execute("SELECT id FROM applications WHERE job_id = ? AND user_id = ?",
                           (job_id, request.user_id)).fetchone()
