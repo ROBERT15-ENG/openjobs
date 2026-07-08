@@ -872,7 +872,13 @@
   }
 
   function toggleMobileNav() {
-    document.querySelector('nav').classList.toggle('open');
+    const nav = document.querySelector('nav');
+    nav.classList.toggle('open');
+    document.body.style.overflow = nav.classList.contains('open') ? 'hidden' : '';
+  }
+  function closeMobileNav() {
+    document.querySelector('nav').classList.remove('open');
+    document.body.style.overflow = '';
   }
 
   // Keyboard close modal

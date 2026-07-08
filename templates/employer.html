@@ -27,6 +27,7 @@
     .btn-primary { background: var(--primary); color: #000; }
     .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,170,0.3); }
     .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+    .app-sort-btn.active { background: var(--primary-glow) !important; border-color: var(--primary) !important; color: var(--primary) !important; }
     .btn-ghost:hover { border-color: var(--border-light); color: var(--text); }
     .btn-danger { background: transparent; color: var(--error); border: 1px solid rgba(239,68,68,0.3); }
     .btn-danger:hover { background: rgba(239,68,68,0.1); }
@@ -334,6 +335,13 @@
     <div class="tab-content" id="tab-applications">
       <h2 class="page-title">Applications</h2>
       <p class="page-sub">Review and manage applicants for your jobs.</p>
+      <div id="appSortBar" style="display:none; align-items:center; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap;">
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:600;">Sort by:</span>
+        <button class="btn-ghost btn-sm app-sort-btn active" data-sort="applied_at" onclick="sortApps('applied_at')">Newest</button>
+        <button class="btn-ghost btn-sm app-sort-btn" data-sort="applicant_name" onclick="sortApps('applicant_name')">Name A→Z</button>
+        <button class="btn-ghost btn-sm app-sort-btn" data-sort="status" onclick="sortApps('status')">Status</button>
+        <span id="appCountLabel" style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);"></span>
+      </div>
       <div id="allApplications"><div class="empty-state"><div class="icon">📥</div><h3>Loading...</h3></div></div>
     </div>
 
@@ -613,29 +621,71 @@
     } catch { el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><h3>Could not load jobs</h3></div>'; }
   }
 
+  // ── APPLICATION SORTER ───────────────────────────────────────────────────
+  var _sortCol = 'applied_at', _sortDir = -1;
+
+  function sortApps(col) {
+    if (_sortCol === col) { _sortDir = _sortDir * -1; }
+    else { _sortCol = col; _sortDir = col === 'applied_at' ? -1 : 1; }
+    document.querySelectorAll('.app-sort-btn').forEach(function(b) {
+      var isActive = b.dataset.sort === _sortCol;
+      b.classList.toggle('active', isActive);
+      if (isActive) {
+        if (b.dataset.sort === 'applied_at') b.textContent = _sortDir === -1 ? 'Newest ↓' : 'Oldest ↑';
+        else if (b.dataset.sort === 'applicant_name') b.textContent = _sortDir === 1 ? 'Name A→Z' : 'Name Z→A';
+        else b.textContent = 'Status';
+      } else {
+        if (b.dataset.sort === 'applied_at') b.textContent = 'Newest';
+        else if (b.dataset.sort === 'applicant_name') b.textContent = 'Name A→Z';
+        else b.textContent = 'Status';
+      }
+    });
+    var tbody = document.querySelector('#allApplications table tbody');
+    if (!tbody) return;
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function(a, b) {
+      var va, vb;
+      if (_sortCol === 'applied_at') { va = new Date(a.dataset.applied||0); vb = new Date(b.dataset.applied||0); }
+      else if (_sortCol === 'applicant_name') { va = a.dataset.name||''; vb = b.dataset.name||''; }
+      else { va = a.dataset.status||''; vb = b.dataset.status||''; }
+      if (va < vb) return _sortDir;
+      if (va > vb) return -_sortDir;
+      return 0;
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+  }
+
   async function loadApplications() {
     const el = document.getElementById('allApplications');
     try {
       const res = await fetch('/api/employer/applications', { headers: authHeaders() });
       if (!res.ok) { el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><h3>Could not load applications</h3></div>'; return; }
       const d = await res.json();
-      const apps = d.applications || [];
+      window._allApplications = apps;
       if (!apps.length) {
         el.innerHTML = '<div class="empty-state"><div class="icon">📥</div><h3>No applications yet</h3></div>';
+        document.getElementById('appSortBar').style.display = 'none';
         return;
       }
+      document.getElementById('appSortBar').style.display = 'flex';
+      document.getElementById('appCountLabel').textContent = apps.length + ' applicant' + (apps.length !== 1 ? 's' : '');
       el.innerHTML = '<div class="card"><div class="table-wrap"><table>' +
         '<thead><tr><th>Applicant</th><th>Job</th><th>Status</th><th>Applied</th><th>Actions</th></tr></thead>' +
-        '<tbody>' + apps.map(a => '<tr>' +
-          '<td><div class="table-title"><span class="app-name" data-app-id="' + a.id + '">' + escHtml(a.applicant_name || 'Unknown') + '</span></div>' +
+        '<tbody>' + apps.map(a => '<tr ' +
+          '\'data-name="' + (a.applicant_name||'').toLowerCase().replace(/"/g,'') + '" ' +
+          '\'data-status="' + (a.status||'pending') + '" ' +
+          '\'data-applied="' + (a.applied_at||'') + '" ' +
+          '\'data-id="' + a.id + '">' +
+          '<td><div class="table-title">' + escHtml(a.applicant_name || 'Unknown') + '</div>' +
             '<div class="table-company">' + escHtml(a.applicant_email || '') + '</div></td>' +
           '<td>' + escHtml(a.job_title || a.company || '—') + '</td>' +
-          '<td><span class="badge badge-pending">' + cap(a.status || 'pending') + '</span></td>' +
+          '<td><span class="badge badge-' + (a.status||'pending') + '">' + cap(a.status || 'pending') + '</span></td>' +
           '<td>' + timeSince(a.applied_at) + '</td>' +
-          '<td>' +
-            '<button class="action-btn" onclick="updateAppStatus(' + a.id + ',\'reviewing\')">✓ Review</button>' +
-            '<button class="action-btn" onclick="updateAppStatus(' + a.id + ',\'interview\')">📅 Interview</button>' +
-            '<button class="action-btn danger" onclick="updateAppStatus(' + a.id + ',\'rejected\')">✗ Reject</button></td>' +
+          '<td style="white-space:nowrap;">' +
+            '<button class="action-btn" onclick="updateAppStatus(' + a.id + ',\'reviewing\')">✓</button>' +
+            '<button class="action-btn" onclick="updateAppStatus(' + a.id + ',\'interview\')">📅</button>' +
+            '<button class="action-btn" onclick="viewApp(' + a.id + ')">👁</button>' +
+            '<button class="action-btn danger" onclick="updateAppStatus(' + a.id + ',\'rejected\')">✗</button></td>' +
         '</tr>').join('') + '</tbody></table></div></div>';
     } catch { el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><h3>Could not load applications</h3></div>'; }
   }
@@ -732,7 +782,14 @@ async function handlePostJob(e) {
       const res = await fetch('/api/jobs/' + jobId);
       if (!res.ok) return;
       const j = await res.json();
-      document.getElementById('editJobId').value = j.id;
+      document.getElementById('editJobId').value = job.id;
+    document.getElementById('editTitle').value = job.title || '';
+    document.getElementById('editCompany').value = job.company || '';
+    document.getElementById('editLocation').value = job.location || '';
+    document.getElementById('editCategory').value = job.category || 'General';
+    document.getElementById('editWorkType').value = job.work_type || 'full_time';
+    document.getElementById('editDescription').value = job.description || '';
+    document.getElementById('editModal').style.display = 'flex';
       document.getElementById('editTitle').value = j.title || '';
       document.getElementById('editCompany').value = j.company || '';
       document.getElementById('editLocation').value = j.location || '';
@@ -778,7 +835,7 @@ async function handlePostJob(e) {
 
   async function confirmDeleteJob() {
     const id = document.getElementById('editJobId').value;
-    if (!confirm('Delete this job? This cannot be undone.')) return;
+    if (!confirm('🗑 Delete this job permanently? This cannot be undone.')) return;
     try {
       const res = await fetch('/api/jobs/' + id, { method: 'DELETE', headers: authHeaders() });
       if (!res.ok) throw new Error();
@@ -899,5 +956,49 @@ async function handlePostJob(e) {
     </div>
   </div>
 </div>
+<!-- CANDIDATE DETAIL MODAL -->
+<div class="modal-overlay" id="candidateModal">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <div class="modal-title" id="candidateModalLabel">👤 Applicant</div>
+      <button class="modal-close" onclick="closeCandidateModal()">×</button>
+    </div>
+    <div id="candidateDetail" style="padding:1.25rem;max-height:65vh;overflow-y:auto;"></div>
+    <div style="padding:0.75rem 1.25rem 1.25rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+      <button class="btn btn-primary btn-sm" onclick="updateAppStatusFromModal('reviewing')">✓ Mark Reviewing</button>
+      <button class="btn btn-primary btn-sm" onclick="updateAppStatusFromModal('interview')">📅 Mark Interview</button>
+      <button class="btn btn-danger btn-sm" onclick="updateAppStatusFromModal('rejected')">✗ Reject</button>
+    </div>
+  </div>
+</div>
+
+function viewApp(id) {
+  var apps = window._allApplications || [];
+  var a = apps.find(function(x){ return x.id === id; });
+  if (!a) return;
+  var m = document.getElementById('candidateDetail');
+  if (!m) return;
+  document.getElementById('candidateModalLabel').textContent = (a.applicant_name||'Unknown') + ' — ' + (a.job_title||a.company||'—');
+  m.innerHTML = (
+    '<div style="display:grid;gap:0.75rem;">' +
+    '<div><span style="font-size:0.7rem;color:var(--text-muted);">EMAIL</span><br><a href="mailto:'+escHtml(a.applicant_email||'')+'" style="color:var(--primary);">'+escHtml(a.applicant_email||'—')+'</a></div>' +
+    (a.phone ? '<div><span style="font-size:0.7rem;color:var(--text-muted);">PHONE</span><br>'+escHtml(a.phone)+'</div>' : '') +
+    '<div><span style="font-size:0.7rem;color:var(--text-muted);">STATUS</span><br><span class="badge badge-'+(a.status||'pending')+'">'+cap(a.status||'pending')+'</span></div>' +
+    '<div><span style="font-size:0.7rem;color:var(--text-muted);">APPLIED</span><br>'+timeSince(a.applied_at)+'</div>' +
+    (a.cover_note ? '<div><span style="font-size:0.7rem;color:var(--text-muted);">COVER NOTE</span><div style="background:var(--bg-card);padding:0.75rem;border-radius:8px;margin-top:4px;white-space:pre-wrap;">'+escHtml(a.cover_note)+'</div></div>' : '') +
+    (a.resume_text ? '<div><span style="font-size:0.7rem;color:var(--text-muted);">RESUME</span><div style="background:var(--bg-card);padding:0.75rem;border-radius:8px;margin-top:4px;white-space:pre-wrap;font-size:0.8rem;max-height:150px;overflow-y:auto;">'+escHtml(a.resume_text.substring(0,600))+(a.resume_text.length>600?'...':'')+'</div></div>' : '') +
+    '</div>'
+  );
+  window._candidateModalAppId = id;
+  document.getElementById('candidateModal').style.display = 'flex';
+}
+function closeCandidateModal() { document.getElementById('candidateModal').style.display = 'none'; }
+function updateAppStatusFromModal(status) {
+  if (window._candidateModalAppId) {
+    updateAppStatus(window._candidateModalAppId, status);
+    closeCandidateModal();
+  }
+}
+
 </body>
 </html>
