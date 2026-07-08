@@ -8,31 +8,56 @@ from flask import Flask, request, jsonify, g
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
+import jwt  # PyJWT — real HMAC-signed tokens
+import re
 
 # Smart semantic matcher — keyword-first, Ollama only for borderline cases
 import sys
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from semantic_matcher import rank_jobs_for_resume, keyword_score
 
-app = Flask(__name__)
+from email_notifier import send_email, send_welcome_email, send_application_confirm
 
-try:
-    from flask_cors import CORS
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
-except ImportError:
-    CORS = lambda x: x  # Dummy CORS if not installed
-    pass
+# ── JWT Configuration ───────────────────────────────────────────────────────
+JWT_SECRET = os.environ.get('JWT_SECRET') or os.environ.get('SECRET_KEY')
+if not JWT_SECRET:
+    import warnings
+    warnings.warn("JWT_SECRET not set — using insecure default for development only. Set JWT_SECRET in .env")
+    JWT_SECRET = 'dev_secret_do_not_use_in_production'
 
+ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5700').split(',')
+
+# ── Rate Limiter (Redis when available, memory fallback) ──────────────────
+REDIS_URL = os.environ.get('REDIS_URL')
+limiter_storage = REDIS_URL or "memory://"
 limiter = Limiter(
-    app=app,
+    app=None,  # will call limiter.init_app after app creation
     key_func=get_remote_address,
     default_limits=["500 per day", "100 per hour", "20 per minute"],
-    storage_uri="memory://"
+    storage_uri=limiter_storage,
 )
+
+app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max request size
+
+# ── CORS — locked to specific origins ──────────────────────────────────────
+try:
+    from flask_cors import CORS
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": ALLOWED_ORIGINS,
+            "methods": ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+            "allow_headers": ["Authorization", "Content-Type"],
+        }
+    })
+except ImportError:
+    pass
+
+limiter.init_app(app)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev_secret_key_change_in_production')
 
-APP_URL = os.environ.get('APP_URL', APP_URL)
-OLLAMA_URL = os.environ.get('OLLAMA_URL', OLLAMA_URL)
+APP_URL = os.environ.get('APP_URL', 'http://localhost:5700')
+OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
 
 DB_PATH = os.environ.get('DATABASE_URL', os.path.join(os.path.dirname(__file__), '..', 'jobs.db'))
 
@@ -48,7 +73,33 @@ def close_db(e=None):
     if db: db.close()
 
 # ============ AUTH MIDDLEWARE ============
-BLOCKED_TOKENS = set()  # Simple token blocklist for logout
+# ── Token Blocklist (Redis-backed, with in-memory fallback) ──────────────────
+try:
+    if REDIS_URL:
+        import redis
+        _redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        _redis_client.ping()
+        _USING_REDIS_BLOCKLIST = True
+        print(f"[auth] Redis blocklist active: {REDIS_URL}")
+except Exception:
+    _redis_client = None
+    _USING_REDIS_BLOCKLIST = False
+    print("[auth] Redis unavailable — blocklist resets on restart (use Redis for persistence)")
+
+def _block_token(token):
+    """Add a token to the blocklist."""
+    if _USING_REDIS_BLOCKLIST:
+        import time
+        # Keep blocked tokens for 7 days (max token age)
+        _redis_client.setex(f"blocked:{token}", 7 * 24 * 3600, "1")
+    else:
+        _block_token(token)
+
+def _is_token_blocked(token):
+    """Check if a token is in the blocklist."""
+    if _USING_REDIS_BLOCKLIST:
+        return bool(_redis_client.exists(f"blocked:{token}"))
+    return _is_token_blocked(token) or token in BLOCKED_TOKENS
 
 def _extract_skills_fast(text: str):
     """Fast keyword-based skill extraction against skills_taxonomy.
@@ -76,15 +127,27 @@ def _extract_skills_fast(text: str):
 
 
 
+def _create_token(user_id, email, role, employer_id=None):
+    """Create a real HMAC-signed JWT token."""
+    payload = {
+        'user_id': user_id,
+        'email': email,
+        'role': role,
+        'employer_id': employer_id or user_id,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7),
+        'iat': datetime.datetime.utcnow(),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
+
+
 def _decode_token(token):
-    """Decode a base64 JWT-like token. Handles both padded and unpadded."""
-    import base64, json
-    pad = (4 - len(token) % 4) % 4
-    safe = token + '=' * pad
+    """Decode and verify a JWT token. Returns payload or None."""
     try:
-        return json.loads(base64.b64decode(safe).decode())
-    except Exception:
-        return None
+        return jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+    except jwt.ExpiredSignatureError:
+        return None  # 'Token expired'
+    except jwt.InvalidTokenError:
+        return None  # 'Invalid token'
 
 
 def require_auth(f):
@@ -95,14 +158,12 @@ def require_auth(f):
         if not auth.startswith('Bearer '):
             return jsonify({'error': 'Missing or invalid Authorization header'}), 401
         token = auth.split(' ', 1)[1]
-        if token in BLOCKED_TOKENS:
+        if _is_token_blocked(token):
             return jsonify({'error': 'Token has been revoked'}), 401
         payload = _decode_token(token)
         if not payload:
-            return jsonify({'error': 'Invalid token'}), 401
-        if payload.get('exp') and datetime.datetime.fromisoformat(payload['exp']) < datetime.datetime.now():
-            return jsonify({'error': 'Token expired'}), 401
-        request.user_id   = int(payload.get('user_id', 0))
+            return jsonify({'error': 'Invalid or expired token'}), 401
+        request.user_id    = int(payload.get('user_id', 0))
         request.user_role  = payload.get('role', 'user')
         request.user_email = payload.get('email', '')
         request.employer_id = payload.get('employer_id') or payload.get('user_id')
@@ -142,10 +203,15 @@ def register():
     
     if '@' not in email or '.' not in email:
         return jsonify({'error': 'Invalid email format'}), 400
-    
-    if len(password) < 6:
-        return jsonify({'error': 'Password must be at least 6 characters'}), 400
-    
+    # Password complexity requirements
+    if len(password) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters'}), 400
+    if not re.search(r'[A-Z]', password):
+        return jsonify({'error': 'Password must contain at least 1 uppercase letter'}), 400
+    if not re.search(r'[a-z]', password):
+        return jsonify({'error': 'Password must contain at least 1 lowercase letter'}), 400
+    if not re.search(r'\d', password):
+        return jsonify({'error': 'Password must contain at least 1 number'}), 400
     db = get_db()
     existing = db.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
     if existing:
@@ -154,8 +220,27 @@ def register():
     db.execute("INSERT INTO users (name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
                (name, email, hash_password(password), role, datetime.datetime.now().isoformat()))
     db.commit()
-    
-    return jsonify({'success': True, 'message': 'Registered successfully'}), 201
+    user_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    db.close()
+
+    # Generate email confirmation token
+    confirm_token = secrets.token_urlsafe(32)
+    confirm_expires = (datetime.datetime.now() + datetime.timedelta(hours=24)).isoformat()
+    db2 = get_db()
+    db2.execute("UPDATE users SET confirm_token = ?, confirm_expires = ? WHERE id = ?",
+                 (confirm_token, confirm_expires, user_id))
+    db2.commit()
+    db2.close()
+
+    # Send confirmation email
+    confirm_link = f"{APP_URL}/api/auth/confirm-email?token={confirm_token}"
+    _send_confirmation_email(email, name, confirm_link)
+
+    return jsonify({
+        'success': True,
+        'message': 'Registered! Check your email to confirm your account.',
+        'email_confirmed': False
+    }), 201
 
 @app.route('/api/auth/login', methods=['POST'])
 @limiter.limit('10 per minute', exempt_when=lambda: False)
@@ -165,25 +250,78 @@ def login():
     password = data.get('password', '')
     
     db = get_db()
-    user = db.execute("SELECT id, name, email, password_hash, role FROM users WHERE email = ?", (email,)).fetchone()
-    
+    user = db.execute("SELECT id, name, email, password_hash, role, email_confirmed FROM users WHERE email = ?", (email,)).fetchone()
+
     if not user or not verify_password(password, user['password_hash']):
         return jsonify({'error': 'Invalid credentials'}), 401
-    
-    token_payload = {
-        'user_id': user['id'],
-        'email': user['email'],
-        'role': user['role'],
-        'employer_id': user['id'] if user['role'] == 'employer' else None,
-        'exp': str(datetime.datetime.now() + datetime.timedelta(days=7))
-    }
-    token = base64.b64encode(json.dumps(token_payload).encode()).decode().rstrip('=') + '=='
-    return jsonify({'success': True, 'token': token, 'user': {'id': user['id'], 'name': user['name'], 'email': user['email'], 'role': user['role'], 'employer_id': user['id'] if user['role'] == 'employer' else None}})
 
-import sys
-# semantic_matcher in same dir — no path hack needed
-from email_notifier import send_email
-import secrets
+    if not user.get('email_confirmed'):
+        db.close()
+        return jsonify({
+            'error': 'email_not_confirmed',
+            'message': 'Please confirm your email before logging in. Check your inbox or spam folder.'
+        }), 403
+
+    token = _create_token(user['id'], user['email'], user['role'],
+                           user['id'] if user['role'] == 'employer' else None)
+    return jsonify({
+        'success': True,
+        'token': token,
+        'user': {
+            'id': user['id'],
+            'name': user['name'],
+            'email': user['email'],
+            'role': user['role'],
+            'employer_id': user['id'] if user['role'] == 'employer' else None
+        }
+})
+
+secrets = __import__('secrets')
+
+
+def _send_confirmation_email(to_email, user_name, confirm_link):
+    """Send email confirmation link."""
+    import html
+    safe_name = html.escape(user_name or to_email.split('@')[0])
+    confirm_link_escaped = html.escape(confirm_link)
+    html_body = f"""
+    <html><body style="font-family:Arial,sans-serif;background:#0f0f0f;color:#fff;padding:20px;">
+        <div style="max-width:600px;margin:0 auto;text-align:center;">
+            <h1 style="color:#00d4ff;">📧 Confirm Your Email</h1>
+            <p>Hi {safe_name}, click the button below to verify your email address:</p>
+            <div style="margin:30px 0;">
+                <a href="{confirm_link_escaped}" style="background:#00d4ff;color:#000;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;">Confirm Email</a>
+            </div>
+            <p style="color:#888;font-size:12px;">This link expires in 24 hours. If you didn't create an account, ignore this email.</p>
+        </div>
+    </body></html>
+    """
+    send_email(to_email, "Confirm your JobSeek account", html_body)
+
+
+@app.route('/api/auth/confirm-email', methods=['GET'])
+def confirm_email():
+    """Clickable link from confirmation email — activates account."""
+    token = request.args.get('token', '').strip()
+    if not token:
+        return jsonify({'error': 'Confirmation token required'}), 400
+    db = get_db()
+    user = db.execute(
+        "SELECT id, email_confirmed FROM users WHERE confirm_token = ? AND confirm_expires > ?",
+        (token, datetime.datetime.now().isoformat())
+    ).fetchone()
+    if not user:
+        db.close()
+        return jsonify({'error': 'Invalid or expired confirmation token'}), 400
+    if user['email_confirmed']:
+        db.close()
+        return jsonify({'success': True, 'message': 'Email already confirmed'}), 200
+    db.execute("UPDATE users SET email_confirmed = 1, confirm_token = NULL, confirm_expires = NULL WHERE id = ?",
+               (user['id'],))
+    db.commit()
+    db.close()
+    return jsonify({'success': True, 'message': 'Email confirmed! You can now log in.'}), 200
+
 
 @app.route('/api/auth/forgot-password', methods=['POST'])
 def forgot_password():
@@ -252,10 +390,15 @@ def reset_password():
 
     if not token or not password:
         return jsonify({'error': 'Token and new password are required'}), 400
-
-    if len(password) < 6:
-        return jsonify({'error': 'Password must be at least 6 characters'}), 400
-
+    # Password complexity requirements (same as registration)
+    if len(password) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters'}), 400
+    if not re.search(r'[A-Z]', password):
+        return jsonify({'error': 'Password must contain at least 1 uppercase letter'}), 400
+    if not re.search(r'[a-z]', password):
+        return jsonify({'error': 'Password must contain at least 1 lowercase letter'}), 400
+    if not re.search(r'\d', password):
+        return jsonify({'error': 'Password must contain at least 1 number'}), 400
     db = get_db()
     user = db.execute(
         "SELECT id FROM users WHERE reset_token = ? AND reset_expires > ?",
@@ -276,7 +419,7 @@ def reset_password():
 def logout():
     auth = request.headers.get('Authorization', '')
     if auth.startswith('Bearer '):
-        BLOCKED_TOKENS.add(auth.split(' ', 1)[1])
+        _block_token(auth.split(' ', 1)[1])
     return jsonify({'success': True, 'message': 'Logged out'})
 
 
@@ -287,7 +430,7 @@ def me():
         return jsonify({'error': 'Unauthorized'}), 401
     try:
         token = auth.split(' ', 1)[1]
-        if token in BLOCKED_TOKENS:
+        if _is_token_blocked(token):
             return jsonify({'error': 'Token revoked'}), 401
         payload = _decode_token(token)
         if not payload:
@@ -306,13 +449,34 @@ def me():
 
 
 
-# ── RESUME TEXT EXTRACTION ─────────────────────────────────────────────────
-import re
-
+# ── Upload security ───────────────────────────────────────────────────────────
 ALLOWED_EXT = {'.pdf', '.doc', '.docx'}
 MAX_SIZE    = 5 * 1024 * 1024   # 5 MB
 UPLOAD_DIR  = os.path.join(os.path.dirname(__file__), '..', 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Magic bytes for file type verification (first bytes of file)
+MAGIC_BYTES = {
+    b'%PDF':  '.pdf',
+    b'PK\x03\x04': '.docx',  # DOCX is a ZIP file
+    b'\xd0\xcf\x11\xe0': '.doc',  # Old OLE format
+}
+
+def _verify_file_magic(filepath):
+    """Check magic bytes match the expected type by extension."""
+    try:
+        with open(filepath, 'rb') as f:
+            header = f.read(8)
+        if not header:
+            return False
+        ext = os.path.splitext(filepath)[1].lower()
+        for magic, ext_matched in MAGIC_BYTES.items():
+            if header.startswith(magic):
+                return ext == ext_matched
+        return False  # No magic bytes matched
+    except Exception:
+        return False
+
 
 def extract_resume_text(filepath: str) -> str:
     """Extract plain text from PDF or DOCX file."""
@@ -334,24 +498,11 @@ def extract_resume_text(filepath: str) -> str:
         return ''
 
 @app.route('/api/resume/upload', methods=['POST'])
+@require_auth
 def upload_resume():
     """Upload a resume PDF/DOC, extract text, parse with Ollama, store in DB.
     Auth required. File stored locally; resume_text stored in users table.
     """
-    auth = request.headers.get('Authorization', '')
-    if not auth.startswith('Bearer '):
-        return jsonify({'error': 'Unauthorized'}), 401
-    try:
-        token = auth.split(' ', 1)[1]
-        if token in BLOCKED_TOKENS:
-            return jsonify({'error': 'Token revoked'}), 401
-        payload = _decode_token(token)
-        if not payload:
-            return jsonify({'error': 'Invalid token'}), 401
-        user_id = int(payload['user_id'])
-    except Exception:
-        return jsonify({'error': 'Invalid token'}), 401
-
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
     file = request.files['file']
@@ -364,28 +515,34 @@ def upload_resume():
 
     # Save file
     safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', file.filename)
-    filename  = f'user_{user_id}_{int(datetime.datetime.now().timestamp())}_{safe_name}'
+    filename  = f"user_{request.user_id}_{int(datetime.datetime.now().timestamp())}_{safe_name}"
     filepath  = os.path.join(UPLOAD_DIR, filename)
     file.save(filepath)
 
-    # Check size
-    if os.path.getsize(filepath) > MAX_SIZE:
-        os.remove(filepath)
-        return jsonify({'error': 'File too large. Maximum size is 5 MB.'}), 400
+    try:
+        # Check size
+        if os.path.getsize(filepath) > MAX_SIZE:
+            return jsonify({'error': 'File too large. Maximum size is 5 MB.'}), 400
 
-    # Extract text
-    text = extract_resume_text(filepath)
-    if not text.strip():
-        os.remove(filepath)
-        return jsonify({'error': 'Could not extract text from file. Try a different format.'}), 400
+        # Magic byte verification
+        if not _verify_file_magic(filepath):
+            os.remove(filepath)
+            return jsonify({'error': 'File content does not match its type. Upload a valid PDF or DOCX.'}), 400
 
-    # Store raw resume text in db immediately (Ollama parse deferred to /api/resume/parse)
+        # Extract text
+        text = extract_resume_text(filepath)
+        if not text.strip():
+            return jsonify({'error': 'Could not extract text from file. Try a different format.'}), 400
+
+    finally:
+        if os.path.exists(filepath):
+            os.remove(filepath)  # clean up on any error after this point
 
     # Store cv_link (filename) and resume_text in DB
     db = get_db()
     db.execute(
         'UPDATE users SET cv_link = ?, resume_text = ? WHERE id = ?',
-        (filename, text[:50000], user_id)   # cap at 50 k chars
+        (filename, text[:50000], request.user_id)
     )
     db.commit()
     db.close()
@@ -396,7 +553,7 @@ def upload_resume():
     if extracted_skills:
         db2 = sqlite3.connect(db_path)
         db2.execute('UPDATE users SET skills = ? WHERE id = ?',
-                    (','.join(extracted_skills), user_id))
+                    (','.join(extracted_skills), request.user_id))
         db2.commit()
         db2.close()
 
@@ -411,13 +568,13 @@ def upload_resume():
             if parsed and parsed.get('skills'):
                 db3 = sqlite3.connect(db_path)
                 db3.execute('UPDATE users SET skills = ? WHERE id = ?',
-                            (','.join(parsed['skills'][:20]), user_id))
+                            (','.join(parsed['skills'][:20]), request.user_id))
                 db3.commit()
                 db3.close()
         except Exception as _e:
             print(f'[resume/parse] background parse: {_e}')
     import threading
-    t = threading.Thread(target=_parse_async)
+    t = threading.Thread(target=_parse_async, daemon=True)
     t.start()
 
     return jsonify({
@@ -439,7 +596,7 @@ def parse_resume_ai():
         return jsonify({'error': 'Unauthorized'}), 401
     try:
         token = auth.split(' ', 1)[1]
-        if token in BLOCKED_TOKENS:
+        if _is_token_blocked(token):
             return jsonify({'error': 'Token revoked'}), 401
         payload = _decode_token(token)
         if not payload:
@@ -464,7 +621,54 @@ def parse_resume_ai():
 
 
 # ============ JOBS ============
+
+@app.before_request
+def _force_https():
+    """Redirect HTTP → HTTPS in production."""
+    if os.environ.get('FLASK_ENV') == 'production' and request.url.startswith('http://'):
+        return '', 301
+
+
+
+def _check_password_complexity(password: str):
+    """Returns (ok, message)."""
+    if len(password) < 8:
+        return False, "Min 8 characters"
+    import re
+    if not re.search(r"[A-Z]", password):
+        return False, "Need at least one uppercase letter"
+    if not re.search(r"\d", password):
+        return False, "Need at least one number"
+    if not re.search(r"[!@#$%^&*()_+\-=\[\]{};:'\".,<>?/\\|`~]", password):
+        return False, "Need at least one symbol (!@#$%^&* etc)"
+    return True, "OK"
+
+# ============ GUEST BROWSE (public /api/jobs — no auth required) ============
 @app.route('/api/jobs', methods=['GET'])
+def list_jobs_public():
+    """Public job listing — guests can browse without logging in."""
+    try:
+        db_path = os.path.join(os.path.dirname(__file__), '..', 'jobs.db')
+        con = sqlite3.connect(db_path)
+        con.row_factory = sqlite3.Row
+        cur = con.execute("""
+            SELECT id, title, company, location, salary, work_type, job_type,
+                   skills, created_at, view_count
+            FROM jobs
+            WHERE is_active = 1
+              AND (expires_at IS NULL OR expires_at > date('now'))
+            ORDER BY created_at DESC LIMIT 50
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
+        con.close()
+        for r in rows:
+            r['tags'] = [s.strip() for s in r.get('skills', '').split(',') if s.strip()] if r.get('skills') else []
+            r['views'] = r.pop('view_count', 0)
+        return jsonify({'jobs': rows, 'guest': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 def get_jobs():
     db = get_db()
     
@@ -484,8 +688,9 @@ def get_jobs():
     max_salary = request.args.get('max_salary', type=int)
 
     # Build query
-    where = ["is_active = 1"]
-    params = []
+    now = datetime.datetime.now().isoformat()
+    where = ["is_active = 1", "(expires_at IS NULL OR expires_at > ?)"]
+    params = [now]
 
     if category:
         where.append("category = ?")
@@ -703,7 +908,7 @@ def update_user_profile():
         return jsonify({'error': 'Unauthorized'}), 401
     try:
         token = auth.split(' ', 1)[1]
-        if token in BLOCKED_TOKENS:
+        if _is_token_blocked(token):
             return jsonify({'error': 'Token revoked'}), 401
         payload = _decode_token(token)
         if not payload:
@@ -1431,8 +1636,15 @@ def register_employer():
         return jsonify({'error': 'Name, email, and password are required'}), 400
     if '@' not in email or '.' not in email:
         return jsonify({'error': 'Invalid email'}), 400
-    if len(password) < 6:
-        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    # Password complexity requirements (same as registration)
+    if len(password) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters'}), 400
+    if not re.search(r'[A-Z]', password):
+        return jsonify({'error': 'Password must contain at least 1 uppercase letter'}), 400
+    if not re.search(r'[a-z]', password):
+        return jsonify({'error': 'Password must contain at least 1 lowercase letter'}), 400
+    if not re.search(r'\d', password):
+        return jsonify({'error': 'Password must contain at least 1 number'}), 400
     db = get_db()
     if db.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone():
         db.close()

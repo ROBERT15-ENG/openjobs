@@ -1,0 +1,11 @@
+{
+  "象牙": "python3 -m api.server",
+  "deployment": {
+    "region": "us-west2",
+    "buildCommand": "pip install -r requirements.txt",
+    "startCommand": "cd api && python3 server.py"
+  },
+  "environment": {
+    "PORT": "5700"
+  }
+}
