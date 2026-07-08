@@ -404,6 +404,18 @@
       if (res.ok && data.success) {
         showAlert('success', 'Application submitted! Check your dashboard to track status.');
         btn.textContent = '✅ Applied!';
+      } else if (res.status === 422) {
+        showAlert('error', '⚠️ Upload a resume first. Visit your profile to upload one.');
+        btn.disabled = false;
+        btn.textContent = 'Submit Application →';
+      } else if (res.status === 403) {
+        showAlert('error', '⚠️ Complete KYC verification first. Visit your profile to complete it.');
+        btn.disabled = false;
+        btn.textContent = 'Submit Application →';
+      } else if (res.status === 409) {
+        showAlert('error', '⚠️ You\'ve already applied for this job.');
+        btn.disabled = false;
+        btn.textContent = 'Already Applied ✓';
       } else {
         showAlert('error', data.error || 'Something went wrong. Please try again.');
         btn.disabled = false;

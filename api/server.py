@@ -1069,6 +1069,18 @@ def get_applications():
     return jsonify([dict(a) for a in apps])
 
 @app.route('/api/applications', methods=['POST'])
+@require_auth
+def submit_application():
+    """Generic application submission — used by job.html.
+    Delegates to quick_apply logic but accepts job_id in body.
+    """
+    data = request.json or {}
+    job_id = data.get('job_id')
+    if not job_id:
+        return jsonify({'error': 'job_id required'}), 400
+    # Reuse quick_apply by calling it directly
+    return quick_apply(job_id)
+
 # ── ONE-CLICK APPLY ──────────────────────────────────────────────────────────
 @app.route('/api/apply/<int:job_id>', methods=['POST'])
 @require_auth
