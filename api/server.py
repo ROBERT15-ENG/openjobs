@@ -652,6 +652,8 @@ def _check_password_complexity(password: str):
 
 # ============ GUEST BROWSE (public /api/jobs — no auth required) ============
 @app.route('/api/jobs', methods=['GET'])
+
+
 def list_jobs_public():
     """Public job listing — guests can browse without logging in."""
     try:
@@ -672,11 +674,26 @@ def list_jobs_public():
         for r in rows:
             r['tags'] = [s.strip() for s in r.get('skills', '').split(',') if s.strip()] if r.get('skills') else []
             r['views'] = r.pop('view_count', 0)
+            # Auto-generate salary display string from min/max
+            if r.get('salary_min') or r.get('salary_max'):
+                r['salary'] = _fmt_salary(r.get('salary_min'), r.get('salary_max'), r.get('salary_currency', 'AUD'))
         return jsonify({'jobs': rows, 'guest': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
+def _fmt_salary(smin, smax, currency='AUD'):
+    if not smin and not smax:
+        return ''
+    def f(n):
+        if not n: return ''
+        n = int(n)
+        return currency + ' ' + str(round(n/1000)*1) + 'k'
+    if smin and smax and smin != smax:
+        return f(smin) + ' - ' + f(smax)
+    if smin:
+        return 'From ' + f(smin)
+    return 'Up to ' + f(smax)
 def get_jobs():
     db = get_db()
     
@@ -748,13 +765,24 @@ def get_jobs():
     total = db.execute(f"SELECT COUNT(*) FROM jobs WHERE {where_clause}", params).fetchone()[0]
     
     # Get jobs
+    cols = ["id","title","company","location","salary","salary_min","salary_max","salary_currency",
+               "description","category","work_type","work_arrangement","skills","created_at",
+               "is_active","expires_at","view_count","is_featured","application_count","company_rating"]
     jobs = db.execute(
-        f"SELECT * FROM jobs WHERE {where_clause} ORDER BY is_featured DESC, created_at DESC LIMIT ? OFFSET ?",
+        f"SELECT {','.join(cols)} FROM jobs WHERE {where_clause} ORDER BY is_featured DESC, created_at DESC LIMIT ? OFFSET ?",
         params + [limit, offset]
     ).fetchall()
-    
+
+    result = []
+    for j in jobs:
+        row = dict(j)
+        row['views'] = row.pop('view_count', 0)
+        if not row.get('salary'):
+            row['salary'] = _fmt_salary(row.get('salary_min'), row.get('salary_max'), row.get('salary_currency', 'AUD'))
+        result.append(row)
+
     return jsonify({
-        'jobs': [dict(j) for j in jobs],
+        'jobs': result,
         'pagination': {
             'page': page,
             'limit': limit,
@@ -769,7 +797,10 @@ def get_job(job_id):
     job = db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if not job:
         return jsonify({'error': 'Not found'}), 404
-    return jsonify(dict(job))
+    job = dict(job)
+    if job.get('salary_min') or job.get('salary_max'):
+        job['salary'] = _fmt_salary(job.get('salary_min'), job.get('salary_max'), job.get('salary_currency', 'AUD'))
+    return jsonify(job)
 
 @app.route('/api/jobs', methods=['POST'])
 @require_auth
@@ -799,7 +830,7 @@ def create_job():
             data.get('company'),
             data.get('location'),
             data.get('description'),
-            data.get('salary', 'Competitive'),
+            data.get('salary') or _fmt_salary(data.get('salary_min'), data.get('salary_max'), data.get('salary_currency', 'AUD')),
             data.get('category', 'General'),
             1,
             datetime.datetime.now().isoformat(),
