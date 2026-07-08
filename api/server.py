@@ -319,6 +319,13 @@ def confirm_email():
     db.execute("UPDATE users SET email_confirmed = 1, confirm_token = NULL, confirm_expires = NULL WHERE id = ?",
                (user['id'],))
     db.commit()
+    try:
+        db2 = get_db()
+        db2.execute('UPDATE jobs SET application_count = application_count + 1 WHERE id = ?', (job_id,))
+        db2.commit()
+        db2.close()
+    except:
+        pass
     db.close()
     return jsonify({'success': True, 'message': 'Email confirmed! You can now log in.'}), 200
 
@@ -652,8 +659,9 @@ def list_jobs_public():
         con = sqlite3.connect(db_path)
         con.row_factory = sqlite3.Row
         cur = con.execute("""
-            SELECT id, title, company, location, salary, work_type, job_type,
-                   skills, created_at, view_count
+            SELECT id, title, company, location, salary, salary_min, salary_max, salary_currency,
+                   work_type, job_type, skills, created_at, view_count,
+                   is_featured, application_count, company_rating, company_logo
             FROM jobs
             WHERE is_active = 1
               AND (expires_at IS NULL OR expires_at > date('now'))
@@ -741,7 +749,7 @@ def get_jobs():
     
     # Get jobs
     jobs = db.execute(
-        f"SELECT * FROM jobs WHERE {where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        f"SELECT * FROM jobs WHERE {where_clause} ORDER BY is_featured DESC, created_at DESC LIMIT ? OFFSET ?",
         params + [limit, offset]
     ).fetchall()
     
@@ -783,8 +791,9 @@ def create_job():
     db.execute("""INSERT INTO jobs (
         title, company, location, description, salary, category, is_active, created_at,
         work_type, work_arrangement, salary_min, salary_max, salary_currency,
-        search_summary, selling_points, video_url, expires_at, skills, employer_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        search_summary, selling_points, video_url, expires_at, skills, employer_id,
+        company_rating, is_featured
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data.get('title'),
             data.get('company'),
@@ -804,7 +813,9 @@ def create_job():
             data.get('video_url', ''),
             expires_at,
             data.get('skills', ''),
-            employer_id
+            employer_id,
+            float(data.get('company_rating', 0) or 0),
+            1 if str(data.get('is_featured', '')).lower() in ('1','true','yes') else 0
         )
     )
     db.commit()
@@ -828,6 +839,23 @@ def create_job():
         print(f"[create_job] alert error: {e}")
 
     return jsonify({'success': True, 'message': 'Job created', 'job_id': job_id}), 201
+
+@app.route('/api/jobs/<int:job_id>/feature', methods=['POST'])
+@require_auth
+def feature_job(job_id):
+    data = request.json or {}
+    featured = 1 if data.get('featured') in (True, 'true', '1', 1) else 0
+    db = get_db()
+    job = db.execute("SELECT employer_id FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if not job:
+        return jsonify({'error': 'Not found'}), 404
+    if job['employer_id'] != request.user_id:
+        return jsonify({'error': 'Forbidden'}), 403
+    db.execute("UPDATE jobs SET is_featured = ? WHERE id = ?", (featured, job_id))
+    db.commit()
+    db.close()
+    return jsonify({'success': True, 'is_featured': bool(featured)})
+
 
 @app.route('/api/jobs/<int:job_id>', methods=['PATCH'])
 @require_auth
@@ -873,6 +901,32 @@ def delete_job(job_id):
     db.commit()
     db.close()
     return jsonify({'success': True, 'message': 'Job removed'})
+
+
+@app.route('/api/companies/<company_name>/rate', methods=['POST'])
+@require_auth
+def rate_company(company_name):
+    data = request.json or {}
+    rating = float(data.get('rating', 0))
+    if not (1 <= rating <= 5):
+        return jsonify({'error': 'Rating must be between 1 and 5'}), 400
+    db = get_db()
+    existing = db.execute("SELECT id FROM company_ratings WHERE company = ? AND user_id = ?",
+                          (company_name, request.user_id)).fetchone()
+    if existing:
+        db.execute("UPDATE company_ratings SET rating = ? WHERE id = ?", (rating, existing['id']))
+        msg = "Rating updated"
+    else:
+        db.execute("INSERT INTO company_ratings (company, user_id, rating) VALUES (?, ?, ?)",
+                   (company_name, request.user_id, rating))
+        msg = "Rating submitted"
+    avg = db.execute("SELECT AVG(rating) as avg_rating FROM company_ratings WHERE company = ?",
+                     (company_name,)).fetchone()['avg_rating'] or 0
+    db.execute("UPDATE jobs SET company_rating = ? WHERE LOWER(company) = LOWER(?)",
+               (round(avg, 1), company_name))
+    db.commit()
+    db.close()
+    return jsonify({'success': True, 'message': msg, 'new_avg': round(avg, 1)})
 
 
 @app.route('/api/jobs/<int:job_id>/view', methods=['PATCH'])
@@ -940,6 +994,28 @@ def get_applications():
     return jsonify([dict(a) for a in apps])
 
 @app.route('/api/applications', methods=['POST'])
+# ── ONE-CLICK APPLY ──────────────────────────────────────────────────────────
+@app.route('/api/apply/<int:job_id>', methods=['POST'])
+@require_auth
+def quick_apply(job_id):
+    db = get_db()
+    user = db.execute("SELECT name, email FROM users WHERE id = ?", (request.user_id,)).fetchone()
+    job = db.execute("SELECT title, company FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if not user or not job:
+        return jsonify({'error': 'Not found'}), 404
+    existing = db.execute("SELECT id FROM applications WHERE job_id = ? AND user_id = ?",
+                          (job_id, request.user_id)).fetchone()
+    if existing:
+        return jsonify({'error': 'Already applied'}), 409
+    cover = "Hi, I'm " + str(user['name']) + ". I'm interested in the " + str(job['title']) + " role at " + str(job['company']) + "."
+    db.execute("INSERT INTO applications (job_id, user_id, status, applied_at, cover_note) VALUES (?, ?, 'pending', ?, ?)",
+               (job_id, request.user_id, datetime.datetime.now().isoformat(), cover))
+    db.execute("UPDATE jobs SET application_count = application_count + 1 WHERE id = ?", (job_id,))
+    db.commit()
+    db.close()
+    return jsonify({'success': True, 'message': 'Applied for ' + str(job['title']) + ' at ' + str(job['company'])})
+
+
 @require_auth
 @limiter.limit('30 per hour', exempt_when=lambda: False)
 def apply_job():
@@ -1666,6 +1742,20 @@ def register_employer():
         'success': True, 'token': token,
         'user': {'id': user_id, 'name': name, 'email': email, 'role': 'employer'}
     }), 201
+
+
+@app.route('/api/employer/calendly', methods=['PUT'])
+@require_auth
+def set_calendly_link():
+    data = request.json or {}
+    url = data.get('calendly_url', '').strip()
+    if url and not url.startswith('http'):
+        return jsonify({'error': 'Invalid URL'}), 400
+    db = get_db()
+    db.execute("UPDATE users SET calendly_url = ? WHERE id = ?", (url, request.user_id))
+    db.commit()
+    db.close()
+    return jsonify({'success': True})
 
 
 @app.route('/api/employer/dashboard', methods=['GET'])

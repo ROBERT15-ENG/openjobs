@@ -234,6 +234,11 @@
     .badge-parttime { background: rgba(168,85,247,0.12); color: #c084fc; }
     .badge-contract { background: rgba(251,146,60,0.12); color: #fb923c; }
     .badge-internship { background: rgba(236,72,153,0.12); color: #f472b6; }
+    .badge-featured { background: rgba(251,191,36,0.15); color: #fbbf24; }
+    .job-rating { display: flex; align-items: center; gap: 2px; font-size: 0.75rem; color: #fbbf24; }
+    .job-rating .empty { color: var(--border); }
+    .job-applicants { font-size: 0.72rem; color: var(--text-muted); }
+    .salary-range-display { font-size: 0.8rem; color: var(--primary); font-weight: 600; }
 
     .job-summary {
       font-size: 0.82rem; color: var(--text-muted); line-height: 1.5;
@@ -622,7 +627,9 @@
       return;
     }
     list.innerHTML = jobs.map((job, i) => {
+      const featured = job.is_featured || job.application_count >= 10;
       const badge = getWorkBadge(job);
+      const featuredBadge = featured ? '<span class="badge badge-featured">⭐ Featured</span>' : '';
       const salary = formatSalary(job);
       const timeAgo = timeSince(job.created_at);
       const companyLetter = (job.company || 'J')[0].toUpperCase();
@@ -642,15 +649,19 @@
             </div>
             <div class="match-badge ${matchClass}">${job.score || 70}% match</div>
           </div>
-          <div class="badges">${badge}</div>
+          <div class="badges">${featuredBadge}${badge}</div>
           <div class="job-summary">${isEmpty ? '📋 Description available on job detail page' : escHtml(summary)}</div>
           <div class="job-footer">
             <div class="job-meta">
               <div class="job-meta-item">📍 ${escHtml(job.location)}</div>
               <div class="job-meta-item">🕐 ${timeAgo}</div>
               ${job.category ? `<div class="job-meta-item">🏷 ${escHtml(job.category)}</div>` : ''}
+              ${job.application_count ? `<div class="job-meta-item">👤 ${job.application_count} applied</div>` : ''}
             </div>
-            ${salary ? `<div class="job-salary">${salary}</div>` : ''}
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+              ${salary ? `<div class="salary-range-display">💰 ${salary}</div>` : ''}
+              ${job.company_rating ? `<div class="job-rating">${renderStars(job.company_rating)} <span style="color:var(--text-muted);font-size:0.7rem;">${parseFloat(job.company_rating).toFixed(1)}</span></div>` : ''}
+            </div>
           </div>
         </div>
         <div class="job-actions" onclick="event.stopPropagation()">
@@ -735,6 +746,14 @@
   function closeModal() {
     document.getElementById('jobModal').classList.remove('open');
     document.body.style.overflow = '';
+  }
+
+  function renderStars(rating) {
+    const r = parseFloat(rating) || 0;
+    const full = Math.floor(r);
+    const half = r - full >= 0.5 ? 1 : 0;
+    const empty = 5 - full - half;
+    return '★'.repeat(full) + (half ? '½' : '') + '<span class="empty">★</span>'.repeat(empty);
   }
 
   function salaryEl(job) {
