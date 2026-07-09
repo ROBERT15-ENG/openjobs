@@ -18,6 +18,13 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from semantic_matcher import rank_jobs_for_resume, keyword_score
 
+# SEO infrastructure
+from seo_utils import make_job_slug, parse_job_slug, job_canonical_url, should_noindex
+from seo_utils import job_listing_jsonld, breadcrumbs_jsonld, canonical_url, NOINDEX_ROUTES
+from robots_txt import get_robots_txt
+from sitemap_generator import get_sitemap_index, get_sitemap_static, get_sitemap_jobs
+import seo_middleware as sem
+
 from email_notifier import send_email, send_welcome_email, send_application_confirm
 
 # ── JWT Configuration ───────────────────────────────────────────────────────
@@ -671,6 +678,42 @@ def parse_resume_ai():
     except Exception as e:
         return jsonify({'error': f'Ollama unavailable: {e}'}), 503
 
+
+# ============ SEO — Pre-request hooks ============
+# Run BEFORE every request to enforce canonical URLs and strip crawl noise.
+# Order matters: strip trailing slash first, then lowercase, then UTM params.
+
+_STRIP_TRAILING_RE  = __import__('re').compile(r'/$')
+_LOWERCASE_RE       = __import__('re').compile(r'[A-Z]')
+_BLOCKED_UTM = {'utm_source','utm_medium','utm_campaign','utm_term','utm_content',
+                'fbclid','gclid','sessionid','ref'}
+
+@app.before_request
+def _seo_normalize_url():
+    """Enforce canonical URL form: no trailing slash, lowercase, no UTM params."""
+    import urllib.parse
+    path = request.path
+    # 1. Strip trailing slash (except root)
+    if path != '/' and _STRIP_TRAILING_RE.search(path):
+        qs = ('?' + request.query_string.decode()) if request.query_string else ''
+        return _redirect_raw(request.path.rstrip('/') + qs, 301)
+    # 2. Force lowercase
+    if _LOWERCASE_RE.search(path):
+        qs = ('?' + request.query_string.decode()) if request.query_string else ''
+        return _redirect_raw(request.path.lower() + qs, 301)
+    # 3. Strip blocked UTM/ad params
+    blocked = _BLOCKED_UTM & set(request.args.keys())
+    if blocked:
+        clean = {k: v for k, v in request.args.items() if k not in blocked}
+        if clean != dict(request.args):
+            qs = urllib.parse.urlencode(clean) if clean else ''
+            return _redirect_raw(path + ('?' + qs if qs else ''), 307)
+
+def _redirect_raw(target, code):
+    from flask import make_response
+    resp = make_response('', code)
+    resp.headers['Location'] = target
+    return resp
 
 # ============ JOBS ============
 
@@ -1515,13 +1558,51 @@ def index():
 
 @app.route('/robots.txt')
 def robots():
-    return 'User-agent: *\nAllow: /\nDisallow: /user\nDisallow: /employer\nDisallow: /admin\nDisallow: /api/\n', {'Content-Type': 'text/plain'}
+    return get_robots_txt()
+
+@app.route('/sitemap-index.xml')
+def sitemap_index():
+    return get_sitemap_index()
+
+@app.route('/sitemap-static.xml')
+def sitemap_static():
+    return get_sitemap_static()
+
+@app.route('/sitemap-jobs.xml')
+def sitemap_jobs():
+    return get_sitemap_jobs()
 
 @app.route('/job.html')
 @app.route('/job')
 def job_page():
-    path = os.path.join(TEMPLATES_DIR, 'job.html')
-    return open(path).read() if os.path.exists(path) else jsonify({'error':'Template not found'})
+    """Serve job detail page. Accepts either ?id=123 or slug-id in path."""
+    from flask import render_template
+    job_id = request.args.get('id')
+    slug   = request.args.get('slug', '')
+    if slug:
+        _, resolved_id = parse_job_slug(slug)
+        if resolved_id:
+            job_id = resolved_id
+    if not job_id:
+        return render_template('job.html', job=None, canonical='', jsonld='', bc_jsonld='', noindex=''), 400
+    db = get_db()
+    row = db.execute(
+        'SELECT * FROM jobs WHERE id=? AND is_active=1', (int(job_id),)
+    ).fetchone()
+    db.close()
+    if not row:
+        return render_template('job.html', job=None, canonical='', jsonld='', bc_jsonld='', noindex=''), 404
+    job = dict(row)
+    canonical = job_canonical_url(job['id'], job['title'])
+    jsonld    = job_listing_jsonld(job, canonical)
+    bc_jsonld = breadcrumbs_jsonld([
+        {'name': 'Jobs',                'url': '/jobs'},
+        {'name': job.get('company',''),  'url': '/companies'},
+        {'name': job.get('title', ''),   'url': canonical},
+    ])
+    noindex = '<meta name="robots" content="noindex">' if should_noindex(request.path) else ''
+    return render_template('job.html', job=job, canonical=canonical,
+                          jsonld=jsonld, bc_jsonld=bc_jsonld, noindex=noindex)
 
 @app.route('/companies')
 def companies_page():
