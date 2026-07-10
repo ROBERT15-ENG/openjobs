@@ -322,6 +322,21 @@
     .pagination button.active { background: var(--primary); color: #000; border-color: var(--primary); }
     .pagination button:hover:not(.active) { border-color: var(--primary); color: var(--primary); }
 
+    /* ── SKILL TAGS ── */
+    .skill-tag { display:inline-block; background:var(--primary-glow); color:var(--primary); border:1px solid rgba(0,212,170,0.3); border-radius:20px; padding:0.15rem 0.55rem; font-size:0.7rem; font-weight:500; }
+    .job-skills { display:flex; flex-wrap:wrap; gap:4px; margin:0.2rem 0 0.3rem; }
+
+      /* ── MODAL SKELETON LOADING ── */
+      .skeleton { background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card-hover) 50%, var(--bg-card) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 6px; }
+      @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+      .skeleton-title { height: 22px; width: 65%; margin-bottom: 10px; }
+      .skeleton-line { height: 14px; margin-bottom: 8px; }
+      .skeleton-line.short { width: 40%; }
+      .skeleton-line.medium { width: 70%; }
+      .modal-loading { display: none; }
+      .modal-loading.show { display: block; }
+      .modal-loading .modal-body-content { opacity: 0; }
+
     /* ── FOOTER ── */
     footer { border-top: 1px solid var(--border); padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.8rem; }
 
@@ -388,14 +403,14 @@
     </div>
     <nav>
       <a href="/">Find Jobs</a>
-      <a href="#">Companies</a>
-      <a href="#">Salary Guide</a>
-      <a href="#">Learning</a>
+      <a href="/companies">Companies</a>
+      <a href="/salary">Salary Guide</a>
+      <a href="/learning">Learning</a>
       <a href="/templates/employer.html">For Employers</a>
     </nav>
     <div class="header-actions">
-      <a href="#" class="btn btn-ghost">Post a Job</a>
-      <a href="#" class="btn btn-primary">Sign Up Free</a>
+      <a href="#" class="btn btn-ghost" onclick="alert('Coming soon — post a job from the employer dashboard')">Post a Job</a>
+      <a href="/register" class="btn btn-primary">Sign Up Free</a>
       <button class="hamburger" id="hamburgerBtn" onclick="toggleMobileNav()" aria-label="Toggle menu">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
@@ -531,10 +546,37 @@
 <!-- JOB DETAIL MODAL -->
 <div class="modal-overlay" id="jobModal" onclick="if(event.target===this)closeModal()">
   <div class="modal">
+    <!-- Loading skeleton -->
+    <div class="modal-loading show" id="modalLoading">
+      <div class="modal-header" style="gap:1rem;">
+        <div class="skeleton" style="width:52px;height:52px;border-radius:12px;flex-shrink:0;"></div>
+        <div style="flex:1;">
+          <div class="skeleton skeleton-title"></div>
+          <div class="skeleton skeleton-line short"></div>
+          <div class="skeleton skeleton-line short" style="margin-top:6px;width:30%;"></div>
+        </div>
+        <button class="modal-close" onclick="closeModal()">×</button>
+      </div>
+      <div class="modal-body" style="margin-top:1.5rem;">
+        <div class="skeleton skeleton-line medium"></div>
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line short"></div>
+        <div style="margin-top:1.5rem;">
+          <div class="skeleton skeleton-line medium" style="margin-bottom:12px;"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line short"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actual content -->
+    <div class="modal-body-content" id="modalContent" style="display:none;">
     <div class="modal-header">
       <div class="modal-logo" id="modalLogo">G</div>
       <div class="modal-title-block">
-        <div class="modal-title" id="modalTitle">Loading...</div>
+        <div class="modal-title" id="modalTitle"></div>
         <div class="modal-company" id="modalCompany"></div>
         <div class="badges" id="modalBadges" style="margin-top:0.5rem;"></div>
       </div>
@@ -556,8 +598,9 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-save" onclick="saveJob()">☆ Save Job</button>
-      <button class="btn btn-apply-modal" onclick="applyToJob()">Apply Now →</button>
+      <button class="btn btn-save" id="modalSaveBtn" onclick="saveJob()">☆ Save Job</button>
+      <button class="btn btn-apply-modal" id="modalApplyBtn" onclick="applyToJob()">Apply Now →</button>
+    </div>
     </div>
   </div>
 </div>
@@ -637,6 +680,11 @@
       const descLen = (job.description || '').length;
       const isEmpty = descLen < 100;
       const matchClass = job.score >= 80 ? 'match-high' : job.score >= 60 ? 'match-mid' : 'match-low';
+      // Skills tags — show up to 4
+      const skills = (job.skills || '').split(',').filter(Boolean).slice(0,4);
+      const skillsHtml = skills.length
+        ? `<div class="job-skills">${skills.map(s => `<span class="skill-tag">${escHtml(s.trim())}</span>`).join('')}</div>`
+        : '';
 
       return `
       <div class="job-card animate-in" style="animation-delay:${i*40}ms" onclick="openJob(${job.id})">
@@ -650,12 +698,14 @@
             <div class="match-badge ${matchClass}">${job.score || 70}% match</div>
           </div>
           <div class="badges">${featuredBadge}${badge}</div>
+          ${skillsHtml}
           <div class="job-summary">${isEmpty ? '📋 Description available on job detail page' : escHtml(summary)}</div>
           <div class="job-footer">
             <div class="job-meta">
               <div class="job-meta-item">📍 ${escHtml(job.location)}</div>
               <div class="job-meta-item">🕐 ${timeAgo}</div>
-              ${job.category ? `<div class="job-meta-item">🏷 ${escHtml(job.category)}</div>` : ''}
+              ${job.work_type ? `<div class="job-meta-item">💼 ${formatWorkType(job.work_type)}</div>` : ''}
+              ${job.work_arrangement ? `<div class="job-meta-item">🏠 ${job.work_arrangement}</div>` : ''}
               ${job.application_count ? `<div class="job-meta-item">👤 ${job.application_count} applied</div>` : ''}
             </div>
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
@@ -700,15 +750,22 @@
 
   // ── OPEN JOB DETAIL ───────────────────────────────────────────────
   function openJob(id) {
+    // Show skeleton, hide content
+    document.getElementById('modalLoading').classList.add('show');
+    const content = document.getElementById('modalContent');
+    content.style.display = 'none';
+    document.getElementById('jobModal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+
     fetch(`/api/jobs/${id}`)
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then(job => {
         currentJob = job;
-        const badge = getWorkBadge(job);
+        // Populate fields
         document.getElementById('modalLogo').textContent = (job.company||'J')[0].toUpperCase();
         document.getElementById('modalTitle').textContent = job.title;
         document.getElementById('modalCompany').textContent = job.company + ' · ' + job.location;
-        document.getElementById('modalBadges').innerHTML = badge;
+        document.getElementById('modalBadges').innerHTML = getWorkBadge(job);
         document.getElementById('modalDesc').textContent = job.description || 'No description available.';
         document.getElementById('modalSalary').textContent = formatSalary(job) || 'Competitive';
         document.getElementById('modalMeta').innerHTML = `
@@ -716,7 +773,7 @@
           <div class="modal-meta-item">📍 ${escHtml(job.location)}</div>
           <div class="modal-meta-item">🕐 ${timeSince(job.created_at)}</div>
           ${job.category ? `<div class="modal-meta-item">🏷 ${escHtml(job.category)}</div>` : ''}
-          ${job.work_type ? `<div class="modal-meta-item">💼 ${escHtml(formatWorkType(job.work_type))}</div>` : ''}
+          ${job.work_type ? `<div class="modal-meta-item">💼 ${formatWorkType(job.work_type)}</div>` : ''}
         `;
         // Skills
         if (job.skills) {
@@ -738,14 +795,23 @@
         } catch(e) {
           document.getElementById('modalSellingSection').style.display = 'none';
         }
-        document.getElementById('jobModal').classList.add('open');
-        document.body.style.overflow = 'hidden';
+        // Switch: hide skeleton, show real content
+        document.getElementById('modalLoading').classList.remove('show');
+        content.style.display = '';
+      })
+      .catch(() => {
+        document.getElementById('modalLoading').classList.remove('show');
+        document.getElementById('modalTitle').textContent = 'Job not found';
+        document.getElementById('modalCompany').textContent = '';
+        document.getElementById('modalDesc').textContent = 'This job may have been removed or is no longer available.';
+        content.style.display = '';
       });
   }
 
   function closeModal() {
     document.getElementById('jobModal').classList.remove('open');
     document.body.style.overflow = '';
+    currentJob = null;
   }
 
   function renderStars(rating) {
@@ -779,7 +845,24 @@
       .catch(() => alert('⚠️ Could not submit application. Try again.'));
   }
 
-  function saveJob() { alert('💾 Job saved to your profile!'); closeModal(); }
+  function saveJob() {
+    if (!currentJob) return;
+    fetch('/api/saved_jobs', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({job_id: currentJob.id, user_id: 1})
+    }).then(r => r.json())
+      .then(d => {
+        if (d.success || d.message) {
+          document.getElementById('modalSaveBtn').textContent = '★ Saved';
+          document.getElementById('modalSaveBtn').classList.add('saved');
+          alert('💾 Job saved! Track it in your dashboard.');
+        } else {
+          alert('⚠️ ' + (d.error || 'Something went wrong'));
+        }
+      })
+      .catch(() => alert('⚠️ Could not save job. Try again.'));
+  }
   function saveJobToggle(id, btn, e) {
     if (e) e.stopPropagation();
     const isSaved = btn.textContent === '★';
@@ -787,7 +870,16 @@
       method: isSaved ? 'DELETE' : 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({job_id: id, user_id: 1})
-    }).then(r => r.json()).then(d => {
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success || d.message || d.created) {
+        btn.textContent = isSaved ? '☆' : '★';
+        btn.style.color = isSaved ? '' : 'var(--primary)';
+      }
+    })
+    .catch(() => {});
+  }.then(r => r.json()).then(d => {
       if (d.success || d.error && d.error.includes('UNIQUE')) {
         btn.textContent = isSaved ? '☆' : '★';
         btn.style.color = isSaved ? '' : 'var(--warning)';
@@ -902,10 +994,18 @@
     const max = job.salary_max;
     const curr = job.salary_currency || 'AUD';
     if (!min && !max) return '';
-    const fmt = n => n >= 1000 ? curr + ' ' + Math.round(n/1000) + 'k' : '';
-    if (min && max && min !== max) return fmt(min) + ' – ' + fmt(max);
-    if (min) return 'From ' + fmt(min);
-    if (max) return 'Up to ' + fmt(max);
+    // KES amounts stored as raw numbers (e.g. 800 = KES 800k); AUD as thousands (e.g. 80 = AUD 80k)
+    if (curr === 'KES') {
+      const fmtKES = n => n >= 1000 ? 'KES ' + n.toLocaleString() : 'KES ' + n;
+      if (min && max && min !== max) return fmtKES(min) + ' – ' + fmtKES(max);
+      if (min) return 'From ' + fmtKES(min);
+      if (max) return 'Up to ' + fmtKES(max);
+      return '';
+    }
+    const fmtAUD = n => n >= 1000 ? 'AUD ' + Math.round(n/1000) + 'k' : 'AUD ' + n;
+    if (min && max && min !== max) return fmtAUD(min) + ' – ' + fmtAUD(max);
+    if (min) return 'From ' + fmtAUD(min);
+    if (max) return 'Up to ' + fmtAUD(max);
     return '';
   }
 

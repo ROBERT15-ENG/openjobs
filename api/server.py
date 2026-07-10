@@ -1575,8 +1575,9 @@ def sitemap_jobs():
 @app.route('/job.html')
 @app.route('/job')
 def job_page():
-    """Serve job detail page. Accepts either ?id=123 or slug-id in path."""
-    from flask import render_template
+    """Serve job detail page — reads file, injects dynamic SEO values, returns raw HTML."""
+    from flask import make_response
+    from jinja2 import Template
     job_id = request.args.get('id')
     slug   = request.args.get('slug', '')
     if slug:
@@ -1584,25 +1585,40 @@ def job_page():
         if resolved_id:
             job_id = resolved_id
     if not job_id:
-        return render_template('job.html', job=None, canonical='', jsonld='', bc_jsonld='', noindex=''), 400
+        return _serve_job_html(None, canonical='', jsonld='', bc_jsonld='', noindex='', status=400)
     db = get_db()
     row = db.execute(
         'SELECT * FROM jobs WHERE id=? AND is_active=1', (int(job_id),)
     ).fetchone()
     db.close()
     if not row:
-        return render_template('job.html', job=None, canonical='', jsonld='', bc_jsonld='', noindex=''), 404
+        return _serve_job_html(None, canonical='', jsonld='', bc_jsonld='', noindex='', status=404)
     job = dict(row)
     canonical = job_canonical_url(job['id'], job['title'])
     jsonld    = job_listing_jsonld(job, canonical)
     bc_jsonld = breadcrumbs_jsonld([
         {'name': 'Jobs',                'url': '/jobs'},
-        {'name': job.get('company',''),  'url': '/companies'},
-        {'name': job.get('title', ''),   'url': canonical},
+        {'name': job.get('company',''), 'url': '/companies'},
+        {'name': job.get('title', ''),  'url': canonical},
     ])
     noindex = '<meta name="robots" content="noindex">' if should_noindex(request.path) else ''
-    return render_template('job.html', job=job, canonical=canonical,
-                          jsonld=jsonld, bc_jsonld=bc_jsonld, noindex=noindex)
+    return _serve_job_html(job, canonical=canonical, jsonld=jsonld, bc_jsonld=bc_jsonld, noindex=noindex)
+
+def _serve_job_html(job, canonical, jsonld, bc_jsonld, noindex, status=200):
+    """Read job.html and inject dynamic values, then return as HTTP response."""
+    from flask import make_response
+    from jinja2 import Template
+    path = os.path.join(TEMPLATES_DIR, 'job.html')
+    try:
+        html = open(path).read()
+    except Exception:
+        return 'Template not found', 404
+    t = Template(html)
+    rendered = t.render(job=job or {}, canonical=canonical,
+                        jsonld=jsonld, bc_jsonld=bc_jsonld, noindex=noindex)
+    resp = make_response(rendered, status)
+    resp.content_type = 'text/html; charset=utf-8'
+    return resp
 
 @app.route('/companies')
 def companies_page():

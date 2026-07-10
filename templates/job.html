@@ -115,6 +115,18 @@
     .related-company { font-size: 0.78rem; color: var(--text-muted); }
     .related-salary { font-size: 0.8rem; font-weight: 700; color: var(--primary); white-space: nowrap; }
 
+    /* SHARE */
+    .share-wrap { position: relative; }
+    .btn-share { background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted); padding: 0.7rem 1.25rem; border-radius: 12px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 0.4rem; }
+    .btn-share:hover { border-color: var(--primary); color: var(--primary); }
+    .share-dropdown { position: absolute; top: calc(100% + 8px); right: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 0.5rem; min-width: 200px; z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,0.4); display: none; }
+    .share-dropdown.show { display: block; }
+    .share-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.75rem; border-radius: 8px; cursor: pointer; font-size: 0.875rem; font-weight: 500; color: var(--text); transition: background 0.15s; }
+    .share-item:hover { background: var(--bg-card-hover); }
+    .share-item .si-icon { font-size: 1.1rem; width: 24px; text-align: center; }
+    .share-divider { height: 1px; background: var(--border); margin: 0.25rem 0; }
+    .copy-feedback { color: var(--success); font-size: 0.78rem; margin-left: auto; }
+
     /* FOOTER */
     footer { border-top: 1px solid var(--border); padding: 1.5rem 2rem; text-align: center; color: var(--text-muted); font-size: 0.78rem; margin-top: 3rem; }
 
@@ -154,6 +166,34 @@
     </div>
     <div class="hero-actions">
       <button class="btn-save" id="saveBtn" onclick="toggleSave()">☆ Save</button>
+      <div class="share-wrap">
+        <button class="btn-share" id="shareBtn" onclick="toggleShare()">
+          <span>↗</span> Share
+        </button>
+        <div class="share-dropdown" id="shareDropdown">
+          <div class="share-item" onclick="nativeShare()">
+            <span class="si-icon">📤</span> Share via...
+          </div>
+          <div class="share-divider"></div>
+          <div class="share-item" onclick="shareTo('whatsapp')">
+            <span class="si-icon">💬</span> WhatsApp
+          </div>
+          <div class="share-item" onclick="shareTo('twitter')">
+            <span class="si-icon">✖</span> Post to X
+          </div>
+          <div class="share-item" onclick="shareTo('linkedin')">
+            <span class="si-icon">💼</span> LinkedIn
+          </div>
+          <div class="share-item" onclick="shareTo('facebook')">
+            <span class="si-icon">📘</span> Facebook
+          </div>
+          <div class="share-divider"></div>
+          <div class="share-item" onclick="copyLink()">
+            <span class="si-icon">🔗</span> Copy link
+            <span class="copy-feedback" id="copyFeedback"></span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -262,6 +302,18 @@
 
   function renderJob(job) {
     document.title = job.title + ' — OpenJobs';
+    const shareUrl = 'https://openjobs.com.au/jobs/' + slugify(job.title) + '-' + job.id;
+    // Update canonical URL
+    const canon = document.querySelector('link[rel="canonical"]');
+    if (canon) canon.href = shareUrl;
+    // Update OG tags
+    const ogTitle  = document.querySelector('meta[property="og:title"]');
+    const ogDesc   = document.querySelector('meta[property="og:description"]');
+    const ogUrl    = document.querySelector('meta[property="og:url"]');
+    const salary   = formatSalary(job) || 'Competitive';
+    if (ogTitle)  ogTitle.content  = job.title + ' at ' + job.company + ' — OpenJobs';
+    if (ogDesc)   ogDesc.content   = (job.description||'').substring(0, 160);
+    if (ogUrl)    ogUrl.content    = shareUrl;
     document.getElementById('jobLogo').textContent = (job.company || 'J')[0].toUpperCase();
     document.getElementById('jobTitle').textContent = job.title;
     document.getElementById('jobCompany').textContent = job.company + ' · ' + job.location;
@@ -426,7 +478,74 @@
     const btn = document.getElementById('saveBtn');
     btn.classList.toggle('saved', saved);
     btn.textContent = saved ? '★ Saved' : '☆ Save';
-    // In real app, POST to /api/saved_jobs
+  }
+
+  // ── SHARE ──
+  function toggleShare() {
+    document.getElementById('shareDropdown').classList.toggle('show');
+  }
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.share-wrap')) {
+      document.getElementById('shareDropdown').classList.remove('show');
+    }
+  });
+
+  function getShareUrl() {
+    const canonical = currentJob
+      ? 'https://openjobs.com.au/jobs/' + slugify(currentJob.title) + '-' + currentJob.id
+      : window.location.href;
+    return canonical;
+  }
+
+  function getShareText() {
+    if (!currentJob) return 'Check out this job on OpenJobs';
+    const salary = formatSalary(currentJob);
+    const salaryPart = salary ? ' — ' + salary : '';
+    return currentJob.title + ' at ' + currentJob.company + salaryPart + ' · ' + currentJob.location;
+  }
+
+  function nativeShare() {
+    if (!navigator.share) { shareTo('twitter'); return; }
+    navigator.share({ title: currentJob.title, text: getShareText(), url: getShareUrl() })
+      .catch(() => {});
+    document.getElementById('shareDropdown').classList.remove('show');
+  }
+
+  function shareTo(platform) {
+    const url = encodeURIComponent(getShareUrl());
+    const text = encodeURIComponent(getShareText());
+    const urls = {
+      whatsapp: 'https://wa.me/?text=' + text + '%20' + url,
+      twitter:  'https://twitter.com/intent/tweet?text=' + text + '&url=' + url,
+      linkedin: 'https://www.linkedin.com/sharing/share-offsite/?url=' + url,
+      facebook: 'https://www.facebook.com/sharer/sharer.php?u=' + url,
+    };
+    if (urls[platform]) window.open(urls[platform], '_blank', 'width=600,height=400');
+    document.getElementById('shareDropdown').classList.remove('show');
+  }
+
+  function copyLink() {
+    navigator.clipboard.writeText(getShareUrl()).then(() => {
+      const fb = document.getElementById('copyFeedback');
+      fb.textContent = 'Copied!';
+      setTimeout(() => fb.textContent = '', 2000);
+    }).catch(() => {
+      // Fallback
+      const ta = document.createElement('textarea');
+      ta.value = getShareUrl();
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      document.getElementById('copyFeedback').textContent = 'Copied!';
+      setTimeout(() => document.getElementById('copyFeedback').textContent = '', 2000);
+    });
+    document.getElementById('shareDropdown').classList.remove('show');
+  }
+
+  function slugify(text) {
+    return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
   // ── UTILITIES ──
