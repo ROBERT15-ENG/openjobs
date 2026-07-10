@@ -799,20 +799,78 @@
 
   // ── SEARCH HELPERS ─────────────────────────────────────────────────
   function doSearch() { currentPage = 1; fetchJobs(); }
+  // Quick filters: these set a MODE that gets combined with checkbox filters.
+  // Each quick filter category is independent — they stack with checkbox state.
+  // Active quick filter is tracked so its button shows the "active" style.
+  let activeQuickFilter = null;  // 'Remote', 'full_time', 'Nairobi', etc.
+
   function setQuickFilter(btn, value) {
     document.querySelectorAll('.quick-chip').forEach(c => c.classList.remove('active'));
-    btn.classList.add('active');
-    if (value === 'Remote') {
-      document.getElementById('filterLocation').value = 'Remote';
-    } else if (['full_time','part_time','internship'].includes(value)) {
+    // Toggle off if same button clicked again
+    if (activeQuickFilter === value) {
+      activeQuickFilter = null;
+      // Restore all checkboxes to checked (show all)
+      ['full_time','part_time','contract','internship'].forEach(wt => {
+        const el = document.getElementById('wt-' + wt);
+        if (el) el.checked = true;
+      });
+      ['remote','onsite','hybrid'].forEach(wa => {
+        const el = document.getElementById('wa-' + wa);
+        if (el) el.checked = true;
+      });
       document.getElementById('filterLocation').value = '';
-    } else if (value) {
-      document.getElementById('locationInput').value = value;
-    } else {
       document.getElementById('locationInput').value = '';
-      document.getElementById('filterLocation').value = '';
+      fetchJobs();
+      return;
     }
+
+    activeQuickFilter = value;
+    btn.classList.add('active');
     currentPage = 1;
+
+    if (!value) {
+      // "All Jobs" — same as toggle off above
+      activeQuickFilter = null;
+      ['full_time','part_time','contract','internship'].forEach(wt => {
+        const el = document.getElementById('wt-' + wt);
+        if (el) el.checked = true;
+      });
+      ['remote','onsite','hybrid'].forEach(wa => {
+        const el = document.getElementById('wa-' + wa);
+        if (el) el.checked = true;
+      });
+      document.getElementById('filterLocation').value = '';
+      document.getElementById('locationInput').value = '';
+      fetchJobs();
+      return;
+    }
+
+    if (value === 'Remote') {
+      // Work arrangement — only affect wa- checkboxes, leave work_type untouched
+      if (document.getElementById('wa-remote')) document.getElementById('wa-remote').checked = true;
+      if (document.getElementById('wa-onsite')) document.getElementById('wa-onsite').checked = false;
+      if (document.getElementById('wa-hybrid')) document.getElementById('wa-hybrid').checked = false;
+      document.getElementById('filterLocation').value = '';
+      document.getElementById('locationInput').value = '';
+      fetchJobs();
+      return;
+    }
+
+    if (['full_time','part_time','internship','contract'].includes(value)) {
+      // Work type — only affect wt- checkboxes, leave work_arrangement and location untouched
+      ['full_time','part_time','contract','internship'].forEach(wt => {
+        const el = document.getElementById('wt-' + wt);
+        if (el) el.checked = (wt === value);
+      });
+      document.getElementById('filterLocation').value = '';
+      document.getElementById('locationInput').value = '';
+      fetchJobs();
+      return;
+    }
+
+    // City/location quick filter (e.g. Nairobi, Sydney) — leave all work type/arrangement checkboxes as-is
+    document.getElementById('filterLocation').value = '';
+    document.getElementById('locationInput').value = value;
     fetchJobs();
   }
   function updateSalaryLabel() {
