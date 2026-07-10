@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
+  <meta name="google-signin-client_id" content="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com">
+
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Sign in to your OpenJobs account. Access your personalized job dashboard, track applications, and manage your career profile.">
@@ -289,9 +292,91 @@
     }
   }
 
-  function socialLogin(provider) {
-    showAlert('error', `Social login via ${provider} requires OAuth setup. Use email login for now.`);
+  // ── GOOGLE SIGN-IN ───────────────────────────────────────────────
+  // Google Identity Services — renders the button, handles the popup
+  function initGoogleLogin() {
+    if (typeof google === 'undefined') {
+      // GIS not loaded — silently skip, email login still works
+      return;
+    }
+    google.accounts.id.initialize({
+      client_id: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
+      callback: handleGoogleResponse,
+      auto_select: false,
+      cancel_on_tap_outside: true
+    });
+    // Attach to the existing social button
+    const btn = document.querySelector('.btn-social[onclick*="socialLogin"]');
+    if (btn) {
+      google.accounts.id.renderButton(btn, {
+        theme: 'outline',
+        size: 'medium',
+        text: 'signin_with',
+        shape: 'rectangular',
+        width: 200
+      });
+      btn.removeAttribute('onclick');
+    }
   }
+
+  function socialLogin(provider) {
+    if (provider !== 'google') {
+      showAlert('error', 'Only Google Sign-In is supported right now.');
+      return;
+    }
+    if (typeof google !== 'undefined') {
+      google.accounts.id.prompt(notification => {
+        if (notification.isNotDisplayed() || notification.isNotSignedIn()) {
+          showAlert('error', 'Google Sign-In popup could not be shown. Check your browser settings.');
+        }
+      });
+    } else {
+      showAlert('error', 'Google Sign-In is not available. Use email login instead.');
+    }
+  }
+
+  function handleGoogleResponse(response) {
+    const btn = document.querySelector('.btn-social[onclick*="socialLogin"]') ||
+                document.querySelector('.google-signin-button');
+    if (btn) btn.disabled = true;
+    fetch('/api/auth/google', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({token: response.credential})
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.token) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        showAlert('success', 'Signed in with Google! Welcome, ' + (data.user.name || data.user.email) + '.');
+        setTimeout(() => window.location.href = '/user.html', 800);
+      } else {
+        showAlert('error', data.error || 'Google sign-in failed. Please try again.');
+        if (btn) btn.disabled = false;
+      }
+    })
+    .catch(err => {
+      showAlert('error', 'Connection error during Google sign-in.');
+      if (btn) btn.disabled = false;
+    });
+  }
+
+  // Load Google Identity Services
+  (function() {
+    const existing = document.querySelector('script[src*://accounts.google.com/gsi/client]');
+    if (!existing) {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      s.defer = true;
+      s.onload = initGoogleLogin;
+      document.head.appendChild(s);
+    } else if (typeof google !== 'undefined') {
+      initGoogleLogin();
+    }
+  })();
+  
 </script>
 </body>
 </html>

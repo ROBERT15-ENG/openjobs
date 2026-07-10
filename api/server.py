@@ -289,6 +289,74 @@ def login():
 
 secrets = __import__('secrets')
 
+@app.route('/api/auth/google', methods=['POST'])
+@limiter.limit('10 per minute')
+def google_auth():
+    """
+    Google Sign-In via ID token.
+    Frontend posts the Google ID token from the popup.
+    We verify it and return a JWT for our own session.
+    """
+    data = request.json or {}
+    google_token = data.get('token')
+    if not google_token:
+        return jsonify({'error': 'Google token required'}), 400
+
+    try:
+        from google.oauth2 import id_token as gid_token
+        from google.auth.transport import requests as gauth
+        # audience=None skips aud check — set GOOGLE_CLIENT_ID env var to enforce it
+        id_info = gid_token.verify_oauth2_token(google_token, gauth.Request())
+    except Exception as e:
+        return jsonify({'error': 'Invalid Google token', 'detail': str(e)}), 401
+
+    google_id = id_info.get('sub')
+    email = id_info.get('email')
+    name = id_info.get('name', '')
+    if not email:
+        return jsonify({'error': 'Email not available from Google account'}), 400
+
+    db = get_db()
+    user = db.execute(
+        'SELECT id, name, email, role FROM users WHERE google_id = ? OR (email = ? AND google_id IS NOT NULL)',
+        (google_id, email)
+    ).fetchone()
+
+    if not user:
+        # First-time: create account — Google users are pre-confirmed
+        try:
+            cur = db.execute(
+                'INSERT INTO users (name, email, google_id, email_confirmed, role, plan, created_at) '
+                'VALUES (?, ?, ?, 1, "user", "free", CURRENT_TIMESTAMP)',
+                (name, email, google_id)
+            )
+            db.commit()
+            uid = cur.lastrowid
+        except Exception as e:
+            db.close()
+            if 'UNIQUE' in str(e):
+                return jsonify({'error': 'Email already registered with a password. Please sign in with email instead.'}), 409
+            return jsonify({'error': 'Account creation failed'}), 500
+    else:
+        uid = user['id']
+        if name and name != user['name']:
+            db.execute('UPDATE users SET name = ? WHERE id = ?', (name, uid))
+            db.commit()
+
+    our_token = _create_token(uid, email, 'user', None)
+    db.close()
+    return jsonify({
+        'success': True,
+        'token': our_token,
+        'user': {
+            'id': uid,
+            'name': name,
+            'email': email,
+            'role': 'user',
+            'employer_id': None
+        }
+    })
+
 
 def _send_confirmation_email(to_email, user_name, confirm_link):
     """Send email confirmation link."""

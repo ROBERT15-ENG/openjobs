@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
+  <meta name="google-signin-client_id" content="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com">
+
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Create your free OpenJobs account. Set up your profile, upload your resume, and get matched with your ideal job in minutes.">
@@ -292,9 +295,70 @@
     }
   }
 
-  function socialRegister(provider) {
-    showAlert('error', `Social login via ${provider} requires OAuth setup. Use email registration for now.`);
+    // ── GOOGLE SIGN-IN ───────────────────────────────────────────────
+  function initGoogleRegister() {
+    if (typeof google === 'undefined') return;
+    google.accounts.id.initialize({
+      client_id: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
+      callback: handleGoogleRegister,
+      auto_select: false
+    });
+    const btn = document.querySelector('.btn-social[onclick*="socialRegister"]');
+    if (btn) {
+      google.accounts.id.renderButton(btn, {
+        theme: 'outline', size: 'medium', text: 'signup_with', shape: 'rectangular', width: 200
+      });
+      btn.removeAttribute('onclick');
+    }
   }
+
+  function socialRegister(provider) {
+    if (provider !== 'google') { showAlert('error', 'Only Google is supported.'); return; }
+    if (typeof google !== 'undefined') {
+      google.accounts.id.prompt();
+    } else {
+      showAlert('error', 'Google Sign-In unavailable. Use email registration.');
+    }
+  }
+
+  function handleGoogleRegister(response) {
+    const btn = document.querySelector('.btn-social[onclick*="socialRegister"]');
+    if (btn) btn.disabled = true;
+    fetch('/api/auth/google', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({token: response.credential})
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.token) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        showAlert('success', 'Account created with Google! Welcome, ' + (data.user.name || '') + '.');
+        setTimeout(() => window.location.href = '/user.html', 800);
+      } else {
+        showAlert('error', data.error || 'Google registration failed.');
+        if (btn) btn.disabled = false;
+      }
+    })
+    .catch(() => {
+      showAlert('error', 'Connection error.');
+      if (btn) btn.disabled = false;
+    });
+  }
+
+  (function() {
+    const existing = document.querySelector('script[src*="accounts.google.com/gsi/client"]');
+    if (!existing) {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true; s.defer = true; s.onload = initGoogleRegister;
+      document.head.appendChild(s);
+    } else if (typeof google !== 'undefined') {
+      initGoogleRegister();
+    }
+  })();
+  
 </script>
 </body>
 </html>
