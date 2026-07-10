@@ -1,0 +1,15 @@
+# ── Git compression ────────────────────────────────────────────────────────────
+# Force maximum zlib compression for all text-based files.
+# This overrides Git's default (level 5) and uses level 9.
+* text=auto
+*.py   diff=python
+*.js   diff=javascript
+*.html diff=html
+*.css  diff=css
+*.json  diff=json
+*.md    diff=markdown
+
+# ── Git LFS — large binary files ─────────────────────────────────────────────
+# These two PDFs are too big for regular git. Track them via LFS so they
+# aren't stored as raw git objects in the pack file.
+*.pdf  filter=lfs diff=lfs merge=lfs -text
