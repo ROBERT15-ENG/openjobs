@@ -1,4 +1,4 @@
-"""Email notification system for JobSeek"""
+"""Email notification system for OpenJobs"""
 import smtplib
 import os
 from email.mime.text import MIMEText
@@ -9,8 +9,9 @@ SMTP_HOST = os.environ.get('SMTP_HOST', '')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
 SMTP_USER = os.environ.get('SMTP_USER', '')
 SMTP_PASS = os.environ.get('SMTP_PASS', '')
-FROM_NAME = os.environ.get('FROM_NAME', 'JobSeek')
-FROM_EMAIL = os.environ.get('FROM_EMAIL', 'noreply@jobseek.com')
+FROM_NAME = os.environ.get('FROM_NAME', 'OpenJobs')
+FROM_EMAIL = os.environ.get('FROM_EMAIL', 'noreply@openjobs.com.au')
+BASE_URL = os.environ.get('BASE_URL', 'http://localhost:5700')
 
 def is_configured():
     """Check if SMTP is configured"""
@@ -49,7 +50,7 @@ def send_job_alert(to_email: str, user_name: str, jobs: list, keywords: str) -> 
             <p style="margin: 5px 0;"><strong>Company:</strong> {job.get('company', 'N/A')}</p>
             <p style="margin: 5px 0;"><strong>Location:</strong> {job.get('location', 'Remote')}</p>
             <p style="margin: 5px 0;"><strong>Salary:</strong> {job.get('salary', 'Competitive')}</p>
-            <a href="{job.get('link', '#')}" style="background: #00d4ff; color: #000; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px;">Apply Now</a>
+            <a href="{job.get('link', BASE_URL + '/')}" style="background: #00d4ff; color: #000; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px;">Apply Now</a>
         </div>
         """
     
@@ -61,7 +62,7 @@ def send_job_alert(to_email: str, user_name: str, jobs: list, keywords: str) -> 
             <p>Hi {user_name}, we found {len(jobs)} new jobs matching your criteria:</p>
             {jobs_html}
             <p style="margin-top: 20px; color: #888;">
-                <a href="http://localhost:5700/alerts.html" style="color: #00d4ff;">Manage your job alerts</a>
+                <a href="{BASE_URL}/user" style="color: #00d4ff;">Manage your job alerts</a>
             </p>
         </div>
     </body>
@@ -72,22 +73,22 @@ def send_job_alert(to_email: str, user_name: str, jobs: list, keywords: str) -> 
 
 def send_welcome_email(to_email: str, user_name: str) -> dict:
     """Send welcome email"""
-    html = """
+    html = f"""
     <html>
     <body style="font-family: Arial, sans-serif; background: #0f0f0f; color: #fff; padding: 20px;">
         <div style="max-width: 600px; margin: 0 auto; text-align: center;">
-            <h1 style="color: #00d4ff;">🚀 Welcome to JobSeek!</h1>
-            <p>Hi {}, ready to find your dream job?</p>
+            <h1 style="color: #00d4ff;">Welcome to OpenJobs!</h1>
+            <p>Hi {user_name}, ready to find your dream job?</p>
             <div style="margin: 30px 0;">
-                <a href="http://localhost:5700" style="background: #00d4ff; color: #000; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">Browse Jobs</a>
+                <a href="{BASE_URL}" style="background: #00d4ff; color: #000; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">Browse Jobs</a>
             </div>
             <p style="color: #888;">Set up job alerts to get notified when new jobs match your skills!</p>
         </div>
     </body>
     </html>
-    """.format(user_name)
+    """
     
-    return send_email(to_email, "🚀 Welcome to JobSeek!", html)
+    return send_email(to_email, "Welcome to OpenJobs!", html)
 
 def send_application_confirm(to_email: str, job_title: str, company: str) -> dict:
     """Send application confirmation"""
@@ -99,7 +100,7 @@ def send_application_confirm(to_email: str, job_title: str, company: str) -> dic
             <p>Your application for <strong>{job_title}</strong> at <strong>{company}</strong> has been submitted.</p>
             <p>We'll notify you when the employer responds.</p>
             <p style="margin-top: 30px; color: #888;">
-                <a href="http://localhost:5700/user.html" style="color: #00d4ff;">View your applications</a>
+                <a href="{BASE_URL}/user" style="color: #00d4ff;">View your applications</a>
             </p>
         </div>
     </body>

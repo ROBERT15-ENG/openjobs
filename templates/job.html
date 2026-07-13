@@ -242,8 +242,22 @@
   let currentJob = null;
 
   document.addEventListener('DOMContentLoaded', () => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (token) {
+      fetch('/api/user/profile', { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(r => r.ok ? r.json() : null)
+        .then(profile => {
+          if (profile && !profile.error) {
+            if (profile.name) document.getElementById('appName').value = profile.name;
+            if (profile.email) document.getElementById('appEmail').value = profile.email;
+            if (profile.phone) document.getElementById('appPhone').value = profile.phone;
+          }
+        })
+        .catch(() => {});
+    }
     loadJob(jobId);
     loadRelated(jobId);
+    checkSavedStatus();
   });
 
   function loadJob(id) {
@@ -254,10 +268,7 @@
         currentJob = job;
         renderJob(job);
       })
-      .catch(() => {
-        // Demo data fallback
-        renderJob(getDemoJob(id));
-      });
+      .catch(() => showError('Could not load job. Please try again later.'));
   }
 
   function renderJob(job) {
@@ -358,6 +369,12 @@
   }
 
   async function submitApplication() {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) {
+      window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+      return;
+    }
+
     const name  = document.getElementById('appName').value.trim();
     const email = document.getElementById('appEmail').value.trim();
     const cover = document.getElementById('coverLetter').value.trim();
@@ -372,38 +389,42 @@
     btn.textContent = 'Submitting...';
 
     try {
-      // If a resume file is selected, upload it first to get resume_text
       let resumeText = '';
       if (file) {
         const formData = new FormData();
         formData.append('file', file);
-        const authHeader = localStorage.getItem('token') || '';
         const uploadRes = await fetch('/api/resume/upload', {
           method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + authHeader },
+          headers: { 'Authorization': 'Bearer ' + token },
           body: formData
         });
         const uploadData = await uploadRes.json();
         if (uploadRes.ok && uploadData.success) {
-          resumeText = uploadData.extracted?.skills
-            ? 'Skills: ' + uploadData.extracted.skills.join(', ')
-            : '';
-          showAlert('success', '✅ Resume uploaded and application submitted!');
-        } else {
-          showAlert('error', uploadData.error || 'Resume upload failed but applying anyway.');
+          resumeText = uploadData.resume_text || '';
+          if (!resumeText && uploadData.skills_found?.length) {
+            resumeText = 'Skills: ' + uploadData.skills_found.join(', ');
+          }
+        } else if (!uploadRes.ok) {
+          showAlert('error', uploadData.error || 'Resume upload failed');
+          btn.disabled = false;
+          btn.textContent = 'Submit Application →';
+          return;
         }
       }
 
-      // Submit application — user_id comes from JWT on the server, not the body
       const res = await fetch('/api/applications', {
         method: 'POST',
-        headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') },
-        body: JSON.stringify({ job_id: jobId, name: name, email: email, notes: cover, resume_text: resumeText })
+        headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ job_id: parseInt(jobId, 10), cover_letter: cover, resume_text: resumeText })
       });
       const data = await res.json();
       if (res.ok && data.success) {
         showAlert('success', 'Application submitted! Check your dashboard to track status.');
         btn.textContent = '✅ Applied!';
+      } else if (res.status === 409) {
+        showAlert('error', data.error || 'You have already applied to this job.');
+        btn.disabled = false;
+        btn.textContent = 'Submit Application →';
       } else {
         showAlert('error', data.error || 'Something went wrong. Please try again.');
         btn.disabled = false;
@@ -417,12 +438,40 @@
   }
 
   let saved = false;
+  async function checkSavedStatus() {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) return;
+    try {
+      const res = await fetch('/api/saved_jobs', { headers: { 'Authorization': 'Bearer ' + token } });
+      const jobs = await res.json();
+      saved = Array.isArray(jobs) && jobs.some(j => String(j.id) === String(jobId));
+      const btn = document.getElementById('saveBtn');
+      btn.classList.toggle('saved', saved);
+      btn.textContent = saved ? '★ Saved' : '☆ Save';
+    } catch {}
+  }
+
   function toggleSave() {
-    saved = !saved;
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) {
+      window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+      return;
+    }
     const btn = document.getElementById('saveBtn');
-    btn.classList.toggle('saved', saved);
-    btn.textContent = saved ? '★ Saved' : '☆ Save';
-    // In real app, POST to /api/saved_jobs
+    const method = saved ? 'DELETE' : 'POST';
+    fetch('/api/saved_jobs', {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ job_id: parseInt(jobId, 10) })
+    }).then(r => r.json()).then(d => {
+      if (d.success || (method === 'POST' && d.error && d.error.includes('UNIQUE'))) {
+        saved = !saved;
+        btn.classList.toggle('saved', saved);
+        btn.textContent = saved ? '★ Saved' : '☆ Save';
+      } else {
+        alert(d.error || 'Could not update saved jobs.');
+      }
+    }).catch(() => alert('Could not save job. Try again.'));
   }
 
   // ── UTILITIES ──
@@ -452,9 +501,6 @@
   }
   function showError(msg) {
     document.getElementById('jobTitle').textContent = '⚠️ ' + msg;
-  }
-  function getDemoJob(id) {
-    return { id, title: 'Software Engineer', company: 'TechCorp', location: 'Remote', salary_min: 100000, salary_max: 140000, work_type: 'full_time', category: 'Software Development', description: 'Join our team to build next-generation software solutions. We are looking for passionate engineers who want to work on challenging problems and grow their skills.', created_at: '2026-06-15T00:00:00' };
   }
 
   // Drag & drop

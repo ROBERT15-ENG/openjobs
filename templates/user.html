@@ -296,7 +296,6 @@
         <select style="padding:0.5rem 0.875rem;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:0.8rem" id="appFilter" onchange="renderApplications()">
           <option value="">All Status</option>
           <option value="applied">Applied</option>
-          <option value="applied">Applied</option>
           <option value="screening">Screening</option>
           <option value="interview">Interview</option>
           <option value="rejected">Rejected</option>
@@ -450,24 +449,8 @@
       dashboardData = await res.json();
       renderDashboard(dashboardData);
     } catch {
-      // Demo fallback with mock data
-      dashboardData = {
-        stats: { total_jobs: 69, total_applications: 5, pending: 2, interviews: 1, saved: 3 },
-        recent_applications: [
-          { id: 1, job_id: 71, title: 'Systems Administrator', company: 'OpenJobs', location: 'Remote', salary_min: 80000, salary_max: 120000, status: 'interview', applied_at: '2026-06-28T10:00:00', notes: 'Technical round scheduled Jul 8' },
-          { id: 2, job_id: 70, title: 'Software Engineering Intern', company: 'OpenJobs', location: 'Remote', salary_min: 0, salary_max: 0, status: 'pending', applied_at: '2026-06-25T09:00:00', notes: '' },
-          { id: 3, job_id: 63, title: 'AutoCAD Drafter', company: 'Engineering Co', location: 'Sydney NSW', salary_min: 90000, salary_max: 90000, status: 'rejected', applied_at: '2026-06-20T14:00:00', notes: 'Position filled' },
-          { id: 4, job_id: 64, title: 'Fusion 360 Designer', company: 'TechFlow Australia', location: 'Melbourne VIC', salary_min: 95000, salary_max: 95000, status: 'screening', applied_at: '2026-07-01T11:00:00', notes: 'Recruiter call went well' },
-          { id: 5, job_id: 65, title: 'SolidWorks Engineer', company: 'MechTech', location: 'Brisbane QLD', salary_min: 110000, salary_max: 110000, status: 'applied', applied_at: '2026-06-30T08:00:00', notes: '' }
-        ],
-        recommended: [
-          { id: 72, title: 'DevOps Engineer', company: 'CloudScale', location: 'Remote', salary_min: 130000, salary_max: 160000, category: 'DevOps' },
-          { id: 73, title: 'AI Engineer', company: 'Neural Labs', location: 'Nairobi', salary_min: 180000, salary_max: 220000, category: 'AI/ML' },
-          { id: 74, title: 'Frontend Developer', company: 'Designify', location: 'Sydney NSW', salary_min: 95000, salary_max: 120000, category: 'Development' },
-          { id: 75, title: 'Data Scientist', company: 'DataFlow', location: 'Melbourne VIC', salary_min: 110000, salary_max: 140000, category: 'Data Science' }
-        ]
-      };
-      renderDashboard(dashboardData);
+      document.getElementById('recentApps').innerHTML = '<div class="empty-state"><div class="emoji">⚠️</div><h3>Could not load dashboard</h3><p>Please refresh or sign in again.</p></div>';
+      document.getElementById('recJobs').innerHTML = '<div class="empty-state"><div class="emoji">⚠️</div><h3>Could not load recommendations</h3></div>';
     }
   }
 
@@ -481,6 +464,20 @@
           document.getElementById('userAvatar').textContent = (data.name || 'T')[0].toUpperCase();
           document.getElementById('profileName').value = data.name || '';
           document.getElementById('profileEmail').value = data.email || '';
+          document.getElementById('profileLocation').value = data.preferred_location || '';
+          document.getElementById('profilePhone').value = data.phone || '';
+          if (data.skills) {
+            skills = data.skills.split(',').map(s => s.trim()).filter(Boolean);
+            const container = document.getElementById('skillsContainer');
+            const addBtn = container.querySelector('.skill-add');
+            container.querySelectorAll('.skill-tag').forEach(t => t.remove());
+            skills.forEach(skill => {
+              const tag = document.createElement('span');
+              tag.className = 'skill-tag';
+              tag.innerHTML = escHtml(skill) + ' <button onclick="removeSkill(this)">×</button>';
+              container.insertBefore(tag, addBtn);
+            });
+          }
         }
       });
   }
@@ -637,21 +634,36 @@
       container.insertBefore(tag, btn);
     }
   }
-  function saveProfile() {
-    const name = document.getElementById('profileName').value;
-    const location = document.getElementById('profileLocation').value;
-    const headline = document.getElementById('profileHeadline')?.value || '';
-    const bio = document.getElementById('profileBio')?.value || '';
-    userProfile = { ...userProfile, name, location, skills };
-    document.getElementById('userName').textContent = (name || 'Tonny').split(' ')[0];
-    document.getElementById('userAvatar').textContent = (name || 'T')[0].toUpperCase();
-    document.getElementById('greetingSub').textContent = 'Profile updated! Keep building your profile for better matches.';
-    // Update progress
-    document.getElementById('profileBar').style.width = '85%';
-    document.getElementById('profilePct').textContent = '85%';
-    document.getElementById('skillsBar').style.width = Math.min(100, skills.length * 25) + '%';
-    document.getElementById('skillsPct').textContent = Math.min(100, skills.length * 25) + '%';
-    alert('✅ Profile saved successfully!');
+  async function saveProfile() {
+    const name = document.getElementById('profileName').value.trim();
+    const location = document.getElementById('profileLocation').value.trim();
+    const phone = document.getElementById('profilePhone').value.trim();
+    const payload = {
+      name,
+      preferred_location: location || null,
+      phone: phone || null,
+      skills: skills.join(', '),
+    };
+    try {
+      const res = await fetch('/api/user/profile', {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      userProfile = { ...userProfile, ...payload };
+      document.getElementById('userName').textContent = (name || 'User').split(' ')[0];
+      document.getElementById('userAvatar').textContent = (name || 'U')[0].toUpperCase();
+      document.getElementById('greetingSub').textContent = 'Profile updated! Keep building your profile for better matches.';
+      document.getElementById('profileBar').style.width = '85%';
+      document.getElementById('profilePct').textContent = '85%';
+      document.getElementById('skillsBar').style.width = Math.min(100, skills.length * 25) + '%';
+      document.getElementById('skillsPct').textContent = Math.min(100, skills.length * 25) + '%';
+      alert('✅ Profile saved successfully!');
+    } catch (e) {
+      alert('⚠️ ' + (e.message || 'Could not save profile.'));
+    }
   }
 
   // ── UTILITIES ──

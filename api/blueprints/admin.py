@@ -85,3 +85,18 @@ def admin_stats():
         'recent_applications': [dict(row) for row in recent_apps],
         'recent_signups': [dict(row) for row in recent_signups],
     })
+
+
+@admin_bp.route('/api/admin/users', methods=['GET'])
+@require_role('admin')
+def admin_users():
+    db = get_db()
+    users = db.execute(
+        """
+        SELECT id, name, email, role, skills, phone, company, created_at
+        FROM users
+        ORDER BY created_at DESC
+        LIMIT 200
+        """
+    ).fetchall()
+    return jsonify({'users': [dict(row) for row in users]})

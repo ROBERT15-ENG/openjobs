@@ -44,3 +44,12 @@ def test_seeker_cannot_delete_employer_job(client):
     seeker_token = auth_token(client, 'seeker@test.com')
     delete = client.delete(f'/api/jobs/{job_id}', headers=auth_headers(seeker_token))
     assert delete.status_code == 403
+
+
+def test_public_stats(client):
+    response = client.get('/api/stats')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert 'total_jobs' in data
+    assert 'total_companies' in data
+    assert 'new_today' in data

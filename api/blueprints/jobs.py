@@ -12,6 +12,23 @@ from flask import Blueprint, jsonify, request
 jobs_bp = Blueprint('jobs', __name__)
 
 
+@jobs_bp.route('/api/stats', methods=['GET'])
+def public_stats():
+    db = get_db()
+    total_jobs = db.execute('SELECT COUNT(*) FROM jobs WHERE is_active = 1').fetchone()[0]
+    total_companies = db.execute('SELECT COUNT(DISTINCT company) FROM jobs WHERE is_active = 1').fetchone()[0]
+    today = datetime.datetime.now().date().isoformat()
+    new_today = db.execute(
+        "SELECT COUNT(*) FROM jobs WHERE is_active = 1 AND DATE(created_at) = ?",
+        (today,),
+    ).fetchone()[0]
+    return jsonify({
+        'total_jobs': total_jobs,
+        'total_companies': total_companies,
+        'new_today': new_today,
+    })
+
+
 @jobs_bp.route('/api/jobs', methods=['GET'])
 def get_jobs():
     db = get_db()

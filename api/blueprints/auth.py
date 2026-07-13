@@ -85,8 +85,9 @@ def register_employer():
     name = data.get('name', '').strip()
     email = data.get('email', '').strip()
     password = data.get('password', '')
-    if not name or not email or not password:
-        return jsonify({'error': 'Name, email, and password are required'}), 400
+    company = data.get('company', '').strip()
+    if not name or not email or not password or not company:
+        return jsonify({'error': 'Name, email, password, and company are required'}), 400
     if '@' not in email or '.' not in email:
         return jsonify({'error': 'Invalid email'}), 400
     if len(password) < 6:
@@ -97,8 +98,8 @@ def register_employer():
         return jsonify({'error': 'Email already registered'}), 400
 
     db.execute(
-        'INSERT INTO users (name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
-        (name, email, hash_password(password), 'employer', datetime.datetime.now().isoformat()),
+        'INSERT INTO users (name, email, password_hash, role, company, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        (name, email, hash_password(password), 'employer', company, datetime.datetime.now().isoformat()),
     )
     db.commit()
     user_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
@@ -106,7 +107,7 @@ def register_employer():
     return jsonify({
         'success': True,
         'token': token,
-        'user': {'id': user_id, 'name': name, 'email': email, 'role': 'employer', 'employer_id': user_id},
+        'user': {'id': user_id, 'name': name, 'email': email, 'role': 'employer', 'company': company, 'employer_id': user_id},
     }), 201
 
 
@@ -269,6 +270,7 @@ def upload_resume():
         'success': True,
         'filename': filename,
         'text_length': len(text),
+        'resume_text': text[:50000],
         'skills_found': extracted_skills,
         'message': 'Resume uploaded. Skills extracted and stored.',
     }), 201

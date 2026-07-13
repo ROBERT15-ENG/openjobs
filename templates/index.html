@@ -383,14 +383,14 @@
     </div>
     <nav>
       <a href="/">Find Jobs</a>
-      <a href="#">Companies</a>
-      <a href="#">Salary Guide</a>
-      <a href="#">Learning</a>
-      <a href="/templates/employer.html">For Employers</a>
+      <a href="/companies">Companies</a>
+      <a href="/salary">Salary Guide</a>
+      <a href="/user">Dashboard</a>
+      <a href="/employer">For Employers</a>
     </nav>
     <div class="header-actions">
-      <a href="#" class="btn btn-ghost">Post a Job</a>
-      <a href="#" class="btn btn-primary">Sign Up Free</a>
+      <a href="/employer" class="btn btn-ghost">Post a Job</a>
+      <a href="/register" class="btn btn-primary">Sign Up Free</a>
       <button class="hamburger" id="hamburgerBtn" onclick="toggleMobileNav()" aria-label="Toggle menu">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
@@ -403,7 +403,7 @@
 <!-- HERO -->
 <section class="hero">
   <h1>Find Your Next<br><span class="gradient">Dream Job</span></h1>
-  <p>69 jobs matched to your skills. Updated every hour. Powered by AI matching.</p>
+  <p id="heroSub">Browse open roles from top companies. Updated live. Powered by AI matching.</p>
   <div class="search-section">
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="Job title, keyword, or company..." autocomplete="off">
@@ -427,10 +427,9 @@
 
 <!-- STATS BAR -->
 <div class="stats-bar">
-  <div class="stat"><div class="stat-val" id="statJobs">69</div><div class="stat-lbl">Active Jobs</div></div>
-  <div class="stat"><div class="stat-val">51</div><div class="stat-lbl">Companies</div></div>
-  <div class="stat"><div class="stat-val">3</div><div class="stat-lbl">New Today</div></div>
-  <div class="stat"><div class="stat-val">92%</div><div class="stat-lbl">AI Match Rate</div></div>
+  <div class="stat"><div class="stat-val" id="statJobs">—</div><div class="stat-lbl">Active Jobs</div></div>
+  <div class="stat"><div class="stat-val" id="statCompanies">—</div><div class="stat-lbl">Companies</div></div>
+  <div class="stat"><div class="stat-val" id="statNewToday">—</div><div class="stat-lbl">New Today</div></div>
 </div>
 
 <!-- MAIN LAYOUT -->
@@ -570,10 +569,29 @@
 
   // ── INIT ──────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
+    loadStats();
     fetchJobs();
     document.getElementById('searchInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
     document.getElementById('locationInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
+    const jobParam = new URLSearchParams(window.location.search).get('job');
+    if (jobParam) openJob(parseInt(jobParam, 10));
   });
+
+  function loadStats() {
+    fetch('/api/stats')
+      .then(r => r.ok ? r.json() : null)
+      .then(s => {
+        if (!s) return;
+        document.getElementById('statJobs').textContent = s.total_jobs ?? '—';
+        document.getElementById('statCompanies').textContent = s.total_companies ?? '—';
+        document.getElementById('statNewToday').textContent = s.new_today ?? '—';
+        const sub = document.getElementById('heroSub');
+        if (sub && s.total_jobs != null) {
+          sub.textContent = s.total_jobs + ' open roles from ' + (s.total_companies || 0) + ' companies. Updated live. Powered by AI matching.';
+        }
+      })
+      .catch(() => {});
+  }
 
   // ── FETCH JOBS ────────────────────────────────────────────────────
   function fetchJobs() {
@@ -629,7 +647,9 @@
       const summary = job.search_summary || (job.description || '').substring(0, 150) + '...';
       const descLen = (job.description || '').length;
       const isEmpty = descLen < 100;
-      const matchClass = job.score >= 80 ? 'match-high' : job.score >= 60 ? 'match-mid' : 'match-low';
+      const matchBadge = (job.score != null && job.score > 0)
+        ? `<div class="match-badge ${job.score >= 80 ? 'match-high' : job.score >= 60 ? 'match-mid' : 'match-low'}">${Math.round(job.score)}% match</div>`
+        : '';
 
       return `
       <div class="job-card animate-in" style="animation-delay:${i*40}ms" onclick="openJob(${job.id})">
@@ -640,7 +660,7 @@
               <div class="job-title">${escHtml(job.title)}</div>
               <div class="job-company">${escHtml(job.company)} · ${escHtml(job.location)}</div>
             </div>
-            <div class="match-badge ${matchClass}">${job.score || 70}% match</div>
+            ${matchBadge}
           </div>
           <div class="badges">${badge}</div>
           <div class="job-summary">${isEmpty ? '📋 Description available on job detail page' : escHtml(summary)}</div>
@@ -699,7 +719,6 @@
         document.getElementById('modalCompany').textContent = job.company + ' · ' + job.location;
         document.getElementById('modalBadges').innerHTML = badge;
         document.getElementById('modalDesc').textContent = job.description || 'No description available.';
-        document.getElementById('modalSalary').textContent = formatSalary(job) || 'Competitive';
         document.getElementById('modalMeta').innerHTML = `
           ${salaryEl(job)}
           <div class="modal-meta-item">📍 ${escHtml(job.location)}</div>
@@ -753,11 +772,13 @@
         'Authorization': 'Bearer ' + token
       },
       body: JSON.stringify({job_id: currentJob.id})
-    }).then(r => r.json())
-      .then(d => {
-        if (d.success) {
+    }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d })))
+      .then(({ ok, status, data: d }) => {
+        if (ok && d.success) {
           alert('✅ Application submitted! Track it in your dashboard.');
           closeModal();
+        } else if (status === 409) {
+          alert('ℹ️ ' + (d.error || 'You have already applied to this job.'));
         } else {
           alert('⚠️ ' + (d.error || 'Something went wrong'));
         }
@@ -765,7 +786,23 @@
       .catch(() => alert('⚠️ Could not submit application. Try again.'));
   }
 
-  function saveJob() { alert('💾 Job saved to your profile!'); closeModal(); }
+  function saveJob() {
+    if (!currentJob) return;
+    const token = localStorage.getItem('token');
+    if (!token) { window.location.href = '/login'; return; }
+    fetch('/api/saved_jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ job_id: currentJob.id })
+    }).then(r => r.json()).then(d => {
+      if (d.success) {
+        alert('💾 Job saved to your profile!');
+        closeModal();
+      } else {
+        alert(d.error || 'Could not save job.');
+      }
+    }).catch(() => alert('Could not save job. Try again.'));
+  }
   function saveJobToggle(id, btn, e) {
     if (e) e.stopPropagation();
     const token = localStorage.getItem('token');

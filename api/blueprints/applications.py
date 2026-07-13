@@ -3,6 +3,7 @@
 import datetime
 import os
 import smtplib
+import sqlite3
 
 from auth_utils import require_auth
 from constants import APPLICATION_STATUSES, KANBAN_STAGES
@@ -19,7 +20,16 @@ applications_bp = Blueprint('applications', __name__)
 def get_applications():
     db = get_db()
     if request.user_role == 'admin':
-        apps = db.execute('SELECT * FROM applications ORDER BY applied_at DESC').fetchall()
+        apps = db.execute(
+            """
+            SELECT a.*, u.name as applicant_name, u.email as applicant_email,
+                   j.title as job_title, j.company as job_company
+            FROM applications a
+            JOIN users u ON u.id = a.user_id
+            JOIN jobs j ON j.id = a.job_id
+            ORDER BY a.applied_at DESC
+            """
+        ).fetchall()
     elif request.user_role == 'employer':
         job_ids = [row['id'] for row in db.execute(
             'SELECT id FROM jobs WHERE employer_id = ?', (request.employer_id,)
@@ -47,6 +57,14 @@ def apply_job():
     db = get_db()
     job_id = data.get('job_id')
     resume_text = data.get('resume_text', '')
+    cover_letter = data.get('cover_letter') or data.get('notes', '')
+
+    existing = db.execute(
+        'SELECT id FROM applications WHERE job_id = ? AND user_id = ?',
+        (job_id, request.user_id),
+    ).fetchone()
+    if existing:
+        return jsonify({'error': 'You have already applied to this job', 'application_id': existing['id']}), 409
 
     job = db.execute('SELECT title, company, employer_id FROM jobs WHERE id = ?', (job_id,)).fetchone()
     applicant = db.execute('SELECT name, email FROM users WHERE id = ?', (request.user_id,)).fetchone()
@@ -54,11 +72,22 @@ def apply_job():
     if job and job['employer_id']:
         employer = db.execute('SELECT name, email FROM users WHERE id = ?', (job['employer_id'],)).fetchone()
 
-    db.execute(
-        'INSERT INTO applications (job_id, user_id, status, applied_at, resume_text) VALUES (?, ?, ?, ?, ?)',
-        (job_id, request.user_id, 'applied', datetime.datetime.now().isoformat(), resume_text[:50000]),
-    )
-    db.commit()
+    try:
+        db.execute(
+            """INSERT INTO applications (job_id, user_id, status, applied_at, resume_text, cover_letter)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                job_id,
+                request.user_id,
+                'applied',
+                datetime.datetime.now().isoformat(),
+                resume_text[:50000],
+                cover_letter[:10000],
+            ),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'You have already applied to this job'}), 409
     app_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
 
     try:
