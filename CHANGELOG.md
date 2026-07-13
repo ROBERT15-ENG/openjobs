@@ -2,17 +2,72 @@
 
 All notable changes to the OpenJobs platform are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project uses semantic versioning for release tags.
+---
+
+## Quick review — PR #8 (v2.5.0 product gaps)
+
+**Branch:** `cursor/product-gaps-6b92` → `main`  
+**Stripe:** still demo mode (deferred)  
+**Tests:** run `pytest tests/ -q`
+
+### What changed
+
+| Area | Summary |
+|------|---------|
+| Easy Apply | Homepage + job apply use profile résumé + auto cover letter (`auto_cover_letter: true`) |
+| Visa filter | `GET /api/jobs?visa=1` + homepage checkbox |
+| Match tiers | ELITE / STRONG / WATCHLIST on job cards when authenticated |
+| Emails | Employer notified on apply; seeker notified on status change |
+| Admin | `GET /api/admin/export/applications` CSV download |
+| Telegram | Fixed job list parsing; `/visa` and `/remote` work |
+| Docs | README truth-sync, new PRODUCTION.md |
+| Profile | `resume_text` editable via `PATCH /api/user/profile` |
+
+### Breaking / behavior
+
+- Applications without résumé now pull from user profile when available
+- Seekers can only set application status to `withdrawn` (employer/admin otherwise)
+
+---
 
 ## [Unreleased]
 
 ### Planned
+- Stripe live payments
 - OAuth (Google, LinkedIn)
-- Interview scheduling UI
-- Stripe live payments (deferred — demo mode for now)
+- Redis sessions, PostgreSQL
 
-## [2.4.0] - 2026-07-13
+## [2.5.0] - 2026-07-13 — PR #8 product gaps
+
+### Added
+- **Easy Apply**: `POST /api/applications` with `auto_cover_letter` uses profile résumé + template cover letter
+- **Visa sponsorship filter**: `?visa=1` on jobs API + homepage filter
+- **Match tiers**: `match_tier` field (ELITE/STRONG/WATCHLIST) on authenticated job listings
+- **Featured sort**: `?sort=featured` (uses `is_featured` column for future Stripe premium)
+- **NEW badge** on job cards posted within 7 days
+- **Employer email** on new application (`send_employer_new_application`)
+- **Seeker email** on application status change (`send_application_status_update`)
+- **Admin CSV export**: `GET /api/admin/export/applications`
+- **PRODUCTION.md** deployment guide
+- `api/apply_util.py`, `api/match_util.py`
+- `tests/test_gaps.py`
+
+### Fixed
+- Homepage quick-apply only sent `job_id` (no résumé/cover letter)
+- Telegram bot parsed `/api/jobs` response incorrectly
+- README test accounts and oversold features (drag-drop kanban, economic calendar, etc.)
+- `PATCH /api/user/profile` now accepts `resume_text`
+
+### Changed
+- README rewritten to match implemented features
+- Company cards show salary range when available
+- Job list sort handled server-side (`newest`, `featured`, `salary_high`, `salary_low`)
+
+### Deferred
+- Stripe checkout (demo posting remains free)
+- OAuth social login buttons (still show setup message)
+
+## [2.4.0] - 2026-07-13 — PR #6 (merged)
 
 ### Sprint 1–6 — Gap fixes
 

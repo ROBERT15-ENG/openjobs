@@ -496,6 +496,13 @@
     </div>
 
     <div class="filter-card">
+      <h3>More filters</h3>
+      <div class="filter-check-group">
+        <label class="filter-check"><input type="checkbox" id="filterVisa" onchange="fetchJobs()"> <span>🌍 Visa sponsorship</span></label>
+      </div>
+    </div>
+
+    <div class="filter-card">
       <h3>Location</h3>
       <div class="filter-group">
         <select class="filter-select" id="filterLocation" onchange="fetchJobs()">
@@ -517,6 +524,7 @@
       <div class="results-count"><strong id="resultsCount">69</strong> jobs found</div>
       <select class="sort-select" id="sortSelect" onchange="fetchJobs()">
         <option value="newest">🕐 Newest First</option>
+        <option value="featured">⭐ Featured First</option>
         <option value="salary_high">💰 Salary: High → Low</option>
         <option value="salary_low">💰 Salary: Low → High</option>
       </select>
@@ -695,13 +703,13 @@
     if (locationFilter) url += `&location=${encodeURIComponent(locationFilter)}`;
     if (workTypes.length)  url += `&work_type=${workTypes.join(',')}`;
     if (workArr.length)    url += `&work_arrangement=${workArr.join(',')}`;
+    if (document.getElementById('filterVisa')?.checked) url += '&visa=1';
+    if (sort) url += `&sort=${encodeURIComponent(sort)}`;
 
     fetch(url, { headers })
       .then(r => r.json())
       .then(data => {
-        let jobs = data.jobs || [];
-        if (sort === 'salary_high') jobs.sort((a,b) => (b.salary_max||0) - (a.salary_max||0));
-        if (sort === 'salary_low') jobs.sort((a,b) => (a.salary_min||0) - (b.salary_min||0));
+        const jobs = data.jobs || [];
         renderJobs(jobs);
         document.getElementById('resultsCount').textContent = data.pagination?.total || jobs.length;
         renderPagination(data.pagination);
@@ -725,8 +733,9 @@
       const descLen = (job.description || '').length;
       const isEmpty = descLen < 100;
       const matchBadge = (job.score != null && job.score > 0)
-        ? `<div class="match-badge ${job.score >= 80 ? 'match-high' : job.score >= 60 ? 'match-mid' : 'match-low'}">${Math.round(job.score)}% match</div>`
+        ? `<div class="match-badge ${job.score >= 80 ? 'match-high' : job.score >= 60 ? 'match-mid' : 'match-low'}">${job.match_tier ? escHtml(job.match_tier) + ' · ' : ''}${Math.round(job.score)}% match</div>`
         : '';
+      const newBadge = isNewJob(job.created_at) ? '<span class="badge" style="background:rgba(0,212,170,0.15);color:var(--primary);font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:6px;margin-left:0.5rem">NEW</span>' : '';
       const isSaved = savedJobIds.has(job.id);
 
       return `
@@ -735,7 +744,7 @@
         <div class="job-content">
           <div class="job-top">
             <div>
-              <div class="job-title">${escHtml(job.title)}</div>
+              <div class="job-title">${escHtml(job.title)}${newBadge}</div>
               <div class="job-company">${escHtml(job.company)} · ${escHtml(job.location)}</div>
             </div>
             ${matchBadge}
@@ -844,29 +853,38 @@
     return s ? `<div class="modal-meta-item" style="color:var(--primary);font-weight:600;">💰 ${s}</div>` : '';
   }
 
-  function applyToJob() {
+  function isNewJob(createdAt) {
+    if (!createdAt) return false;
+    const ageDays = (Date.now() - new Date(createdAt).getTime()) / 86400000;
+    return ageDays <= 7;
+  }
+
+  async function applyToJob() {
     if (!currentJob) return;
     const token = getToken();
     if (!token) { window.location.href = '/login?redirect=' + encodeURIComponent('/?job=' + currentJob.id); return; }
-    fetch('/api/applications', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token
-      },
-      body: JSON.stringify({job_id: currentJob.id})
-    }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d })))
-      .then(({ ok, status, data: d }) => {
-        if (ok && d.success) {
-          alert('✅ Application submitted! Track it in your dashboard.');
-          closeModal();
-        } else if (status === 409) {
-          alert('ℹ️ ' + (d.error || 'You have already applied to this job.'));
-        } else {
-          alert('⚠️ ' + (d.error || 'Something went wrong'));
-        }
-      })
-      .catch(() => alert('⚠️ Could not submit application. Try again.'));
+    try {
+      const res = await fetch('/api/applications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ job_id: currentJob.id, auto_cover_letter: true })
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        const extra = d.ats_score ? ` ATS score: ${d.ats_score}%.` : '';
+        alert('✅ Application submitted with your profile résumé and cover letter.' + extra);
+        closeModal();
+      } else if (res.status === 409) {
+        alert('ℹ️ ' + (d.error || 'You have already applied to this job.'));
+      } else {
+        alert('⚠️ ' + (d.error || 'Something went wrong'));
+      }
+    } catch {
+      alert('⚠️ Could not submit application. Try again.');
+    }
   }
 
   function saveJob() {
@@ -892,6 +910,7 @@
       }
     }).catch(() => alert('Could not save job. Try again.'));
   }
+
   function saveJobToggle(id, btn, e) {
     if (e) e.stopPropagation();
     const token = getToken();

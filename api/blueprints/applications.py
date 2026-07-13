@@ -1,10 +1,9 @@
 """Application and kanban routes."""
 
 import datetime
-import os
-import smtplib
 import sqlite3
 
+from apply_util import generate_apply_cover_letter, profile_resume_text
 from auth_utils import require_auth
 from constants import APPLICATION_STATUSES, KANBAN_STAGES
 from db import get_db
@@ -56,8 +55,29 @@ def apply_job():
     data = request.json or {}
     db = get_db()
     job_id = data.get('job_id')
-    resume_text = data.get('resume_text', '')
-    cover_letter = data.get('cover_letter') or data.get('notes', '')
+    if not job_id:
+        return jsonify({'error': 'job_id is required'}), 400
+
+    user = db.execute(
+        'SELECT name, email, skills, resume_text, experience FROM users WHERE id = ?',
+        (request.user_id,),
+    ).fetchone()
+    resume_text = (data.get('resume_text') or '').strip()
+    cover_letter = (data.get('cover_letter') or data.get('notes') or '').strip()
+    auto_cover = bool(data.get('auto_cover_letter'))
+
+    if not resume_text and user:
+        resume_text = profile_resume_text(dict(user))
+
+    job = db.execute(
+        'SELECT id, title, company, employer_id, skills, description FROM jobs WHERE id = ? AND is_active = 1',
+        (job_id,),
+    ).fetchone()
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+
+    if not cover_letter and auto_cover and user:
+        cover_letter = generate_apply_cover_letter(dict(user), dict(job))
 
     existing = db.execute(
         'SELECT id FROM applications WHERE job_id = ? AND user_id = ?',
@@ -66,21 +86,20 @@ def apply_job():
     if existing:
         return jsonify({'error': 'You have already applied to this job', 'application_id': existing['id']}), 409
 
-    job = db.execute('SELECT title, company, employer_id FROM jobs WHERE id = ?', (job_id,)).fetchone()
-    applicant = db.execute('SELECT name, email FROM users WHERE id = ?', (request.user_id,)).fetchone()
+    job = dict(job)
+    applicant = dict(user) if user else None
     employer = None
-    if job and job['employer_id']:
+    if job.get('employer_id'):
         employer = db.execute('SELECT name, email FROM users WHERE id = ?', (job['employer_id'],)).fetchone()
 
     try:
         from ats_util import compute_ats_score
-        job_row = db.execute('SELECT skills, description FROM jobs WHERE id = ?', (job_id,)).fetchone()
         ats_score = 0
-        if job_row and resume_text:
+        if resume_text:
             ats_score = compute_ats_score(
                 resume_text,
-                job_row['skills'] or '',
-                job_row['description'] or '',
+                job.get('skills') or '',
+                job.get('description') or '',
             )
     except Exception:
         ats_score = 0
@@ -105,33 +124,32 @@ def apply_job():
     app_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
 
     try:
-        from email_notifier import send_application_confirm
-        if applicant and applicant['email']:
+        from email_notifier import send_application_confirm, send_employer_new_application
+        if applicant and applicant.get('email'):
             send_application_confirm(
                 applicant['email'],
-                job['title'] if job else 'the role',
-                job['company'] if job else 'the company',
+                job.get('title', 'the role'),
+                job.get('company', 'the company'),
+            )
+        if employer and employer['email']:
+            send_employer_new_application(
+                employer['email'],
+                employer.get('name') or 'there',
+                job.get('title', 'a role'),
+                applicant.get('name') if applicant else 'An applicant',
+                ats_score,
             )
     except Exception as exc:
-        print(f'[apply_job] applicant email error: {exc}')
+        print(f'[apply_job] email error: {exc}')
 
-    try:
-        if employer and employer['email'] and os.environ.get('SMTP_HOST'):
-            from_email = os.environ.get('FROM_EMAIL', 'noreply@openjobs.com.au')
-            subject = f"New Application: {job['title'] if job else 'a job'}"
-            body = (
-                f"You have a new applicant for {job['title']} at {job['company']}. "
-                'Log in to your OpenJobs dashboard to review their application.'
-            )
-            msg = 'Subject: ' + subject + '\n\n' + body
-            with smtplib.SMTP(os.environ['SMTP_HOST'], int(os.environ.get('SMTP_PORT', 587))) as smtp:
-                smtp.starttls()
-                smtp.login(os.environ['SMTP_USER'], os.environ['SMTP_PASS'])
-                smtp.sendmail(from_email, employer['email'], msg)
-    except Exception as exc:
-        print(f'[apply_job] employer email error: {exc}')
-
-    return jsonify({'success': True, 'message': 'Applied', 'application_id': app_id, 'ats_score': ats_score}), 201
+    return jsonify({
+        'success': True,
+        'message': 'Applied',
+        'application_id': app_id,
+        'ats_score': ats_score,
+        'used_profile_resume': bool(resume_text),
+        'auto_cover_letter': bool(auto_cover and cover_letter),
+    }), 201
 
 
 @applications_bp.route('/api/applications/<int:app_id>', methods=['PATCH'])
@@ -145,22 +163,29 @@ def update_application(app_id):
     db = get_db()
     app_row = db.execute(
         """
-        SELECT a.id, a.user_id, j.employer_id
+        SELECT a.id, a.user_id, a.status, j.employer_id, j.title as job_title, j.company as job_company,
+               u.email as applicant_email, u.name as applicant_name
         FROM applications a
         JOIN jobs j ON a.job_id = j.id
+        JOIN users u ON u.id = a.user_id
         WHERE a.id = ?
         """,
         (app_id,),
     ).fetchone()
     if not app_row:
         return jsonify({'error': 'Application not found'}), 404
-    allowed = (
-        request.user_role == 'admin'
-        or app_row['employer_id'] == request.employer_id
-        or app_row['user_id'] == request.user_id
-    )
-    if not allowed:
+
+    if request.user_role == 'admin':
+        pass
+    elif request.user_role == 'employer' and app_row['employer_id'] == request.employer_id:
+        pass
+    elif app_row['user_id'] == request.user_id:
+        if new_status != 'withdrawn':
+            return jsonify({'error': 'Applicants can only set status to withdrawn'}), 403
+    else:
         return jsonify({'error': 'Not authorized'}), 403
+
+    old_status = normalize_status(app_row['status'])
 
     db.execute(
         'UPDATE applications SET status = ?, updated_at = ? WHERE id = ?',
@@ -168,6 +193,25 @@ def update_application(app_id):
     )
     db.commit()
     updated = db.execute('SELECT * FROM applications WHERE id = ?', (app_id,)).fetchone()
+
+    if (
+        new_status
+        and request.user_role in ('employer', 'admin')
+        and app_row['applicant_email']
+        and new_status != old_status
+    ):
+        try:
+            from email_notifier import send_application_status_update
+            send_application_status_update(
+                app_row['applicant_email'],
+                app_row['applicant_name'] or 'there',
+                app_row['job_title'] or 'your application',
+                app_row['job_company'] or '',
+                new_status,
+            )
+        except Exception as exc:
+            print(f'[update_application] status email error: {exc}')
+
     return jsonify({'success': True, 'application': dict(updated)})
 
 

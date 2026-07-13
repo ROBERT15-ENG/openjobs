@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     skills TEXT,
     employer_id INTEGER,
     view_count INTEGER NOT NULL DEFAULT 0,
+    is_featured INTEGER NOT NULL DEFAULT 0,
     posted_at TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (employer_id) REFERENCES users(id)

@@ -179,7 +179,7 @@ def get_user_profile():
     db = get_db()
     user = db.execute(
         """
-        SELECT id, name, email, role, skills, phone, preferred_location, experience, created_at
+        SELECT id, name, email, role, skills, phone, preferred_location, experience, resume_text, created_at
         FROM users WHERE id = ?
         """,
         (request.user_id,),
@@ -193,7 +193,7 @@ def get_user_profile():
 @require_auth
 def update_user_profile():
     data = request.json or {}
-    allowed = ['name', 'skills', 'phone', 'preferred_location', 'experience', 'company']
+    allowed = ['name', 'skills', 'phone', 'preferred_location', 'experience', 'company', 'resume_text']
     updates = {key: value for key, value in data.items() if key in allowed}
     if not updates:
         return jsonify({'error': f'No valid fields. Allowed: {allowed}'}), 400
@@ -207,7 +207,7 @@ def update_user_profile():
     db.commit()
     user = db.execute(
         """
-        SELECT id, name, email, role, skills, phone, preferred_location, experience, created_at
+        SELECT id, name, email, role, skills, phone, preferred_location, experience, resume_text, created_at
         FROM users WHERE id = ?
         """,
         (request.user_id,),

@@ -27,6 +27,11 @@ def _seed_db(db_path: str) -> None:
             'INSERT INTO users (name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
             (name, email, generate_password_hash('pass123'), role, now),
         )
+    seeker_id = conn.execute("SELECT id FROM users WHERE email='seeker@test.com'").fetchone()[0]
+    conn.execute(
+        'UPDATE users SET skills = ?, resume_text = ? WHERE id = ?',
+        ('Python, Flask', 'Python developer with Flask API experience.', seeker_id),
+    )
     employer_id = conn.execute("SELECT id FROM users WHERE email='employer@test.com'").fetchone()[0]
     conn.execute(
         """INSERT INTO jobs (
@@ -34,7 +39,7 @@ def _seed_db(db_path: str) -> None:
             work_type, work_arrangement, employer_id, posted_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            'Backend Engineer', 'Acme', 'Remote', 'Python role', '100k', 'Development', 1, now,
+            'Backend Engineer', 'Acme', 'Remote', 'Python role with visa sponsorship available for eligible candidates', '100k', 'Development', 1, now,
             'full_time', 'remote', employer_id, now,
         ),
     )

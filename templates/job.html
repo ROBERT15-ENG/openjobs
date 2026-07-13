@@ -460,7 +460,12 @@
       const res = await fetch('/api/applications', {
         method: 'POST',
         headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ job_id: parseInt(jobId, 10), cover_letter: cover, resume_text: resumeText })
+        body: JSON.stringify({
+          job_id: parseInt(jobId, 10),
+          cover_letter: cover,
+          resume_text: resumeText,
+          auto_cover_letter: !cover && !resumeText,
+        })
       });
       const data = await res.json();
       if (res.ok && data.success) {

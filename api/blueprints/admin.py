@@ -1,11 +1,13 @@
 """Admin analytics routes."""
 
+import csv
 import datetime
+import io
 
 from auth_utils import require_role
 from constants import SEEKER_ROLES
 from db import get_db
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -100,6 +102,38 @@ def admin_users():
         """
     ).fetchall()
     return jsonify({'users': [dict(row) for row in users]})
+
+
+@admin_bp.route('/api/admin/export/applications', methods=['GET'])
+@require_role('admin')
+def export_applications_csv():
+    """Download applications as CSV for reporting."""
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT a.id, a.status, a.applied_at, a.ats_score,
+               u.name as applicant_name, u.email as applicant_email,
+               j.title as job_title, j.company as job_company
+        FROM applications a
+        JOIN users u ON u.id = a.user_id
+        JOIN jobs j ON j.id = a.job_id
+        ORDER BY a.applied_at DESC
+        LIMIT 5000
+        """
+    ).fetchall()
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(['id', 'status', 'applied_at', 'ats_score', 'applicant', 'email', 'job', 'company'])
+    for row in rows:
+        writer.writerow([
+            row['id'], row['status'], row['applied_at'], row['ats_score'],
+            row['applicant_name'], row['applicant_email'], row['job_title'], row['job_company'],
+        ])
+    return Response(
+        buffer.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=openjobs-applications.csv'},
+    )
 
 
 @admin_bp.route('/api/admin/job-alerts/run', methods=['POST'])

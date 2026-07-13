@@ -337,7 +337,7 @@
       <div class="card">
         <div class="card-title">🗄 Database</div>
         <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:1rem">
-          <button class="btn btn-ghost" onclick="alert('Backup feature coming soon')">📦 Export Data</button>
+          <button class="btn btn-ghost" onclick="exportApplications()">📦 Export Applications (CSV)</button>
           <button class="btn btn-ghost" onclick="alert('Restore feature coming soon')">♻️ Import Data</button>
           <button class="btn btn-danger" onclick="if(confirm('Clear all applications? This cannot be undone.')) alert('Feature coming soon')">🗑 Clear Applications</button>
         </div>
@@ -727,6 +727,26 @@
     if (days < 30) return days + 'd ago';
     return Math.floor(days/30) + 'mo ago';
   }
+  async function exportApplications() {
+    const token = localStorage.getItem('token');
+    if (!token) { alert('Please sign in as admin.'); return; }
+    try {
+      const res = await fetch('/api/admin/export/applications', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (!res.ok) { alert('Export failed.'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'openjobs-applications.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Could not export applications.');
+    }
+  }
+
   function escHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

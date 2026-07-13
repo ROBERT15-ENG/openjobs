@@ -38,8 +38,8 @@
     "phase4_scale": {
       "name": "Growth & payments",
       "tasks": [
-        { "id": "4.1", "title": "Stripe checkout + webhooks", "status": "planned", "priority": "medium", "notes": "Deferred; demo mode for now" },
-        { "id": "4.2", "title": "AI tools page (résumé score, cover letter, interview prep)", "status": "complete", "priority": "high" },
+        { "id": "4.1", "title": "Stripe checkout + webhooks", "status": "planned", "priority": "medium", "notes": "Deferred — demo posting free until Stripe keys added" },
+        { "id": "4.2", "title": "Easy apply + match tiers + visa filter", "status": "complete", "priority": "high" },
         { "id": "4.3", "title": "Job scrapers (Indeed, LinkedIn)", "status": "planned", "priority": "low" },
         { "id": "4.4", "title": "Production deployment", "status": "planned", "priority": "high" },
         { "id": "4.5", "title": "Admin export / user management actions", "status": "partial", "priority": "medium" }

@@ -7,6 +7,7 @@ from auth_utils import optional_auth, require_auth
 from db import get_db
 from extensions import limiter
 from flask import Blueprint, jsonify, request
+from match_util import match_tier_label
 from semantic_matcher import keyword_score
 from seo_util import job_url_path
 from skills_util import extract_skills_fast
@@ -45,6 +46,7 @@ def _attach_match_scores(jobs, user_id, db):
             score = min(100, overlap * 25)
         row['score'] = score
         row['matched_skills'] = matched[:8]
+        row['match_tier'] = match_tier_label(score)
         row['url'] = job_url_path(row['id'], row.get('title', ''))
         scored.append(row)
     return scored
@@ -120,10 +122,29 @@ def get_jobs():
         where.append('(title LIKE ? OR company LIKE ? OR description LIKE ? OR search_summary LIKE ?)')
         params.extend([f'%{search}%'] * 4)
 
+    visa = request.args.get('visa', '').lower()
+    if visa in ('1', 'true', 'yes'):
+        visa_clause = (
+            "(LOWER(description) LIKE '%visa%' OR LOWER(description) LIKE '%sponsorship%' "
+            "OR LOWER(skills) LIKE '%visa%' OR LOWER(search_summary) LIKE '%sponsorship%' "
+            "OR LOWER(selling_points) LIKE '%visa%' OR LOWER(selling_points) LIKE '%sponsorship%')"
+        )
+        where.append(visa_clause)
+
     where_clause = ' AND '.join(where)
     total = db.execute(f'SELECT COUNT(*) FROM jobs WHERE {where_clause}', params).fetchone()[0]
+
+    sort = request.args.get('sort', 'newest')
+    order = 'created_at DESC'
+    if sort == 'salary_high':
+        order = 'COALESCE(salary_max, salary_min, 0) DESC, created_at DESC'
+    elif sort == 'salary_low':
+        order = 'COALESCE(salary_min, salary_max, 999999999) ASC, created_at DESC'
+    elif sort == 'featured':
+        order = 'COALESCE(is_featured, 0) DESC, created_at DESC'
+
     jobs = db.execute(
-        f'SELECT * FROM jobs WHERE {where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?',
+        f'SELECT * FROM jobs WHERE {where_clause} ORDER BY {order} LIMIT ? OFFSET ?',
         params + [limit, offset],
     ).fetchall()
     job_list = _attach_match_scores(jobs, getattr(request, 'user_id', None), db)

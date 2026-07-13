@@ -1,285 +1,130 @@
 # OpenJobs — AI-Powered Australian Job Board
 
-> The smarter job board that matches candidates to roles using semantic AI — not just keyword searches. Built with Flask, SQLite, and Ollama.
+> Smart job matching with keyword + optional Ollama semantic scoring. Built with Flask, SQLite, and vanilla HTML dashboards.
 
-**Live at:** `http://localhost:5700` | **Docs:** [OpenJobs Code Schematic](./OpenJobs_CodeSchematic.pdf)
-
----
-
-## ✨ Features
-
-### For Job Seekers
-- 🔍 **Smart job search** with filters: work type (Full-time/Part-time/Internship/Contract), arrangement (Remote/Hybrid/On-site), salary, location, category
-- 🤖 **AI-powered matching** — resume → ranked job recommendations using semantic similarity (Ollama), with clear skill gap analysis
-- 💾 **Save jobs** and track applications from a personal dashboard
-- 📄 **One-click apply** with auto-generated cover letter from your profile skills
-- 📊 **ATS compatibility score** — know how well your skills match each role before applying
-
-### For Employers
-- 📋 **Employer dashboard** — post, edit, and manage job listings with pricing (Standard $99 / Premium $199 AUD via Stripe)
-- 📥 **Application pipeline** — kanban board (Applied → Screening → Interview → Offer → Hired / Rejected) with drag-and-drop
-- 👀 **View tracking** — see how many times each job has been viewed
-- �✉️ **Email notifications** — applicants get confirmation, employers get alerts (SMTP/SendGrid)
-- 🔒 **Multi-tenant isolation** — employers only ever see their own data
-
-### AI Engine
-- **Keyword-first + Ollama semantic rescoring** — 70% fewer LLM calls vs. pure semantic search; Ollama only fires for borderline 1–3 keyword score cases
-- **Confidence tiers:** ELITE (80%+), STRONG (70%+), WATCHLIST (50%+)
-- **Skill taxonomy** with 60+ aliases (JS→JavaScript, ML→machine learning, ReactJS→React, etc.)
-- **Economic calendar boost** — major news events influence scoring weights
+**Local:** `http://localhost:5700` | **Deploy:** [PRODUCTION.md](./PRODUCTION.md)
 
 ---
 
-## 🏗️ Architecture
+## Features (current)
 
-```
-                    ┌─────────────────────────────────────┐
-                    │              Flask API               │
-                    │         (api/server.py  port 5700)   │
-  Browser ─────────│  Auth  Jobs  Apps  ATS  AI  Email   │
-                    │  JWT   SQLite  Ollama  SMTP  Stripe │
-                    └──────────────┬──────────────────────┘
-                                   │
-                    ┌──────────────▼──────────────────────┐
-                    │   Semantic Matcher                  │
-                    │  (keyword → Ollama fallback)        │
-                    │   api/semantic_matcher.py            │
-                    └─────────────────────────────────────┘
-```
-
-**Key files:**
-| File | Purpose |
-|------|---------|
-| `api/server.py` | Flask app — all routes, auth, database |
-| `api/semantic_matcher.py` | AI job-candidate matching engine |
-| `templates/employer.html` | Employer dashboard (kanban, post job, settings) |
-| `templates/user.html` | Seeker dashboard (applications, saved jobs) |
-| `templates/index.html` | Public job search + listings |
-| `email_notifier.py` | SMTP email wrapper |
-
-Full API schematic: [OpenJobs_CodeSchematic.pdf](./OpenJobs_CodeSchematic.pdf)
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Python 3.9+
-- [Ollama](https://ollama.com) running locally (`ollama serve`) — optional, for AI matching
-
-### Install & Run
-
-```bash
-# 1. Clone / navigate to project
-cd jobseek
-
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Copy and edit environment variables
-cp .env.example .env
-# Edit .env and set your SMTP credentials, Stripe key, Telegram token
-
-# 4. Start Ollama (optional, for AI features)
-ollama serve
-ollama pull gemma3:4b   # or your chosen model
-
-# 5. Run the server
-python api/server.py
-```
-
-Open `http://localhost:5700` in your browser.
-
----
-
-## 🔑 Test Accounts
-
-All passwords are `TestPass123` unless noted.
-
-### Seekers
-| Email | Password | Dashboard |
-|-------|----------|-----------|
-| `tonny@email.com` | `TestPass123` | `/user` — saved jobs, applications, profile |
-| `demo@openjobs.com` | `demo1234` | `/user` |
+### Job seekers
+- Search with filters: work type, arrangement, salary, location, category, **visa sponsorship**
+- **Easy Apply** — one click uses profile résumé + auto cover letter (upload résumé on profile or job page for best ATS score)
+- Match scores with **ELITE / STRONG / WATCHLIST** tiers when signed in
+- Save jobs, track applications, job alerts (email when SMTP + cron configured)
+- AI tools at `/ai` (résumé score, cover letter, interview prep — Ollama optional)
 
 ### Employers
-| Email | Password | Company | Dashboard |
-|-------|----------|---------|-----------|
-| `employer@openjobs.com` | `Employer123` | TechCorp HR (72 jobs) | `/employer` |
-| `sarah@techstartup.io` | `HireMe2026!` | TechStartup (2 jobs) | `/employer` |
+- Post, edit, manage listings (demo mode: free posting until Stripe is enabled)
+- Kanban pipeline (stage buttons — not drag-and-drop)
+- Applicant notifications via email when SMTP is set
+- View counts per job
 
-### Creating an Employer Account (UI)
-1. Go to `http://localhost:5700/employer`
-2. Click **Register** → fill in your details
-3. On first login, go to **Settings** → fill in Company Name + Primary Location
-4. Next time you **Post a Job**, those fields pre-fill automatically
+### Platform
+- SEO URLs (`/jobs/<id>/<slug>`), sitemap, JSON-LD
+- Companies directory (`/companies`), salary insights (`/salary`)
+- JWT auth, pytest CI, job alert matcher script
 
 ---
 
-## 📂 Environment Variables
-
-Copy `.env.example` to `.env`:
+## Quick start
 
 ```bash
-# Flask
-SECRET_KEY=your-secret-key-here
-FLASK_ENV=development
-
-# Ollama (optional — AI matching fails gracefully if unavailable)
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=gemma3:4b
-JOBSEEK_AI_ENABLED=true
-
-# Email (optional — emails log to console if not set)
-SMTP_HOST=smtp.sendgrid.net
-SMTP_PORT=587
-SMTP_USER=apikey
-SMTP_PASS=your-sendgrid-api-key
-FROM_EMAIL=jobs@openjobs.com
-
-# Stripe (optional — checkout returns 503 demo mode if not set)
-STRIPE_SECRET_KEY=sk_live_...
-STRIPE_PUBLISHABLE_KEY=pk_live_...
-
-# Telegram Bot (optional)
-TELEGRAM_BOT_TOKEN=123456:ABC...
+pip install -r requirements.txt
+cp .env.example .env
+python3 scripts/init_db.py
+cd api && python3 server.py
 ```
+
+Optional: `ollama serve` on your PC for semantic AI features.
 
 ---
 
-## 📦 API Overview
+## Test accounts (from `scripts/init_db.py`)
 
-### Auth
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/auth/login` | Login → JWT token |
-| `POST` | `/api/auth/register` | Register seeker |
-| `POST` | `/api/auth/register-employer` | Register employer |
-| `POST` | `/api/auth/logout` | Revoke token |
-| `GET` | `/api/auth/me` | Current user profile |
-
-### Jobs
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/jobs` | Search/filter jobs |
-| `POST` | `/api/jobs` | Post job (auth required) |
-| `GET` | `/api/jobs/<id>` | Job detail |
-| `PATCH` | `/api/jobs/<id>` | Update job (owner only) |
-| `DELETE` | `/api/jobs/<id>` | Delete job (owner only) |
-| `PATCH` | `/api/jobs/<id>/view` | Increment view count |
-
-### Applications & ATS
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/applications` | Apply to job |
-| `GET` | `/api/applications` | Seeker's applications |
-| `GET` | `/api/employer/applications` | Employer's applicants |
-| `GET` | `/api/kanban/<job_id>` | Pipeline stages |
-| `POST` | `/api/kanban/<job_id>/move` | Move candidate stage |
-
-### AI & Matching
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/skills` | Full skills taxonomy |
-| `GET` | `/api/ai/ollama/status` | Ollama health check |
-| `POST` | `/api/resume/upload` | Upload resume → extract skills |
-
-### Payments
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/pricing` | Pricing plans |
-| `POST` | `/api/payment/checkout` | Stripe checkout session |
+| Role | Email | Password |
+|------|-------|----------|
+| Seeker | `demo@openjobs.com` | `TestPass123` |
+| Employer | `employer@openjobs.com` | `Employer123` |
+| Admin | `admin@openjobs.com` | `admin123` (override with `ADMIN_PASSWORD`) |
 
 ---
 
-## 🗄️ Database
+## Environment variables
 
-SQLite at `jobs.db`. Key tables:
+See [.env.example](./.env.example) and [PRODUCTION.md](./PRODUCTION.md).
 
-**`users`** — job seekers and employers
-**`jobs`** — all job listings (soft delete: `is_active=0`)
-**`applications`** — job applications with ATS scores
-**`saved_jobs`** — jobs saved by seekers
-**`job_alerts`** — email alert preferences
-**`skills_taxonomy`** — 42 skills with aliases and demand scores
-
-Schema diagram: [OpenJobs_CodeSchematic.pdf](./OpenJobs_CodeSchematic.pdf)
-
----
-
-## 🧠 AI Matching Logic
-
-```
-1. Seeker uploads resume → skills extracted
-2. rank_jobs_for_resume(seeker_id) called
-3. For each active job:
-   a. keyword_score() → exact + fuzzy skill match (0–10 scale)
-      - Skills normalised via 60+ alias map
-      - Score 0 → skip Ollama (clear mismatch)
-      - Score ≥ 4 → skip Ollama (high confidence)
-      - Score 1–3 → ollama_rescore() fires (semantic fallback)
-   b. Confidence tier assigned:
-      ELITE (80%+) → push alert
-      STRONG (70%+) → include
-      WATCHLIST (50%+) → include
-      < 50% → reject
-4. Return jobs sorted by match_score descending
-```
+| Variable | Purpose |
+|----------|---------|
+| `SECRET_KEY` | JWT signing (required in production) |
+| `BASE_URL` | Public site URL for emails and SEO |
+| `CORS_ORIGINS` | Allowed API origins (comma-separated) |
+| `SMTP_*` | Email delivery |
+| `OLLAMA_URL` | Local AI (optional) |
+| `STRIPE_*` | Payments (**deferred** — demo mode without keys) |
 
 ---
 
-## 📁 Project Structure
+## API highlights
 
-```
-jobseek/
-├── api/
-│   ├── server.py            # Flask app — all routes
-│   └── semantic_matcher.py  # AI matching engine
-├── templates/               # HTML pages (served manually)
-│   ├── index.html           # Public job search
-│   ├── job.html             # Job detail + apply
-│   ├── user.html            # Seeker dashboard
-│   └── employer.html        # Employer dashboard + ATS
-├── bot/
-│   └── telegram_bot.py      # Telegram bot (7 commands)
-├── diagrams/
-│   └── architecture.html    # Interactive architecture diagram
-├── public/                  # Static assets (logos, salary calc, etc.)
-├── email_notifier.py        # SMTP email wrapper
-├── config.py                # Feature flags + Ollama config
-├── requirements.txt
-├── .env.example
-├── README.md
-├── ARCHITECTURE.md          # Detailed architecture notes
-├── PRODUCTION.md            # Deployment guide
-└── OpenJobs_CodeSchematic.pdf  # Full page schematic
-```
+| Method | Endpoint | Notes |
+|--------|----------|-------|
+| `GET` | `/api/jobs?visa=1&sort=featured` | Visa filter + sort |
+| `POST` | `/api/applications` | `{ job_id, auto_cover_letter: true }` for easy apply |
+| `GET` | `/api/admin/export/applications` | CSV export (admin) |
+| `POST` | `/api/admin/job-alerts/run` | Manual alert matching |
+
+Full route list: blueprint modules under `api/blueprints/`.
 
 ---
 
-## 🧪 Testing
+## Job alert cron
 
 ```bash
-# Run a quick API smoke test
-curl http://localhost:5700/api/jobs?work_type=internship
-curl http://localhost:5700/api/pricing
+python3 scripts/match_job_alerts.py --since-hours 24
+```
 
-# Test employer auth
-curl -X POST http://localhost:5700/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"employer@openjobs.com","password":"Employer123"}'
+Schedule hourly in production (see PRODUCTION.md).
+
+---
+
+## AI matching
+
+1. Keyword overlap scores jobs instantly (`semantic_matcher.py`)
+2. Ollama rescoring for borderline matches when `OLLAMA_URL` is reachable
+3. UI tiers: **ELITE** 80%+, **STRONG** 70%+, **WATCHLIST** 50%+
+
+---
+
+## Project structure
+
+```
+api/
+  app_factory.py, server.py
+  blueprints/     # auth, jobs, applications, seeker, employer, admin, ai, pages
+  semantic_matcher.py, job_alert_matcher.py
+templates/        # index, job, user, employer, admin, …
+scripts/          # init_db.py, match_job_alerts.py
+tests/            # pytest suite
 ```
 
 ---
 
-## 🚢 Deploying to Production
-
-See [PRODUCTION.md](./PRODUCTION.md) for full guide. Key steps:
+## Testing
 
 ```bash
-# Production WSGI server
-pip install gunicorn
-gunicorn -w 4 -b 0.0.0.0:5700 "api.server:app"
+pytest tests/ -q
 ```
 
-Recommended hosting: **Railway**, **Render**, or any VPS with Python 3.9+ support.
+---
+
+## Roadmap (not yet live)
+
+- Stripe payments (posting fees, featured listings)
+- OAuth (Google / LinkedIn)
+- Job scrapers / external inventory
+- Interview scheduling, employer messaging
+- PostgreSQL, Redis sessions
+
+See [CHANGELOG.md](./CHANGELOG.md) for release history.
