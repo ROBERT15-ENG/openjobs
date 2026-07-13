@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Initialize jobs.db from schema.sql with seed users and sample data."""
 
+import datetime
 import os
 import sqlite3
-import datetime
 
 from werkzeug.security import generate_password_hash
 

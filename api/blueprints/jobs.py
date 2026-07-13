@@ -4,7 +4,6 @@ import datetime
 import json
 
 from auth_utils import optional_auth, require_auth
-from constants import SEEKER_ROLES
 from db import get_db
 from extensions import limiter
 from flask import Blueprint, jsonify, request

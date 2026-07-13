@@ -1,16 +1,13 @@
 """Sprint 1-6: job alerts matcher, AI endpoints, employer registration."""
 
-import datetime
 import os
 import sys
-
-import pytest
 
 API = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'api'))
 sys.path.insert(0, API)
 
-from job_alert_matcher import job_matches_alert, notify_alerts_for_job, run_job_alert_matching  # noqa: E402
-from conftest import auth_headers, auth_token
+from conftest import auth_headers, auth_token  # noqa: E402
+from job_alert_matcher import job_matches_alert, run_job_alert_matching  # noqa: E402
 
 
 def test_register_employer_endpoint(client):

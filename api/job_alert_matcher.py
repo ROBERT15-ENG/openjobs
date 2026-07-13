@@ -5,8 +5,9 @@ import os
 import sqlite3
 from typing import Dict, List, Optional
 
-from email_notifier import send_job_alert
 from seo_util import job_url_path
+
+from email_notifier import send_job_alert
 
 BASE_URL = os.environ.get('BASE_URL', 'http://localhost:5700')
 
