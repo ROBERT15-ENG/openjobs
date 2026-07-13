@@ -8,9 +8,36 @@ and this project uses semantic versioning for release tags.
 ## [Unreleased]
 
 ### Planned
+- Redis-backed JWT blocklist and rate limiting
+- HttpOnly cookie sessions (replace localStorage JWT)
 - OAuth (Google, LinkedIn)
-- Interview scheduling UI
-- Stripe live payments (deferred — demo mode for now)
+- Stripe live payments
+
+## [2.4.1] - 2026-07-13
+
+### Security hardening (audit P0 + P1)
+
+#### Fixed
+- **SECRET_KEY**: app refuses default secret when `FLASK_ENV=production`
+- **JSON-LD XSS**: escape `<` in structured data (`seo_util.py`)
+- **employer_id**: only set for employer role (seekers no longer impersonate employers)
+- **Job mutations**: `POST/PATCH/DELETE /api/jobs` require employer or admin role
+- **Employer APIs**: `/api/employer/*` require employer role
+- **Application status**: seekers can only set `withdrawn` (not `hired`/`offer`)
+- **Resume upload**: size checked before writing to disk
+- **Emails**: HTML-escape dynamic content in notifications and password reset
+- **CORS**: restricted to `BASE_URL` / localhost (override via `CORS_ORIGINS`)
+- **AI endpoints**: auth required + rate limits on POST routes
+- **Stripe webhook**: verifies `user_id` owns job before activation
+- **Skill tags**: `escHtml()` on user profile skill add
+- **View counter**: rate limited
+- **Admin seed**: `ADMIN_PASSWORD` env var + production warning
+
+#### Added
+- Security response headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`)
+- Rate limits on `register-employer`, `forgot-password`, `reset-password`
+- `tests/test_security.py` (7 tests)
+- CI: `pip-audit` now fails the build on vulnerabilities
 
 ## [2.4.0] - 2026-07-13
 

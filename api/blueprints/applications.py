@@ -154,12 +154,15 @@ def update_application(app_id):
     ).fetchone()
     if not app_row:
         return jsonify({'error': 'Application not found'}), 404
-    allowed = (
-        request.user_role == 'admin'
-        or app_row['employer_id'] == request.employer_id
-        or app_row['user_id'] == request.user_id
-    )
-    if not allowed:
+
+    if request.user_role == 'admin':
+        pass
+    elif request.user_role == 'employer' and app_row['employer_id'] == request.employer_id:
+        pass
+    elif app_row['user_id'] == request.user_id:
+        if new_status != 'withdrawn':
+            return jsonify({'error': 'Applicants can only set status to withdrawn'}), 403
+    else:
         return jsonify({'error': 'Not authorized'}), 403
 
     db.execute(

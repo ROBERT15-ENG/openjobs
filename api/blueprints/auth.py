@@ -1,6 +1,7 @@
 """Auth routes."""
 
 import datetime
+import html
 import secrets
 import sqlite3
 import threading
@@ -80,6 +81,7 @@ def login():
 
 
 @auth_bp.route('/api/auth/register-employer', methods=['POST'])
+@limiter.limit('5 per hour')
 def register_employer():
     data = request.json or {}
     name = data.get('name', '').strip()
@@ -112,6 +114,7 @@ def register_employer():
 
 
 @auth_bp.route('/api/auth/forgot-password', methods=['POST'])
+@limiter.limit('5 per hour')
 def forgot_password():
     data = request.json or {}
     email = data.get('email', '').strip()
@@ -133,22 +136,24 @@ def forgot_password():
 
     from flask import current_app
     reset_link = f"{current_app.config['BASE_URL']}/reset-password.html?token={token}"
-    user_name = user['name'] or email.split('@')[0]
-    html = f"""
+    user_name = html.escape(user['name'] or email.split('@')[0])
+    safe_link = html.escape(reset_link)
+    html_body = f"""
     <html><body style="font-family: Inter, Arial, sans-serif; background: #0a0a0f; color: #e0e0e0; padding: 32px;">
       <div style="max-width: 480px; margin: 0 auto;">
         <h1 style="color: #00d4ff;">Password Reset Request</h1>
         <p>Hi <strong>{user_name}</strong>, reset your OpenJobs password:</p>
-        <a href="{reset_link}" style="display:inline-block;background:#00d4ff;color:#000;padding:14px 28px;border-radius:10px;text-decoration:none;font-weight:700;">Reset Password</a>
+        <a href="{safe_link}" style="display:inline-block;background:#00d4ff;color:#000;padding:14px 28px;border-radius:10px;text-decoration:none;font-weight:700;">Reset Password</a>
       </div>
     </body></html>"""
-    result = send_email(email, 'Reset your OpenJobs password', html)
+    result = send_email(email, 'Reset your OpenJobs password', html_body)
     if not result.get('success'):
         return jsonify({'error': 'Failed to send email. SMTP may not be configured.'}), 500
     return jsonify({'message': 'If that email exists, a reset link has been sent.'}), 200
 
 
 @auth_bp.route('/api/auth/reset-password', methods=['POST'])
+@limiter.limit('10 per hour')
 def reset_password():
     data = request.json or {}
     token = data.get('token', '').strip()
@@ -215,15 +220,18 @@ def upload_resume():
     if ext not in ALLOWED_EXT:
         return jsonify({'error': 'File type not allowed. Upload PDF, DOC, or DOCX.'}), 400
 
+    from resume_util import MAX_SIZE
+
+    file.seek(0, os.SEEK_END)
+    size = file.tell()
+    file.seek(0)
+    if size > MAX_SIZE:
+        return jsonify({'error': 'File too large. Maximum size is 5 MB.'}), 400
+
     safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', file.filename)
     filename = f'user_{request.user_id}_{int(datetime.datetime.now().timestamp())}_{safe_name}'
     filepath = os.path.join(UPLOAD_DIR, filename)
     file.save(filepath)
-
-    from resume_util import MAX_SIZE
-    if os.path.getsize(filepath) > MAX_SIZE:
-        os.remove(filepath)
-        return jsonify({'error': 'File too large. Maximum size is 5 MB.'}), 400
 
     text = extract_resume_text(filepath)
     if not text.strip():

@@ -714,7 +714,7 @@
       const btn = container.querySelector('.skill-add');
       const tag = document.createElement('span');
       tag.className = 'skill-tag';
-      tag.innerHTML = skill.trim() + ' <button onclick="removeSkill(this)">×</button>';
+      tag.innerHTML = escHtml(skill.trim()) + ' <button onclick="removeSkill(this)">×</button>';
       container.insertBefore(tag, btn);
     }
   }

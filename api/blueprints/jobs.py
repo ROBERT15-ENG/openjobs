@@ -3,7 +3,7 @@
 import datetime
 import json
 
-from auth_utils import optional_auth, require_auth
+from auth_utils import optional_auth, require_employer
 from db import get_db
 from extensions import limiter
 from flask import Blueprint, jsonify, request
@@ -155,7 +155,7 @@ def get_job(job_id):
 
 
 @jobs_bp.route('/api/jobs', methods=['POST'])
-@require_auth
+@require_employer
 def create_job():
     data = request.json or {}
     required = ['title', 'company', 'location', 'description']
@@ -207,7 +207,7 @@ def create_job():
 
 
 @jobs_bp.route('/api/jobs/<int:job_id>', methods=['PATCH'])
-@require_auth
+@require_employer
 def update_job(job_id):
     data = request.json or {}
     if not data:
@@ -236,7 +236,7 @@ def update_job(job_id):
 
 
 @jobs_bp.route('/api/jobs/<int:job_id>', methods=['DELETE'])
-@require_auth
+@require_employer
 def delete_job(job_id):
     db = get_db()
     existing = db.execute('SELECT id, employer_id FROM jobs WHERE id = ?', (job_id,)).fetchone()
@@ -250,6 +250,7 @@ def delete_job(job_id):
 
 
 @jobs_bp.route('/api/jobs/<int:job_id>/view', methods=['PATCH'])
+@limiter.limit('30 per minute')
 def track_job_view(job_id):
     db = get_db()
     db.execute('UPDATE jobs SET view_count = view_count + 1 WHERE id = ?', (job_id,))

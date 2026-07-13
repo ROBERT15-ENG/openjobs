@@ -81,9 +81,9 @@ def create_checkout():
         if resp.status_code == 200:
             session = resp.json()
             return jsonify({'success': True, 'checkout_url': session['url'], 'session_id': session['id']})
-        return jsonify({'error': 'Stripe error', 'detail': resp.text}), 502
-    except Exception as exc:
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Stripe checkout failed'}), 502
+    except Exception:
+        return jsonify({'error': 'Payment service unavailable'}), 500
 
 
 @payments_bp.route('/api/payment/webhook', methods=['POST'])
@@ -101,17 +101,20 @@ def stripe_webhook():
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
     except ValueError:
         return jsonify({'error': 'Invalid payload'}), 400
-    except Exception as exc:
-        return jsonify({'error': f'Signature verification failed: {exc}'}), 400
+    except Exception:
+        return jsonify({'error': 'Webhook signature verification failed'}), 400
 
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
         metadata = session.get('metadata') or {}
         job_id = metadata.get('job_id')
-        if job_id:
+        user_id = metadata.get('user_id')
+        if job_id and user_id:
             from db import get_db
             db = get_db()
-            db.execute('UPDATE jobs SET is_active = 1 WHERE id = ?', (int(job_id),))
-            db.commit()
+            job = db.execute('SELECT employer_id FROM jobs WHERE id = ?', (int(job_id),)).fetchone()
+            if job and int(user_id) == job['employer_id']:
+                db.execute('UPDATE jobs SET is_active = 1 WHERE id = ?', (int(job_id),))
+                db.commit()
 
     return jsonify({'received': True})

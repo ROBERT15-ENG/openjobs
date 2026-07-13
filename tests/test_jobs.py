@@ -31,6 +31,17 @@ def test_employer_can_create_job(client):
     assert response.get_json()['job_id']
 
 
+def test_seeker_cannot_create_job(client):
+    token = auth_token(client, 'seeker@test.com')
+    response = client.post('/api/jobs', headers=auth_headers(token), json={
+        'title': 'QA Engineer',
+        'company': 'Acme',
+        'location': 'Remote',
+        'description': 'Testing role',
+    })
+    assert response.status_code == 403
+
+
 def test_seeker_cannot_delete_employer_job(client):
     employer_token = auth_token(client, 'employer@test.com')
     create = client.post('/api/jobs', headers=auth_headers(employer_token), json={

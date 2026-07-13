@@ -4,6 +4,8 @@ import os
 
 import requests
 from ats_util import compute_ats_score
+from auth_utils import require_auth
+from extensions import limiter
 from flask import Blueprint, jsonify, request
 
 ai_bp = Blueprint('ai', __name__)
@@ -62,8 +64,6 @@ def _fallback_interview_questions(job_title: str) -> str:
 def ollama_status():
     return jsonify({
         'available': OLLAMA_AVAILABLE,
-        'url': OLLAMA_URL,
-        'model': OLLAMA_MODEL,
         'note': 'Ollama is optional — AI tools use keyword fallbacks when it is not running locally.',
     })
 
@@ -75,11 +75,13 @@ def list_ollama_models():
     try:
         resp = requests.get(f'{OLLAMA_URL}/api/tags', timeout=5)
         return jsonify({'success': True, 'models': [model['name'] for model in resp.json().get('models', [])]})
-    except Exception as exc:
-        return jsonify({'error': str(exc)})
+    except Exception:
+        return jsonify({'error': 'Could not list models', 'models': []})
 
 
 @ai_bp.route('/api/ai/ollama/chat', methods=['POST'])
+@require_auth
+@limiter.limit('20 per hour')
 def ollama_chat():
     data = request.json or {}
     message = (data.get('message') or '').strip()
@@ -101,11 +103,13 @@ def ollama_chat():
             timeout=30,
         )
         return jsonify({'success': True, 'response': resp.json()['message']['content']})
-    except Exception as exc:
-        return jsonify({'error': str(exc)})
+    except Exception:
+        return jsonify({'error': 'AI chat failed'}), 500
 
 
 @ai_bp.route('/api/ai/ollama/score/resume', methods=['POST'])
+@require_auth
+@limiter.limit('30 per hour')
 def score_resume():
     data = request.json or {}
     job_desc = (data.get('job_description') or '').strip()
@@ -131,6 +135,8 @@ def score_resume():
 
 
 @ai_bp.route('/api/ai/ollama/generate/cover-letter', methods=['POST'])
+@require_auth
+@limiter.limit('20 per hour')
 def generate_cover_letter():
     data = request.json or {}
     job_title = (data.get('job_title') or '').strip()
@@ -157,6 +163,8 @@ def generate_cover_letter():
 
 
 @ai_bp.route('/api/ai/ollama/interview-prep', methods=['POST'])
+@require_auth
+@limiter.limit('20 per hour')
 def interview_prep():
     data = request.json or {}
     job_title = (data.get('job_title') or '').strip()

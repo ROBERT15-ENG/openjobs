@@ -78,7 +78,8 @@ def test_run_job_alert_matching_dry_run(client):
 
 
 def test_ai_score_resume_without_ollama(client):
-    res = client.post('/api/ai/ollama/score/resume', json={
+    token = auth_token(client)
+    res = client.post('/api/ai/ollama/score/resume', headers=auth_headers(token), json={
         'job_description': 'Python developer with Flask experience required',
         'resume_text': 'Experienced Python developer. Built Flask APIs for 5 years.',
     })
@@ -90,7 +91,8 @@ def test_ai_score_resume_without_ollama(client):
 
 
 def test_ai_cover_letter_fallback(client):
-    res = client.post('/api/ai/ollama/generate/cover-letter', json={
+    token = auth_token(client)
+    res = client.post('/api/ai/ollama/generate/cover-letter', headers=auth_headers(token), json={
         'job_title': 'Software Engineer',
         'company': 'OpenJobs',
         'resume_text': 'Full-stack developer',
@@ -102,7 +104,8 @@ def test_ai_cover_letter_fallback(client):
 
 
 def test_ai_interview_prep_fallback(client):
-    res = client.post('/api/ai/ollama/interview-prep', json={'job_title': 'Data Analyst'})
+    token = auth_token(client)
+    res = client.post('/api/ai/ollama/interview-prep', headers=auth_headers(token), json={'job_title': 'Data Analyst'})
     assert res.status_code == 200
     data = res.get_json()
     assert 'questions' in data
