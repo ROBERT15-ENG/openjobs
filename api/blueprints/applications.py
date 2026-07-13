@@ -73,9 +73,22 @@ def apply_job():
         employer = db.execute('SELECT name, email FROM users WHERE id = ?', (job['employer_id'],)).fetchone()
 
     try:
+        from ats_util import compute_ats_score
+        job_row = db.execute('SELECT skills, description FROM jobs WHERE id = ?', (job_id,)).fetchone()
+        ats_score = 0
+        if job_row and resume_text:
+            ats_score = compute_ats_score(
+                resume_text,
+                job_row['skills'] or '',
+                job_row['description'] or '',
+            )
+    except Exception:
+        ats_score = 0
+
+    try:
         db.execute(
-            """INSERT INTO applications (job_id, user_id, status, applied_at, resume_text, cover_letter)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO applications (job_id, user_id, status, applied_at, resume_text, cover_letter, ats_score)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 job_id,
                 request.user_id,
@@ -83,6 +96,7 @@ def apply_job():
                 datetime.datetime.now().isoformat(),
                 resume_text[:50000],
                 cover_letter[:10000],
+                ats_score,
             ),
         )
         db.commit()
@@ -117,7 +131,7 @@ def apply_job():
     except Exception as exc:
         print(f'[apply_job] employer email error: {exc}')
 
-    return jsonify({'success': True, 'message': 'Applied', 'application_id': app_id}), 201
+    return jsonify({'success': True, 'message': 'Applied', 'application_id': app_id, 'ats_score': ats_score}), 201
 
 
 @applications_bp.route('/api/applications/<int:app_id>', methods=['PATCH'])

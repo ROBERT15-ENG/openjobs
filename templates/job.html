@@ -3,15 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.">
+  <meta name="description" content="{% if job %}{{ job.title }} at {{ job.company }} — {{ job.location }}{% else %}Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.{% endif %}">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://openjobs.example.com/job.html">
-  <meta property="og:title" content="Apply for Job — OpenJobs">
-  <meta property="og:description" content="Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.">
+  <link rel="canonical" href="{% if canonical_url %}{{ canonical_url }}{% else %}https://openjobs.example.com/job.html{% endif %}">
+  <meta property="og:title" content="{% if job %}{{ job.title }} — {{ job.company }}{% else %}Apply for Job — OpenJobs{% endif %}">
+  <meta property="og:description" content="{% if job %}{{ (job.description or '')[:200] }}{% else %}Apply for this job on OpenJobs.{% endif %}">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://openjobs.example.com/job.html">
+  <meta property="og:url" content="{% if canonical_url %}{{ canonical_url }}{% else %}https://openjobs.example.com/job.html{% endif %}">
   <meta property="og:site_name" content="OpenJobs">
-  <title>Apply — OpenJobs</title>
+  <title>{% if job %}{{ job.title }} — OpenJobs{% else %}Apply — OpenJobs{% endif %}</title>
+  {% if json_ld %}<script type="application/ld+json">{{ json_ld | safe }}</script>{% endif %}
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
@@ -251,8 +252,9 @@
 
 <script>
   // ── LOAD JOB ──
+  const pathMatch = window.location.pathname.match(/\/jobs\/(\d+)/);
   const params = new URLSearchParams(window.location.search);
-  const jobId = params.get('id') || 1;
+  const jobId = (pathMatch && pathMatch[1]) || params.get('id') || {% if job %}{{ job.id }}{% else %}null{% endif %};
 
   let currentJob = null;
 
@@ -300,7 +302,11 @@
   });
 
   function loadJob(id) {
-    fetch('/api/jobs/' + id)
+    if (!id) { showError('Job not found'); return; }
+    const headers = {};
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    fetch('/api/jobs/' + id, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(job => {
         if (!job) { showError('Job not found'); return; }
@@ -374,7 +380,7 @@
           related.push(...(data.jobs || []).filter(j => j.id != id).slice(0, 4));
         }
         document.getElementById('relatedJobs').innerHTML = related.map(j => `
-          <div class="related-job" onclick="window.location.href='/job.html?id=${j.id}'">
+          <div class="related-job" onclick="window.location.href='${j.url || ('/jobs/' + j.id)}'">
             <div class="related-logo">${(j.company||'J')[0].toUpperCase()}</div>
             <div class="related-info">
               <div class="related-title">${escHtml(j.title)}</div>

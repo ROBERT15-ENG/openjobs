@@ -561,6 +561,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-save" id="modalSaveBtn" onclick="saveJob()" aria-label="Save job">☆ Save Job</button>
+      <a class="btn btn-ghost" id="modalViewLink" href="#" style="margin-right:auto;padding:0.7rem 1rem;border-radius:10px;border:1px solid var(--border);color:var(--text-muted);text-decoration:none;font-size:0.85rem;font-weight:600">View full posting</a>
       <button class="btn btn-apply-modal" onclick="applyToJob()">Apply Now →</button>
     </div>
   </div>
@@ -684,6 +685,9 @@
       .filter(wa  => document.getElementById('wa-' + wa)?.checked);
 
     let url = `/api/jobs?page=${currentPage}&limit=${PAGE_SIZE}`;
+    const headers = {};
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
     if (search) url += `&q=${encodeURIComponent(search)}`;
     if (location) url += `&location=${encodeURIComponent(location)}`;
     if (category) url += `&category=${encodeURIComponent(category)}`;
@@ -692,7 +696,7 @@
     if (workTypes.length)  url += `&work_type=${workTypes.join(',')}`;
     if (workArr.length)    url += `&work_arrangement=${workArr.join(',')}`;
 
-    fetch(url)
+    fetch(url, { headers })
       .then(r => r.json())
       .then(data => {
         let jobs = data.jobs || [];
@@ -822,6 +826,8 @@
         }
         document.getElementById('jobModal').classList.add('open');
         document.body.style.overflow = 'hidden';
+        const viewLink = document.getElementById('modalViewLink');
+        if (viewLink) viewLink.href = job.url || ('/jobs/' + job.id);
         updateModalSaveButton();
         trapModalFocus(document.getElementById('jobModalDialog'));
       });

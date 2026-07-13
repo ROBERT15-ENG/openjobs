@@ -209,6 +209,7 @@
     <button class="tab" onclick="switchTab('applications')">📋 Applications</button>
     <button class="tab" onclick="switchTab('saved')">⭐ Saved Jobs</button>
     <button class="tab" onclick="switchTab('recommendations')">🎯 For You</button>
+    <button class="tab" onclick="switchTab('alerts')">🔔 Job Alerts</button>
     <button class="tab" onclick="switchTab('profile')">👤 Profile</button>
   </div>
 
@@ -316,6 +317,24 @@
   <div class="tab-content" id="tab-recommendations">
     <div style="margin-bottom:1.5rem;font-weight:700;font-size:1rem;">🎯 Jobs Matched To Your Profile</div>
     <div class="rec-grid" id="allRecJobs"><div class="empty-state"><div class="emoji">⏳</div><h3>Loading...</h3></div></div>
+  </div>
+
+  <!-- ── JOB ALERTS ── -->
+  <div class="tab-content" id="tab-alerts">
+    <div style="margin-bottom:1.5rem;font-weight:700;font-size:1rem;">🔔 Job Alerts</div>
+    <div class="card" style="margin-bottom:1.25rem">
+      <div style="font-weight:600;margin-bottom:0.75rem">Create a new alert</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <input type="text" id="alertKeyword" placeholder="Keywords e.g. Python, Remote" class="profile-input" style="grid-column:1/-1">
+        <input type="text" id="alertLocation" placeholder="Location (optional)" class="profile-input">
+        <input type="number" id="alertSalaryMin" placeholder="Min salary AUD (optional)" class="profile-input">
+      </div>
+      <label style="display:flex;align-items:center;gap:0.5rem;margin:0.75rem 0;font-size:0.85rem;color:var(--text-muted)">
+        <input type="checkbox" id="alertRemote"> Remote only
+      </label>
+      <button class="btn-save-profile" onclick="createJobAlert()">+ Create Alert</button>
+    </div>
+    <div id="alertsList"><div class="empty-state"><div class="emoji">⏳</div><h3>Loading alerts...</h3></div></div>
   </div>
 
   <!-- ── PROFILE ── -->
@@ -571,7 +590,7 @@
   function recCardHtml(j) {
     const salary = formatSalaryRange(j.salary_min, j.salary_max);
     return `
-      <div class="rec-card" onclick="window.location.href='/?job=${j.id}'">
+      <div class="rec-card" onclick="window.location.href='${j.url || ('/?job=' + j.id)}'">
         <div class="rec-top">
           <div class="rec-title">${escHtml(j.title)}</div>
         </div>
@@ -590,7 +609,7 @@
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     // Activate clicked tab button
     const btns = document.querySelectorAll('.tab');
-    const names = ['overview','applications','saved','recommendations','profile'];
+    const names = ['overview','applications','saved','recommendations','alerts','profile'];
     const idx = names.indexOf(name);
     if (idx >= 0 && btns[idx]) btns[idx].classList.add('active');
     const content = document.getElementById('tab-' + name);
@@ -598,6 +617,7 @@
     window.scrollTo({top: 0, behavior: 'smooth'});
 
     if (name === 'saved') loadSavedJobs();
+    if (name === 'alerts') loadJobAlerts();
     if (name === 'applications' || name === 'overview' || name === 'recommendations') {
       loadDashboard().then(() => {
         if (name === 'applications') renderApplications();
@@ -618,6 +638,64 @@
     } catch {
       document.getElementById('savedJobsList').innerHTML = '<div class="empty-state"><div class="emoji">⚠️</div><h3>Could not load saved jobs</h3></div>';
     }
+  }
+
+  async function loadJobAlerts() {
+    const el = document.getElementById('alertsList');
+    try {
+      const res = await fetch('/api/job_alerts', { headers: authHeaders() });
+      const data = await res.json();
+      const alerts = data.alerts || [];
+      if (!alerts.length) {
+        el.innerHTML = '<div class="empty-state"><div class="emoji">🔔</div><h3>No alerts yet</h3><p>Create an alert to get notified about matching jobs</p></div>';
+        return;
+      }
+      el.innerHTML = alerts.map(a => `
+        <div class="card" style="margin-bottom:0.75rem;display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap">
+          <div>
+            <div style="font-weight:700">${escHtml(a.keyword)}</div>
+            <div style="font-size:0.85rem;color:var(--text-muted)">
+              ${a.location ? escHtml(a.location) + ' · ' : ''}${a.remote_only ? 'Remote · ' : ''}${a.salary_min ? 'From AUD ' + a.salary_min : 'Any salary'}
+            </div>
+          </div>
+          <div style="display:flex;gap:0.5rem">
+            <button class="tab" style="padding:0.35rem 0.75rem;font-size:0.75rem" onclick="toggleAlert(${a.id}, ${a.active ? 0 : 1})">${a.active ? 'Pause' : 'Resume'}</button>
+            <button class="tab" style="padding:0.35rem 0.75rem;font-size:0.75rem;color:var(--error)" onclick="deleteAlert(${a.id})">Delete</button>
+          </div>
+        </div>`).join('');
+    } catch {
+      el.innerHTML = '<div class="empty-state"><div class="emoji">⚠️</div><h3>Could not load alerts</h3></div>';
+    }
+  }
+
+  async function createJobAlert() {
+    const keyword = document.getElementById('alertKeyword').value.trim();
+    if (!keyword) { alert('Enter keywords for your alert'); return; }
+    const payload = {
+      keyword,
+      location: document.getElementById('alertLocation').value.trim() || null,
+      salary_min: parseInt(document.getElementById('alertSalaryMin').value, 10) || null,
+      remote_only: document.getElementById('alertRemote').checked,
+    };
+    const res = await fetch('/api/job_alerts', { method: 'POST', headers: authHeaders(), body: JSON.stringify(payload) });
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || 'Could not create alert'); return; }
+    document.getElementById('alertKeyword').value = '';
+    document.getElementById('alertLocation').value = '';
+    document.getElementById('alertSalaryMin').value = '';
+    document.getElementById('alertRemote').checked = false;
+    loadJobAlerts();
+  }
+
+  async function toggleAlert(id, active) {
+    await fetch('/api/job_alerts/' + id, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ active }) });
+    loadJobAlerts();
+  }
+
+  async function deleteAlert(id) {
+    if (!confirm('Delete this job alert?')) return;
+    await fetch('/api/job_alerts/' + id, { method: 'DELETE', headers: authHeaders() });
+    loadJobAlerts();
   }
 
   // ── PROFILE ──

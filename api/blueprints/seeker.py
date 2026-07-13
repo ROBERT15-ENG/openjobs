@@ -213,3 +213,83 @@ def update_user_profile():
         (request.user_id,),
     ).fetchone()
     return jsonify({'success': True, 'user': dict(user)})
+
+
+@seeker_bp.route('/api/job_alerts', methods=['GET'])
+@require_auth
+def list_job_alerts():
+    db = get_db()
+    alerts = db.execute(
+        """
+        SELECT id, keyword, location, remote_only, salary_min, active
+        FROM job_alerts WHERE user_id = ? ORDER BY id DESC
+        """,
+        (request.user_id,),
+    ).fetchall()
+    return jsonify({'alerts': [dict(row) for row in alerts]})
+
+
+@seeker_bp.route('/api/job_alerts', methods=['POST'])
+@require_auth
+def create_job_alert():
+    data = request.json or {}
+    keyword = (data.get('keyword') or '').strip()
+    if not keyword:
+        return jsonify({'error': 'keyword is required'}), 400
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO job_alerts (user_id, keyword, location, remote_only, salary_min, active)
+        VALUES (?, ?, ?, ?, ?, 1)
+        """,
+        (
+            request.user_id,
+            keyword,
+            (data.get('location') or '').strip() or None,
+            1 if data.get('remote_only') else 0,
+            data.get('salary_min') or None,
+        ),
+    )
+    db.commit()
+    alert_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+    alert = db.execute('SELECT * FROM job_alerts WHERE id = ?', (alert_id,)).fetchone()
+    return jsonify({'success': True, 'alert': dict(alert)}), 201
+
+
+@seeker_bp.route('/api/job_alerts/<int:alert_id>', methods=['PATCH'])
+@require_auth
+def update_job_alert(alert_id):
+    data = request.json or {}
+    db = get_db()
+    existing = db.execute(
+        'SELECT id FROM job_alerts WHERE id = ? AND user_id = ?',
+        (alert_id, request.user_id),
+    ).fetchone()
+    if not existing:
+        return jsonify({'error': 'Alert not found'}), 404
+    allowed = ['keyword', 'location', 'remote_only', 'salary_min', 'active']
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if 'remote_only' in updates:
+        updates['remote_only'] = 1 if updates['remote_only'] else 0
+    if not updates:
+        return jsonify({'error': 'No valid fields to update'}), 400
+    set_clause = ', '.join(f'{k} = ?' for k in updates)
+    db.execute(
+        f'UPDATE job_alerts SET {set_clause} WHERE id = ? AND user_id = ?',
+        list(updates.values()) + [alert_id, request.user_id],
+    )
+    db.commit()
+    alert = db.execute('SELECT * FROM job_alerts WHERE id = ?', (alert_id,)).fetchone()
+    return jsonify({'success': True, 'alert': dict(alert)})
+
+
+@seeker_bp.route('/api/job_alerts/<int:alert_id>', methods=['DELETE'])
+@require_auth
+def delete_job_alert(alert_id):
+    db = get_db()
+    db.execute(
+        'DELETE FROM job_alerts WHERE id = ? AND user_id = ?',
+        (alert_id, request.user_id),
+    )
+    db.commit()
+    return jsonify({'success': True})

@@ -3,13 +3,52 @@
 import datetime
 import json
 
-from auth_utils import require_auth
+from auth_utils import optional_auth, require_auth
 from constants import SEEKER_ROLES
 from db import get_db
 from extensions import limiter
 from flask import Blueprint, jsonify, request
+from semantic_matcher import keyword_score
+from seo_util import job_url_path
+from skills_util import extract_skills_fast
 
 jobs_bp = Blueprint('jobs', __name__)
+
+
+def _user_match_context(db, user_id):
+    user = db.execute(
+        'SELECT skills, resume_text FROM users WHERE id = ?', (user_id,)
+    ).fetchone()
+    if not user:
+        return '', ''
+    resume = user['resume_text'] or ''
+    skills = user['skills'] or ''
+    if not skills and resume:
+        skills = ','.join(extract_skills_fast(resume))
+    return skills, resume
+
+
+def _attach_match_scores(jobs, user_id, db):
+    if not user_id:
+        return [{**dict(j), 'url': job_url_path(j['id'], j['title'])} for j in jobs]
+    skills, resume = _user_match_context(db, user_id)
+    match_text = resume or skills
+    if not match_text:
+        return [{**dict(j), 'url': job_url_path(j['id'], j['title'])} for j in jobs]
+    scored = []
+    for job in jobs:
+        row = dict(job)
+        score, matched, _ = keyword_score(row.get('skills', '') or '', match_text)
+        if not score and skills:
+            skill_list = [s.strip().lower() for s in skills.split(',') if s.strip()]
+            job_skills = (row.get('skills') or '').lower()
+            overlap = sum(1 for s in skill_list if s in job_skills)
+            score = min(100, overlap * 25)
+        row['score'] = score
+        row['matched_skills'] = matched[:8]
+        row['url'] = job_url_path(row['id'], row.get('title', ''))
+        scored.append(row)
+    return scored
 
 
 @jobs_bp.route('/api/stats', methods=['GET'])
@@ -30,6 +69,7 @@ def public_stats():
 
 
 @jobs_bp.route('/api/jobs', methods=['GET'])
+@optional_auth
 def get_jobs():
     db = get_db()
     page = request.args.get('page', 1, type=int)
@@ -87,8 +127,9 @@ def get_jobs():
         f'SELECT * FROM jobs WHERE {where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?',
         params + [limit, offset],
     ).fetchall()
+    job_list = _attach_match_scores(jobs, getattr(request, 'user_id', None), db)
     return jsonify({
-        'jobs': [dict(job) for job in jobs],
+        'jobs': job_list,
         'pagination': {
             'page': page,
             'limit': limit,
@@ -99,12 +140,19 @@ def get_jobs():
 
 
 @jobs_bp.route('/api/jobs/<int:job_id>', methods=['GET'])
+@optional_auth
 def get_job(job_id):
     db = get_db()
     job = db.execute('SELECT * FROM jobs WHERE id = ?', (job_id,)).fetchone()
     if not job:
         return jsonify({'error': 'Not found'}), 404
-    return jsonify(dict(job))
+    row = dict(job)
+    row['url'] = job_url_path(row['id'], row.get('title', ''))
+    if getattr(request, 'user_id', None):
+        scored = _attach_match_scores([job], request.user_id, db)
+        if scored:
+            row.update({k: scored[0][k] for k in ('score', 'matched_skills') if k in scored[0]})
+    return jsonify(row)
 
 
 @jobs_bp.route('/api/jobs', methods=['POST'])
@@ -227,6 +275,72 @@ def get_companies():
     db = get_db()
     companies = db.execute('SELECT * FROM companies ORDER BY name').fetchall()
     return jsonify([dict(company) for company in companies])
+
+
+@jobs_bp.route('/api/companies/directory', methods=['GET'])
+def companies_directory():
+    """Aggregate hiring companies from active job listings."""
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT company as name,
+               COUNT(*) as job_count,
+               MIN(salary_min) as salary_min,
+               MAX(salary_max) as salary_max,
+               GROUP_CONCAT(DISTINCT location) as locations,
+               GROUP_CONCAT(DISTINCT category) as categories
+        FROM jobs
+        WHERE is_active = 1 AND company IS NOT NULL AND company != ''
+        GROUP BY company
+        ORDER BY job_count DESC, company ASC
+        LIMIT 200
+        """
+    ).fetchall()
+    return jsonify({'companies': [dict(row) for row in rows]})
+
+
+@jobs_bp.route('/api/salary/insights', methods=['GET'])
+def salary_insights():
+    db = get_db()
+    by_category = db.execute(
+        """
+        SELECT category,
+               COUNT(*) as job_count,
+               ROUND(AVG((salary_min + salary_max) / 2.0)) as avg_salary,
+               MIN(salary_min) as min_salary,
+               MAX(salary_max) as max_salary
+        FROM jobs
+        WHERE is_active = 1 AND salary_min > 0
+        GROUP BY category
+        ORDER BY avg_salary DESC
+        """
+    ).fetchall()
+    by_location = db.execute(
+        """
+        SELECT location,
+               COUNT(*) as job_count,
+               ROUND(AVG((salary_min + salary_max) / 2.0)) as avg_salary
+        FROM jobs
+        WHERE is_active = 1 AND salary_min > 0 AND location IS NOT NULL
+        GROUP BY location
+        ORDER BY job_count DESC
+        LIMIT 15
+        """
+    ).fetchall()
+    overall = db.execute(
+        """
+        SELECT ROUND(AVG((salary_min + salary_max) / 2.0)) as avg_salary,
+               MIN(salary_min) as min_salary,
+               MAX(salary_max) as max_salary,
+               COUNT(*) as job_count
+        FROM jobs WHERE is_active = 1 AND salary_min > 0
+        """
+    ).fetchone()
+    return jsonify({
+        'overall': dict(overall) if overall else {},
+        'by_category': [dict(row) for row in by_category],
+        'by_location': [dict(row) for row in by_location],
+    })
 
 
 @jobs_bp.route('/api/skills', methods=['GET'])

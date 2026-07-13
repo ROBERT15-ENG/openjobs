@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Salary insights by category and location on OpenJobs. Explore average pay ranges across active listings.">
+  <title>Salary Insights — OpenJobs</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary:#00d4aa; --bg:#09090f; --card:#111119; --border:#1e1e2e; --text:#ededf0; --muted:#6b6b80; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:Inter,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+    header { border-bottom:1px solid var(--border); padding:1rem 2rem; display:flex; justify-content:space-between; align-items:center; }
+    .logo { font-weight:800; font-size:1.2rem; } .logo span { color:var(--primary); }
+    a { color:var(--primary); text-decoration:none; }
+    .wrap { max-width:900px; margin:0 auto; padding:2rem; }
+    h1 { font-size:2rem; margin-bottom:0.5rem; }
+    .sub { color:var(--muted); margin-bottom:2rem; }
+    .hero-stat { background:linear-gradient(135deg,rgba(0,212,170,.15),rgba(0,212,170,.03)); border:1px solid rgba(0,212,170,.25); border-radius:16px; padding:1.5rem; margin-bottom:2rem; text-align:center; }
+    .hero-val { font-size:2.2rem; font-weight:800; color:var(--primary); }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:1.25rem; margin-bottom:1rem; }
+    .card h2 { font-size:1rem; margin-bottom:1rem; }
+    .row { display:flex; justify-content:space-between; align-items:center; padding:0.65rem 0; border-bottom:1px solid var(--border); gap:1rem; }
+    .row:last-child { border-bottom:none; }
+    .label { font-weight:600; }
+    .bar-wrap { flex:1; height:8px; background:var(--bg); border-radius:4px; overflow:hidden; max-width:180px; }
+    .bar { height:100%; background:var(--primary); border-radius:4px; }
+    .predict { margin-top:2rem; }
+    .predict input, .predict button { padding:0.75rem 1rem; border-radius:10px; border:1px solid var(--border); background:var(--card); color:var(--text); }
+    .predict button { background:var(--primary); color:#000; border:none; font-weight:700; cursor:pointer; margin-left:0.5rem; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo">Open<span>Jobs</span></div>
+  <a href="/">← Back to jobs</a>
+</header>
+<div class="wrap">
+  <h1>Salary Insights</h1>
+  <p class="sub">Aggregated from active OpenJobs listings (AUD).</p>
+  <div class="hero-stat" id="overall"><div class="hero-val">—</div><div class="muted">Average listed salary</div></div>
+
+  <div class="card">
+    <h2>By category</h2>
+    <div id="byCategory">Loading...</div>
+  </div>
+  <div class="card">
+    <h2>By location</h2>
+    <div id="byLocation">Loading...</div>
+  </div>
+
+  <div class="card predict">
+    <h2>Quick estimate</h2>
+    <p class="sub" style="margin-bottom:1rem">Enter a job title for a rough salary estimate.</p>
+    <input type="text" id="titleInput" placeholder="e.g. Senior Python Engineer">
+    <button onclick="predict()">Estimate</button>
+    <p id="predictResult" style="margin-top:1rem;color:var(--muted)"></p>
+  </div>
+</div>
+<script>
+  const fmt = n => n ? 'AUD $' + Math.round(n).toLocaleString() : '—';
+
+  fetch('/api/salary/insights').then(r => r.json()).then(d => {
+    const o = d.overall || {};
+    document.getElementById('overall').innerHTML =
+      `<div class="hero-val">${fmt(o.avg_salary)}</div><div class="muted">Across ${o.job_count || 0} roles with salary data</div>`;
+    renderBars('byCategory', d.by_category || [], 'category');
+    renderBars('byLocation', d.by_location || [], 'location');
+  }).catch(() => {
+    document.getElementById('byCategory').textContent = 'Could not load insights.';
+  });
+
+  function renderBars(id, rows, key) {
+    const el = document.getElementById(id);
+    if (!rows.length) { el.textContent = 'No data yet.'; return; }
+    const max = Math.max(...rows.map(r => r.avg_salary || 0), 1);
+    el.innerHTML = rows.map(r => `
+      <div class="row">
+        <span class="label">${esc(r[key] || 'Other')}</span>
+        <div class="bar-wrap"><div class="bar" style="width:${Math.round((r.avg_salary||0)/max*100)}%"></div></div>
+        <span>${fmt(r.avg_salary)} <span style="color:var(--muted);font-size:0.8rem">(${r.job_count})</span></span>
+      </div>`).join('');
+  }
+
+  async function predict() {
+    const title = document.getElementById('titleInput').value.trim();
+    if (!title) return;
+    const res = await fetch('/api/salary/predict', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title }) });
+    const d = await res.json();
+    document.getElementById('predictResult').textContent = d.success
+      ? `Estimated: ${fmt(d.predicted)} (range ${fmt(d.range?.min)} – ${fmt(d.range?.max)})`
+      : 'Could not estimate.';
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+</body>
+</html>

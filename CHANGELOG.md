@@ -8,9 +8,33 @@ and this project uses semantic versioning for release tags.
 ## [Unreleased]
 
 ### Planned
-- Per-job SEO URLs and JSON-LD
-- Job alerts API and UI
-- Password reset email flow
+- OAuth (Google, LinkedIn)
+- Interview scheduling UI
+- Background job-alert email cron
+
+## [2.3.0] - 2026-07-13
+
+### Phase 4 — SEO, growth & matching
+
+#### Added
+- SEO-friendly job URLs: `/jobs/<id>/<slug>` with canonical redirects from `/job.html?id=`
+- `JobPosting` JSON-LD structured data on job pages
+- Dynamic `/sitemap.xml` and sitemap reference in `robots.txt`
+- **Companies** page (`/companies`) with `GET /api/companies/directory`
+- **Salary insights** page (`/salary`) with `GET /api/salary/insights`
+- Job alerts CRUD: `GET/POST /api/job_alerts`, `PATCH/DELETE /api/job_alerts/<id>`
+- Job alerts UI on seeker dashboard
+- Personalized match scores on `GET /api/jobs` when authenticated (`optional_auth`)
+- ATS fit score (`ats_score`) computed on application submit
+- `api/seo_util.py`, `api/ats_util.py`, `optional_auth` decorator
+
+#### Fixed
+- **forgot-password.html** and **reset-password.html** wired to auth API
+- Homepage sends auth token to jobs API for logged-in match badges
+- Recommendation and modal links use SEO job URLs
+
+#### Tests
+- Phase 4 test suite: sitemap, companies directory, salary insights, job alerts, match scores, ATS score
 
 ## [2.2.1] - 2026-07-13
 

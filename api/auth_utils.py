@@ -71,3 +71,30 @@ def require_role(role: str):
             return f(*args, **kwargs)
         return decorated
     return decorator
+
+
+def optional_auth(f):
+    """Attach user context when a valid Bearer token is present."""
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        request.user_id = None
+        request.user_role = None
+        request.user_email = None
+        request.employer_id = None
+
+        auth = request.headers.get('Authorization', '')
+        if auth.startswith('Bearer '):
+            token = auth.split(' ', 1)[1]
+            if token not in BLOCKED_TOKENS:
+                payload = decode_token(token)
+                if payload:
+                    exp = payload.get('exp')
+                    if not exp or datetime.datetime.utcfromtimestamp(exp) >= datetime.datetime.utcnow():
+                        request.user_id = int(payload.get('user_id', 0))
+                        request.user_role = payload.get('role', 'user')
+                        request.user_email = payload.get('email', '')
+                        request.employer_id = payload.get('employer_id') or payload.get('user_id')
+        return f(*args, **kwargs)
+
+    return decorated
