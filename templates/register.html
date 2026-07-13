@@ -278,6 +278,7 @@
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        if (data.token) localStorage.setItem('token', data.token);
         showAlert('success', 'Account created! Redirecting to dashboard...');
         setTimeout(() => window.location.href = '/user', 1000);
       } else {

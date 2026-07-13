@@ -351,7 +351,38 @@
   let allApps = [];
   let allUsers = [];
 
+  function getToken() {
+    return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+  }
+
+  function authHeaders(extra = {}) {
+    const headers = { ...extra };
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    return headers;
+  }
+
+  function ensureAdmin() {
+    const token = getToken();
+    if (!token) {
+      window.location.href = '/login';
+      return false;
+    }
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (payload.role !== 'admin') {
+        window.location.href = '/user';
+        return false;
+      }
+    } catch {
+      window.location.href = '/login';
+      return false;
+    }
+    return true;
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    if (!ensureAdmin()) return;
     loadStats();
     loadJobs();
     loadApplications();
@@ -372,7 +403,7 @@
   }
 
   function loadStats() {
-    fetch('/api/admin/stats')
+    fetch('/api/admin/stats', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => {
         const s = d.summary || {};
@@ -418,7 +449,7 @@
       .catch(() => {});
 
     // Fill analytics tab insights
-    fetch('/api/admin/stats')
+    fetch('/api/admin/stats', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => {
         // Top employer
@@ -584,7 +615,7 @@
   async function deleteJob(id) {
     if (!confirm('Delete this job? This cannot be undone.')) return;
     try {
-      const res = await fetch('/api/jobs/' + id, { method: 'DELETE' });
+      const res = await fetch('/api/jobs/' + id, { method: 'DELETE', headers: authHeaders() });
       if (res.ok) {
         showAlert('jobAlert', 'success', 'Job deleted successfully.');
         loadJobs();
@@ -597,7 +628,7 @@
   }
 
   function loadApplications() {
-    fetch('/api/applications')
+    fetch('/api/applications', { headers: authHeaders() })
       .then(r => r.json())
       .then(apps => {
         allApps = apps;
@@ -633,15 +664,16 @@
 
   async function updateAppStatus(id, status) {
     try {
-      await fetch('/api/applications/' + id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status}) });
+      await fetch('/api/applications/' + id, { method:'PATCH', headers: authHeaders({'Content-Type':'application/json'}), body: JSON.stringify({status}) });
       loadApplications();
     } catch {}
   }
 
   function loadUsers() {
-    fetch('/api/user/profile?user_id=1')
+    fetch('/api/auth/me', { headers: authHeaders() })
       .then(r => r.json())
-      .then(user => {
+      .then(data => {
+        const user = data.user || data;
         if (user && !user.error) {
           allUsers = [{
             name: user.name || 'Tonny Tony',

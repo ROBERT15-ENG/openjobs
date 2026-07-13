@@ -1,19 +1,23 @@
 from dotenv import load_dotenv
 load_dotenv()
 #!/usr/bin/env python3
-import sqlite3, os, json, datetime, base64
+import sqlite3, os, json, datetime, smtplib
 from functools import wraps
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, render_template
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
+import jwt
 
 # Smart semantic matcher — keyword-first, Ollama only for borderline cases
 import sys
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+TEMPLATES_DIR = os.path.join(PROJECT_ROOT, 'templates')
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, PROJECT_ROOT)
 from semantic_matcher import rank_jobs_for_resume, keyword_score
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder=TEMPLATES_DIR)
 
 try:
     from flask_cors import CORS
@@ -29,8 +33,10 @@ limiter = Limiter(
     storage_uri="memory://"
 )
 app.secret_key = os.environ.get('SECRET_KEY', 'dev_secret_key_change_in_production')
-
-DB_PATH = "/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/jobs.db"
+BASE_URL = os.environ.get('BASE_URL', 'http://localhost:5700')
+DB_PATH = os.environ.get('DATABASE_PATH', os.path.join(PROJECT_ROOT, 'jobs.db'))
+JWT_ALGORITHM = 'HS256'
+JWT_EXPIRY_DAYS = 7
 
 def get_db():
     if 'db' not in g:
@@ -51,7 +57,7 @@ def _extract_skills_fast(text: str):
     Uses direct sqlite3 — no Flask context required.
     """
     try:
-        db_path = os.path.join(os.path.dirname(__file__), '..', 'jobs.db')
+        db_path = DB_PATH
         db = sqlite3.connect(db_path)
         rows = db.execute("SELECT name, aliases FROM skills_taxonomy").fetchall()
         db.close()
@@ -72,14 +78,25 @@ def _extract_skills_fast(text: str):
 
 
 
+def _create_token(user):
+    """Create a signed JWT for an authenticated user."""
+    payload = {
+        'user_id': user['id'],
+        'email': user['email'],
+        'role': user['role'],
+        'employer_id': user['id'] if user['role'] == 'employer' else None,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=JWT_EXPIRY_DAYS),
+        'iat': datetime.datetime.utcnow(),
+    }
+    token = jwt.encode(payload, app.secret_key, algorithm=JWT_ALGORITHM)
+    return token if isinstance(token, str) else token.decode('utf-8')
+
+
 def _decode_token(token):
-    """Decode a base64 JWT-like token. Handles both padded and unpadded."""
-    import base64, json
-    pad = (4 - len(token) % 4) % 4
-    safe = token + '=' * pad
+    """Verify and decode a signed JWT."""
     try:
-        return json.loads(base64.b64decode(safe).decode())
-    except Exception:
+        return jwt.decode(token, app.secret_key, algorithms=[JWT_ALGORITHM])
+    except jwt.PyJWTError:
         return None
 
 
@@ -96,7 +113,8 @@ def require_auth(f):
         payload = _decode_token(token)
         if not payload:
             return jsonify({'error': 'Invalid token'}), 401
-        if payload.get('exp') and datetime.datetime.fromisoformat(payload['exp']) < datetime.datetime.now():
+        exp = payload.get('exp')
+        if exp and datetime.datetime.utcfromtimestamp(exp) < datetime.datetime.utcnow():
             return jsonify({'error': 'Token expired'}), 401
         request.user_id   = int(payload.get('user_id', 0))
         request.user_role  = payload.get('role', 'user')
@@ -106,11 +124,12 @@ def require_auth(f):
     return decorated
 
 def require_role(role):
-    """Decorator to require a specific role."""
+    """Decorator to require a specific role (includes auth)."""
     def decorator(f):
         @wraps(f)
+        @require_auth
         def decorated(*args, **kwargs):
-            if getattr(request, 'user_role', None) != role:
+            if request.user_role != role:
                 return jsonify({'error': f'Requires {role} role'}), 403
             return f(*args, **kwargs)
         return decorated
@@ -130,7 +149,7 @@ def register():
     name = data.get('name', '').strip()
     email = data.get('email', '').strip()
     password = data.get('password', '')
-    role = data.get('role', 'user')  # Can be 'user' or 'employer'
+    role = 'user'  # Seekers only; employers use /api/auth/register-employer
     
     # Validate
     if not name or not email or not password:
@@ -150,8 +169,15 @@ def register():
     db.execute("INSERT INTO users (name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
                (name, email, hash_password(password), role, datetime.datetime.now().isoformat()))
     db.commit()
-    
-    return jsonify({'success': True, 'message': 'Registered successfully'}), 201
+    user_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    token = _create_token({'id': user_id, 'email': email, 'role': role})
+    return jsonify({
+        'success': True,
+        'message': 'Registered successfully',
+        'token': token,
+        'user': {'id': user_id, 'name': name, 'email': email, 'role': role, 'employer_id': None}
+    }), 201
 
 @app.route('/api/auth/login', methods=['POST'])
 @limiter.limit('10 per minute', exempt_when=lambda: False)
@@ -166,20 +192,11 @@ def login():
     if not user or not verify_password(password, user['password_hash']):
         return jsonify({'error': 'Invalid credentials'}), 401
     
-    token_payload = {
-        'user_id': user['id'],
-        'email': user['email'],
-        'role': user['role'],
-        'employer_id': user['id'] if user['role'] == 'employer' else None,
-        'exp': str(datetime.datetime.now() + datetime.timedelta(days=7))
-    }
-    token = base64.b64encode(json.dumps(token_payload).encode()).decode().rstrip('=') + '=='
+    token = _create_token(user)
     return jsonify({'success': True, 'token': token, 'user': {'id': user['id'], 'name': user['name'], 'email': user['email'], 'role': user['role'], 'employer_id': user['id'] if user['role'] == 'employer' else None}})
 
-import sys
-sys.path.insert(0, '/Users/agentx/.openclaw/workspace/spyder-trader/jobseek')
-from email_notifier import send_email
 import secrets
+from email_notifier import send_email
 
 @app.route('/api/auth/forgot-password', methods=['POST'])
 def forgot_password():
@@ -206,7 +223,7 @@ def forgot_password():
     db.commit()
 
     # Build reset link — assumes server accessible at localhost:5700
-    reset_link = f"http://localhost:5700/reset-password.html?token={token}"
+    reset_link = f"{BASE_URL}/reset-password.html?token={token}"
 
     user_name = user['name'] or email.split('@')[0]
     html = f"""
@@ -387,7 +404,7 @@ def upload_resume():
     db.close()
 
     # ── Extract skills immediately using keyword matching ───────────────────────
-    db_path = os.path.join(os.path.dirname(__file__), '..', 'jobs.db')
+    db_path = DB_PATH
     extracted_skills = _extract_skills_fast(text)
     if extracted_skills:
         db2 = sqlite3.connect(db_path)
@@ -639,7 +656,7 @@ def update_job(job_id):
     if not existing:
         db.close()
         return jsonify({'error': 'Job not found'}), 404
-    if existing['employer_id'] and existing['employer_id'] != request.employer_id:
+    if existing['employer_id'] and existing['employer_id'] != request.employer_id and request.user_role != 'admin':
         db.close()
         return jsonify({'error': 'Not authorized to update this job'}), 403
     db.execute(f'UPDATE jobs SET {set_clause} WHERE id = ?', values)
@@ -657,7 +674,7 @@ def delete_job(job_id):
     if not existing:
         db.close()
         return jsonify({'error': 'Job not found'}), 404
-    if existing['employer_id'] and existing['employer_id'] != request.employer_id:
+    if existing['employer_id'] and existing['employer_id'] != request.employer_id and request.user_role != 'admin':
         db.close()
         return jsonify({'error': 'Not authorized to delete this job'}), 403
     db.execute('UPDATE jobs SET is_active = 0 WHERE id = ?', (job_id,))
@@ -725,9 +742,27 @@ def update_user_profile():
 
 # ============ APPLICATIONS ============
 @app.route('/api/applications', methods=['GET'])
+@require_auth
 def get_applications():
     db = get_db()
-    apps = db.execute("SELECT * FROM applications ORDER BY applied_at DESC").fetchall()
+    if request.user_role == 'admin':
+        apps = db.execute("SELECT * FROM applications ORDER BY applied_at DESC").fetchall()
+    elif request.user_role == 'employer':
+        job_ids = [r['id'] for r in db.execute(
+            "SELECT id FROM jobs WHERE employer_id = ?", (request.employer_id,)
+        ).fetchall()]
+        if not job_ids:
+            return jsonify([])
+        ph = ','.join('?' * len(job_ids))
+        apps = db.execute(
+            f"SELECT * FROM applications WHERE job_id IN ({ph}) ORDER BY applied_at DESC",
+            job_ids
+        ).fetchall()
+    else:
+        apps = db.execute(
+            "SELECT * FROM applications WHERE user_id = ? ORDER BY applied_at DESC",
+            (request.user_id,)
+        ).fetchall()
     return jsonify([dict(a) for a in apps])
 
 @app.route('/api/applications', methods=['POST'])
@@ -906,8 +941,8 @@ def create_checkout():
                 'quantity': 1
             }],
             'mode': 'payment',
-            'success_url': f'http://localhost:5700/employer?payment=success&job_id={job_id}',
-            'cancel_url': 'http://localhost:5700/employer',
+            'success_url': f'{BASE_URL}/employer?payment=success&job_id={job_id}',
+            'cancel_url': f'{BASE_URL}/employer',
             'metadata': {
                 'job_id': str(job_id),
                 'user_id': str(request.user_id),
@@ -1003,12 +1038,13 @@ def get_crm_pipeline():
 
 # ============ ADMIN ============
 @app.route('/api/admin/stats', methods=['GET'])
+@require_role('admin')
 def admin_stats():
     db = get_db()
 
     total_jobs      = db.execute("SELECT COUNT(*) FROM jobs WHERE is_active=1").fetchone()[0]
     total_apps      = db.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
-    total_seekers   = db.execute("SELECT COUNT(*) FROM users WHERE role='seeker'").fetchone()[0]
+    total_seekers   = db.execute("SELECT COUNT(*) FROM users WHERE role IN ('user', 'seeker')").fetchone()[0]
     total_employers = db.execute("SELECT COUNT(*) FROM users WHERE role='employer'").fetchone()[0]
 
     app_rows = db.execute("SELECT status, COUNT(*) as cnt FROM applications GROUP BY status").fetchall()
@@ -1068,17 +1104,23 @@ def admin_stats():
 
 
 
+
+
+def _render_page(template, fallback=None):
+    path = os.path.join(TEMPLATES_DIR, template)
+    if os.path.exists(path):
+        return render_template(template)
+    return jsonify(fallback or {'error': 'Page not found'}), 404
+
+
 @app.route('/ai')
 def ai_page():
-    with open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/ai.html', 'r') as f:
-        return f.read()
-
-
+    return _render_page('ai.html', {'ai': True})
 
 
 @app.route('/')
 def index():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/index.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/index.html') else jsonify({'msg':'OpenJobs API','endpoints':['/api/jobs','/api/companies','/api/ai/ollama/status']})
+    return _render_page('index.html', {'msg': 'OpenJobs API', 'endpoints': ['/api/jobs', '/api/companies', '/api/ai/ollama/status']})
 
 @app.route('/robots.txt')
 def robots():
@@ -1087,59 +1129,64 @@ def robots():
 @app.route('/job.html')
 @app.route('/job')
 def job_page():
-    path = '/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/job.html'
-    return open(path).read() if os.path.exists(path) else jsonify({'error':'Template not found'})
+    return _render_page('job.html')
 
 @app.route('/companies')
 def companies_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/company.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/company.html') else jsonify({'companies':[]})
+    return _render_page('company.html', {'companies': []})
 
 @app.route('/salary')
 def salary_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/salary.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/salary.html') else jsonify({'predict':True})
+    return _render_page('salary.html', {'predict': True})
 
 @app.route('/login')
 def login_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/login.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/login.html') else jsonify({'error':'Template not found'})
+    return _render_page('login.html')
 
 @app.route('/register')
 def register_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/register.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/register.html') else jsonify({'error':'Template not found'})
+    return _render_page('register.html')
 
 @app.route('/forgot-password')
 def forgot_password_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/forgot-password.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/forgot-password.html') else jsonify({'error':'Template not found'})
+    return _render_page('forgot-password.html')
 
 @app.route('/reset-password.html')
 def reset_password_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/reset-password.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/reset-password.html') else jsonify({'error':'Template not found'})
+    return _render_page('reset-password.html')
 
 @app.route('/user')
 def user_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/user.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/user.html') else jsonify({'dashboard':True})
+    return _render_page('user.html', {'dashboard': True})
 
 @app.route('/employer')
 def employer_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/employer.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/employer.html') else jsonify({'employer':True})
+    return _render_page('employer.html', {'employer': True})
 
 @app.route('/admin')
 def admin_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/admin.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/admin.html') else jsonify({'admin':True})
+    return _render_page('admin.html', {'admin': True})
 
 @app.route('/privacy')
 def privacy_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/privacy.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/privacy.html') else jsonify({'privacy':True})
+    return _render_page('privacy.html', {'privacy': True})
 
 @app.route('/terms')
 def terms_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/terms.html').read() if os.path.exists('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/terms.html') else jsonify({'terms':True})
+    return _render_page('terms.html', {'terms': True})
 
 # ============ CAD API ============
-import ezdxf
+try:
+    import ezdxf
+    EZDXF_AVAILABLE = True
+except ImportError:
+    EZDXF_AVAILABLE = False
 
 @app.route('/api/cad/info', methods=['GET'])
 def cad_info():
     """Get CAD library info"""
+    if not EZDXF_AVAILABLE:
+        return jsonify({'error': 'ezdxf not installed'}), 503
     return jsonify({
         'library': 'ezdxf',
         'version': ezdxf.__version__,
@@ -1148,18 +1195,24 @@ def cad_info():
     })
 
 @app.route('/api/cad/read', methods=['POST'])
+@require_role('admin')
 def read_cad():
-    """Read DXF file and extract entities"""
-    data = request.json
+    """Read DXF file and extract entities (admin only, uploads directory)."""
+    if not EZDXF_AVAILABLE:
+        return jsonify({'error': 'ezdxf not installed'}), 503
+    data = request.json or {}
     filepath = data.get('filepath')
-    
     if not filepath:
         return jsonify({'error': 'filepath required'}), 400
-    
+
+    safe_root = os.path.realpath(UPLOAD_DIR)
+    resolved = os.path.realpath(filepath)
+    if not resolved.startswith(safe_root):
+        return jsonify({'error': 'Access denied'}), 403
+
     try:
-        doc = ezdxf.readfile(filepath)
+        doc = ezdxf.readfile(resolved)
         msp = doc.modelspace()
-        
         entities = []
         for ent in msp:
             entities.append({
@@ -1167,22 +1220,19 @@ def read_cad():
                 'layer': ent.dxf.layer,
                 'color': ent.dxf.color if hasattr(ent.dxf, 'color') else None
             })
-        
         return jsonify({
             'success': True,
             'layers': list(doc.layers),
             'entity_count': len(entities),
-            'entities': entities[:50]  # Limit to 50
+            'entities': entities[:50]
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-
-
 @app.route('/cad')
 def cad_page():
-    return open('/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/templates/cad.html').read()
+    return _render_page('cad.html', {'cad': True})
 
 
 
@@ -1211,11 +1261,10 @@ def search_all():
     return jsonify({'jobs': [dict(j) for j in jobs], 'companies': [dict(c) for c in companies], 'count': len(jobs) + len(companies)})
 
 @app.route('/api/recommendations', methods=['GET'])
+@require_auth
 def recommendations():
-    """Get job recommendations for a user based on skills + resume_text."""
-    user_id = request.args.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'user_id required'}), 400
+    """Get job recommendations for the authenticated user."""
+    user_id = request.user_id
 
     db = get_db()
     user = db.execute("SELECT skills, resume_text FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -1273,10 +1322,11 @@ def trending_jobs():
 
 # ============ USER DASHBOARD STATS ============
 @app.route('/api/dashboard/seeker', methods=['GET'])
+@require_auth
 def seeker_dashboard():
     """Stats for job seeker dashboard"""
     db = get_db()
-    user_id = request.args.get('user_id', 1, type=int)
+    user_id = request.user_id
     total_jobs = db.execute("SELECT COUNT(*) FROM jobs WHERE is_active = 1").fetchone()[0]
     total_applications = db.execute("SELECT COUNT(*) FROM applications WHERE user_id = ?", (user_id,)).fetchone()[0]
     pending_apps = db.execute("SELECT COUNT(*) FROM applications WHERE user_id = ? AND status = 'pending'", (user_id,)).fetchone()[0]
@@ -1343,9 +1393,10 @@ def seeker_dashboard():
     })
 
 @app.route('/api/saved_jobs', methods=['GET'])
+@require_auth
 def get_saved_jobs():
     db = get_db()
-    user_id = request.args.get('user_id', 1, type=int)
+    user_id = request.user_id
     saved = db.execute("""
         SELECT j.*, sj.saved_at FROM jobs j
         JOIN saved_jobs sj ON j.id = sj.job_id
@@ -1355,59 +1406,84 @@ def get_saved_jobs():
     return jsonify([dict(s) for s in saved])
 
 @app.route('/api/saved_jobs', methods=['POST'])
+@require_auth
 def save_job():
-    data = request.json
+    data = request.json or {}
     db = get_db()
     db.execute("INSERT OR IGNORE INTO saved_jobs (user_id, job_id, saved_at) VALUES (?, ?, ?)",
-               (data.get('user_id', 1), data.get('job_id'), datetime.datetime.now().isoformat()))
+               (request.user_id, data.get('job_id'), datetime.datetime.now().isoformat()))
     db.commit()
     db.close()
     return jsonify({'success': True})
 
 @app.route('/api/saved_jobs', methods=['DELETE'])
+@require_auth
 def unsave_job():
-    data = request.json
+    data = request.json or {}
     db = get_db()
     db.execute("DELETE FROM saved_jobs WHERE user_id = ? AND job_id = ?",
-               (data.get('user_id', 1), data.get('job_id')))
+               (request.user_id, data.get('job_id')))
     db.commit()
     db.close()
     return jsonify({'success': True})
 
 @app.route('/api/applications/<int:app_id>', methods=['PATCH'])
+@require_auth
 def update_application(app_id):
-    auth = request.headers.get('Authorization', '')
-    if not auth.startswith('Bearer '):
-        return jsonify({'error': 'Unauthorized'}), 401
     data = request.json or {}
     new_status = data.get('status')
-    VALID_STATUSES = ['pending', 'reviewing', 'interview', 'offer', 'rejected', 'withdrawn']
+    VALID_STATUSES = ['pending', 'reviewing', 'interview', 'offer', 'rejected', 'withdrawn', 'applied', 'screening', 'hired']
     if new_status and new_status not in VALID_STATUSES:
         return jsonify({'error': f'Invalid status. Must be one of: {VALID_STATUSES}'}), 400
     db = get_db()
-    app = db.execute('SELECT id FROM applications WHERE id = ?', (app_id,)).fetchone()
-    if not app:
+    app_row = db.execute("""
+        SELECT a.id, a.user_id, j.employer_id
+        FROM applications a
+        JOIN jobs j ON a.job_id = j.id
+        WHERE a.id = ?
+    """, (app_id,)).fetchone()
+    if not app_row:
         db.close()
         return jsonify({'error': 'Application not found'}), 404
-    db.execute('UPDATE applications SET status = ? WHERE id = ?', (new_status, app_id))
+    allowed = (
+        request.user_role == 'admin'
+        or app_row['employer_id'] == request.employer_id
+        or app_row['user_id'] == request.user_id
+    )
+    if not allowed:
+        db.close()
+        return jsonify({'error': 'Not authorized'}), 403
+    db.execute('UPDATE applications SET status = ?, updated_at = ? WHERE id = ?',
+               (new_status, datetime.datetime.now().isoformat(), app_id))
     db.commit()
     updated = db.execute('SELECT * FROM applications WHERE id = ?', (app_id,)).fetchone()
     db.close()
     return jsonify({'success': True, 'application': dict(updated)})
 
 @app.route('/api/applications/<int:app_id>', methods=['DELETE'])
+@require_auth
 def delete_application(app_id):
     db = get_db()
+    app_row = db.execute('SELECT user_id FROM applications WHERE id = ?', (app_id,)).fetchone()
+    if not app_row:
+        db.close()
+        return jsonify({'error': 'Application not found'}), 404
+    if request.user_role != 'admin' and app_row['user_id'] != request.user_id:
+        db.close()
+        return jsonify({'error': 'Not authorized'}), 403
     db.execute("DELETE FROM applications WHERE id = ?", (app_id,))
     db.commit()
     db.close()
     return jsonify({'success': True})
 
 @app.route('/api/user/profile', methods=['GET'])
+@require_auth
 def get_user_profile():
-    user_id = request.args.get('user_id', 1, type=int)
     db = get_db()
-    user = db.execute("SELECT id, name, email, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = db.execute(
+        "SELECT id, name, email, role, skills, phone, preferred_location, experience, created_at FROM users WHERE id = ?",
+        (request.user_id,)
+    ).fetchone()
     db.close()
     if not user:
         return jsonify({'error': 'User not found'}), 404
@@ -1440,15 +1516,10 @@ def register_employer():
     db.commit()
     user_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
     db.close()
-    token_payload = {
-        'user_id': user_id, 'email': email, 'role': 'employer',
-        'employer_id': user_id,
-        'exp': str(datetime.datetime.now() + datetime.timedelta(days=7))
-    }
-    token = base64.b64encode(json.dumps(token_payload).encode()).decode().rstrip('=') + '=='
+    token = _create_token({'id': user_id, 'email': email, 'role': 'employer'})
     return jsonify({
         'success': True, 'token': token,
-        'user': {'id': user_id, 'name': name, 'email': email, 'role': 'employer'}
+        'user': {'id': user_id, 'name': name, 'email': email, 'role': 'employer', 'employer_id': user_id}
     }), 201
 
 
@@ -1519,10 +1590,16 @@ def employer_applications():
                JOIN jobs j ON a.job_id = j.id
                LEFT JOIN users u ON a.user_id = u.id
                WHERE a.job_id IN ({ph})"""
+    params = list(job_ids)
     if status != 'all':
-        qry += f" AND a.status = '{status}'"
+        VALID_STATUS = {'pending', 'applied', 'screening', 'interview', 'offer', 'hired', 'rejected', 'reviewing', 'withdrawn'}
+        if status not in VALID_STATUS:
+            db.close()
+            return jsonify({'error': 'Invalid status filter'}), 400
+        qry += " AND a.status = ?"
+        params.append(status)
     qry += " ORDER BY a.applied_at DESC"
-    apps = db.execute(qry, job_ids).fetchall()
+    apps = db.execute(qry, params).fetchall()
     db.close()
     return jsonify({'applications': [dict(a) for a in apps]})
 

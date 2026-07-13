@@ -258,6 +258,7 @@
       const data = await res.json();
 
       if (res.ok && data.success) {
+        localStorage.setItem('token', data.token);
         const role = data.user?.role || 'user';
         // If logging in as seeker but role is employer, redirect to employer
         let redirectUrl = '/user';

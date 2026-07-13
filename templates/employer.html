@@ -448,14 +448,20 @@
 </div>
 
 <script>
-  const AUTH_KEY = 'oj_employer_tok';
+  const AUTH_KEY = 'token';
   let currentUser = null;
 
   // ── AUTH HELPERS ────────────────────────────────────────────────────────────
 
-  function getToken() { return localStorage.getItem(AUTH_KEY); }
-  function setToken(t) { localStorage.setItem(AUTH_KEY, t); }
-  function clearToken() { localStorage.removeItem(AUTH_KEY); }
+  function getToken() { return localStorage.getItem(AUTH_KEY) || localStorage.getItem('oj_employer_tok'); }
+  function setToken(t) {
+    localStorage.setItem(AUTH_KEY, t);
+    localStorage.setItem('oj_employer_tok', t);
+  }
+  function clearToken() {
+    localStorage.removeItem(AUTH_KEY);
+    localStorage.removeItem('oj_employer_tok');
+  }
   function authHeaders() { return { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' }; }
 
   function showAuthTab(tab) {

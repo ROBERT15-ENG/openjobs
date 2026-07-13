@@ -744,10 +744,15 @@
 
   function applyToJob() {
     if (!currentJob) return;
+    const token = localStorage.getItem('token');
+    if (!token) { window.location.href = '/login'; return; }
     fetch('/api/applications', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({job_id: currentJob.id, user_id: 1})
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({job_id: currentJob.id})
     }).then(r => r.json())
       .then(d => {
         if (d.success) {
@@ -763,11 +768,16 @@
   function saveJob() { alert('💾 Job saved to your profile!'); closeModal(); }
   function saveJobToggle(id, btn, e) {
     if (e) e.stopPropagation();
+    const token = localStorage.getItem('token');
+    if (!token) { window.location.href = '/login'; return; }
     const isSaved = btn.textContent === '★';
     fetch('/api/saved_jobs', {
       method: isSaved ? 'DELETE' : 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({job_id: id, user_id: 1})
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({job_id: id})
     }).then(r => r.json()).then(d => {
       if (d.success || d.error && d.error.includes('UNIQUE')) {
         btn.textContent = isSaved ? '☆' : '★';

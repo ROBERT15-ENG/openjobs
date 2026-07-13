@@ -406,7 +406,38 @@
   let userProfile = { name: 'Tonny Tony', email: 'tonny@email.com', location: 'Nairobi, KE', skills: ['Python', 'JavaScript', 'AI/LangChain'] };
   let dashboardData = null;
 
+  function getToken() {
+    return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+  }
+
+  function authHeaders(extra = {}) {
+    const headers = { 'Content-Type': 'application/json', ...extra };
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    return headers;
+  }
+
+  function parseTokenPayload(token) {
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        return JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      }
+      const pad = (4 - token.length % 4) % 4;
+      return JSON.parse(atob(token + '='.repeat(pad)));
+    } catch { return null; }
+  }
+
+  function getCurrentUserId() {
+    const payload = parseTokenPayload(getToken());
+    return payload?.user_id || null;
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    if (!getToken()) {
+      window.location.href = '/login';
+      return;
+    }
     loadDashboard();
     loadUserProfile();
   });
@@ -414,7 +445,7 @@
   // ── LOAD DASHBOARD DATA ──
   async function loadDashboard() {
     try {
-      const res = await fetch('/api/dashboard/seeker?user_id=getCurrentUserId()');
+      const res = await fetch('/api/dashboard/seeker', { headers: authHeaders() });
       if (!res.ok) throw new Error('API unavailable');
       dashboardData = await res.json();
       renderDashboard(dashboardData);
@@ -441,7 +472,7 @@
   }
 
   function loadUserProfile() {
-    fetch('/api/user/profile?user_id=getCurrentUserId()')
+    fetch('/api/user/profile', { headers: authHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data && !data.error) {
@@ -555,15 +586,6 @@
   }
 
   // ── TABS ──
-  function getCurrentUserId() {
-    try {
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      if (!token) return 1;
-      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-      return payload.user_id || 1;
-    } catch { return 1; }
-  }
-
   function switchTab(name) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -582,7 +604,7 @@
 
   async function loadSavedJobs() {
     try {
-      const res = await fetch('/api/saved_jobs?user_id=' + getCurrentUserId());
+      const res = await fetch('/api/saved_jobs', { headers: authHeaders() });
       const jobs = await res.json();
       const el = document.getElementById('savedJobsList');
       if (!jobs.length) {

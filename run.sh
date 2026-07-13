@@ -1,12 +1,17 @@
 #!/bin/bash
-# JobSeek - Quick Start Script
-# Usage: ./run_jobseek.sh
+# OpenJobs - Quick Start Script
 
-echo "Starting JobSeek Server..."
+set -e
+cd "$(dirname "$0")"
 
-# Check and install dependencies if needed
-pip install flask flask-limiter flask-cors requests werkzeug ezdxf fpdf 2>/dev/null
+echo "Installing dependencies..."
+pip install -r requirements.txt -q
 
-# Start the server
-cd "$(dirname "$0")/api"
+if [ ! -f jobs.db ]; then
+  echo "Initializing database..."
+  python3 scripts/init_db.py
+fi
+
+echo "Starting OpenJobs server on http://localhost:5700"
+cd api
 python3 server.py
