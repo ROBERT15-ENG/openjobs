@@ -1,5 +1,7 @@
 # Production deployment — OpenJobs
 
+> **Full checklist:** [DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md) — use before every launch.
+
 ## Prerequisites
 
 - Python 3.11+
@@ -72,11 +74,16 @@ curl https://yourdomain.com/api/health
 
 ## Post-deploy checklist
 
+See **[DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)** for the full phased checklist (smoke tests, security, backups, cron).
+
+Quick gates:
+
 - [ ] `SECRET_KEY` set and not default
 - [ ] `ADMIN_PASSWORD` changed from `admin123`
 - [ ] HTTPS enabled; `BASE_URL` matches public URL
 - [ ] SMTP configured and test email sent
 - [ ] Job alert cron scheduled
+- [ ] PR #7 merged before public launch
 - [ ] Stripe keys added when payments go live
 - [ ] `pytest tests/ -q` passes in CI
 

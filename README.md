@@ -2,7 +2,7 @@
 
 > Smart job matching with keyword + optional Ollama semantic scoring. Built with Flask, SQLite, and vanilla HTML dashboards.
 
-**Local:** `http://localhost:5700` | **Deploy:** [PRODUCTION.md](./PRODUCTION.md)
+**Local:** `http://localhost:5700` | **Deploy:** [PRODUCTION.md](./PRODUCTION.md) | **Checklist:** [DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)
 
 ---
 
@@ -59,7 +59,7 @@ See [.env.example](./.env.example) and [PRODUCTION.md](./PRODUCTION.md).
 |----------|---------|
 | `SECRET_KEY` | JWT signing (required in production) |
 | `BASE_URL` | Public site URL for emails and SEO |
-| `CORS_ORIGINS` | Allowed API origins (comma-separated) |
+| `CORS_ORIGINS` | Allowed API origins (after PR #7; see PRODUCTION.md) |
 | `SMTP_*` | Email delivery |
 | `OLLAMA_URL` | Local AI (optional) |
 | `STRIPE_*` | Payments (**deferred** — demo mode without keys) |

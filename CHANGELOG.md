@@ -45,10 +45,31 @@ All notable changes to the OpenJobs platform are documented in this file.
 
 ## [Unreleased]
 
+### Added
+- `DEPLOYMENT_CHECKLIST.md` — phased pre/post deploy checklist
+
 ### Planned
 - Stripe live payments
 - OAuth (Google, LinkedIn)
 - Redis sessions, PostgreSQL
+
+## [2.5.1] - 2026-07-13 — PR #8 follow-up
+
+### Added
+- **Date posted**: `date_posted` field; jobs set `posted_at` on create
+- **Distance filter**: `?near=&radius_km=` with city geocoding; homepage radius dropdown
+- **Report job**: `POST /api/jobs/<id>/report`; admin reports tab
+- **Employer–seeker messaging**: conversations + messages API (application-scoped)
+- **Team accounts**: organizations + members; employer team invite API
+- **Bulk actions**: admin application bulk status, job bulk deactivate, user delete
+- **Legal**: `/cookies` page, site footer links, cookie consent banner
+- `api/geo_util.py`, `api/job_util.py`, `api/org_util.py`, `api/application_status.py`
+- `tests/test_features.py`
+
+### Fixed
+- Kanban status moves now trigger seeker status emails
+- Seeker dashboard: full applications list, withdraw button, message employer
+- Employer register creates organization for team access
 
 ## [2.5.0] - 2026-07-13 — PR #8 product gaps
 
