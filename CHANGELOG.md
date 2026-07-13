@@ -10,7 +10,33 @@ and this project uses semantic versioning for release tags.
 ### Planned
 - OAuth (Google, LinkedIn)
 - Interview scheduling UI
-- Background job-alert email cron
+- Stripe live payments (deferred — demo mode for now)
+
+## [2.4.0] - 2026-07-13
+
+### Sprint 1–6 — Gap fixes
+
+#### Fixed
+- **register.html**: employer sign-up uses `POST /api/auth/register-employer` with company field; redirects to `/employer`
+- Removed misleading demo-account fallback on registration errors
+
+#### Added
+- Job alert matcher (`api/job_alert_matcher.py`) with deduplication via `job_alert_sends`
+- Cron script: `python3 scripts/match_job_alerts.py` (`--since-hours`, `--dry-run`)
+- `POST /api/admin/job-alerts/run` for manual alert matching
+- New job posts notify matching alerts (replaces blast-to-all-seekers)
+- AI endpoints: `POST /api/ai/ollama/score/resume`, `.../generate/cover-letter`, `.../interview-prep`
+- Ollama optional — keyword/template fallbacks when not running locally
+- `/cad` redirects to `/?q=autocad` (legacy CAD page retired)
+
+#### Removed
+- Unused `api/scraper_routes.py` (no `scrapers/` package registered)
+
+#### Docs
+- `tasks.json` and `ARCHITECTURE.md` synced to actual implementation status
+
+#### Tests
+- Sprint 1–6 suite: employer registration, alert matching, AI fallbacks, cad redirect, admin trigger
 
 ## [2.3.0] - 2026-07-13
 

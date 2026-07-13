@@ -118,6 +118,11 @@ def salary_page():
     return _render_page('salary.html', {'predict': True})
 
 
+@pages_bp.route('/cad')
+def cad_redirect():
+    return redirect('/?q=autocad', code=302)
+
+
 @pages_bp.route('/login')
 def login_page():
     return _render_page('login.html')

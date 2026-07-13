@@ -5,7 +5,7 @@ import datetime
 from auth_utils import require_role
 from constants import SEEKER_ROLES
 from db import get_db
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -100,3 +100,16 @@ def admin_users():
         """
     ).fetchall()
     return jsonify({'users': [dict(row) for row in users]})
+
+
+@admin_bp.route('/api/admin/job-alerts/run', methods=['POST'])
+@require_role('admin')
+def run_job_alerts():
+    """Manually trigger job-alert matching (same logic as scripts/match_job_alerts.py)."""
+    from job_alert_matcher import run_job_alert_matching
+
+    data = request.json or {}
+    since_hours = int(data.get('since_hours', 24))
+    dry_run = bool(data.get('dry_run', False))
+    result = run_job_alert_matching(since_hours=since_hours, dry_run=dry_run)
+    return jsonify({'success': True, **result})

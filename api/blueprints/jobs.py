@@ -199,19 +199,8 @@ def create_job():
     job_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
 
     try:
-        from email_notifier import send_job_alert
-        skills_raw = data.get('skills', '')
-        keywords = skills_raw.split(',')[0].strip() if skills_raw else data.get('title', '')[:50]
-        role_filter = ' OR '.join(f"role='{role}'" for role in SEEKER_ROLES)
-        matching_users = db.execute(
-            f'SELECT name, email FROM users WHERE ({role_filter}) AND email IS NOT NULL LIMIT 50'
-        ).fetchall()
-        if keywords and matching_users:
-            sample_jobs = [dict(db.execute(
-                'SELECT id, title, company, location, salary FROM jobs WHERE id=?', (job_id,)
-            ).fetchone())]
-            for user in matching_users:
-                send_job_alert(user['email'], user['name'] or 'there', sample_jobs, keywords)
+        from job_alert_matcher import notify_alerts_for_job
+        notify_alerts_for_job(job_id)
     except Exception as exc:
         print(f'[create_job] alert error: {exc}')
 

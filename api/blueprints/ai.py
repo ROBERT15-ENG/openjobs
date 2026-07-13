@@ -1,13 +1,15 @@
-"""Ollama AI routes."""
+"""Ollama AI routes with keyword fallbacks when Ollama is unavailable locally."""
 
 import os
 
 import requests
+from ats_util import compute_ats_score
 from flask import Blueprint, jsonify, request
 
 ai_bp = Blueprint('ai', __name__)
 
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
+OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'llama3.2')
 
 try:
     OLLAMA_AVAILABLE = requests.get(f'{OLLAMA_URL}/api/tags', timeout=2).status_code == 200
@@ -15,9 +17,55 @@ except Exception:
     OLLAMA_AVAILABLE = False
 
 
+def _ollama_generate(prompt: str, system: str = None, timeout: int = 45) -> str:
+    if not OLLAMA_AVAILABLE:
+        return ''
+    payload = {
+        'model': OLLAMA_MODEL,
+        'prompt': prompt,
+        'stream': False,
+    }
+    if system:
+        payload['system'] = system
+    try:
+        resp = requests.post(f'{OLLAMA_URL}/api/generate', json=payload, timeout=timeout)
+        if resp.status_code == 200:
+            return resp.json().get('response', '').strip()
+    except Exception:
+        pass
+    return ''
+
+
+def _fallback_cover_letter(job_title: str, company: str, resume_text: str) -> str:
+    snippet = (resume_text or '').strip().split('\n')[0][:120]
+    return (
+        f'Dear Hiring Manager,\n\n'
+        f'I am writing to apply for the {job_title} role at {company}. '
+        f'{"My background includes " + snippet + "." if snippet else "I believe my experience aligns well with this opportunity."}\n\n'
+        f'I am excited about the chance to contribute to {company} and would welcome the opportunity to discuss how I can add value to your team.\n\n'
+        f'Kind regards'
+    )
+
+
+def _fallback_interview_questions(job_title: str) -> str:
+    return '\n'.join([
+        f'1. Walk me through your experience most relevant to a {job_title} role.',
+        '2. Describe a challenging project you delivered and what you learned.',
+        '3. How do you prioritise when multiple stakeholders need your attention?',
+        '4. Tell me about a time you received critical feedback and how you responded.',
+        f'5. What interests you about working as a {job_title}?',
+        '6. Describe your approach to collaborating with cross-functional teams.',
+    ])
+
+
 @ai_bp.route('/api/ai/ollama/status', methods=['GET'])
 def ollama_status():
-    return jsonify({'available': OLLAMA_AVAILABLE, 'url': OLLAMA_URL})
+    return jsonify({
+        'available': OLLAMA_AVAILABLE,
+        'url': OLLAMA_URL,
+        'model': OLLAMA_MODEL,
+        'note': 'Ollama is optional — AI tools use keyword fallbacks when it is not running locally.',
+    })
 
 
 @ai_bp.route('/api/ai/ollama/models', methods=['GET'])
@@ -33,15 +81,21 @@ def list_ollama_models():
 
 @ai_bp.route('/api/ai/ollama/chat', methods=['POST'])
 def ollama_chat():
-    if not OLLAMA_AVAILABLE:
-        return jsonify({'error': 'Ollama not running'}), 500
     data = request.json or {}
+    message = (data.get('message') or '').strip()
+    if not message:
+        return jsonify({'error': 'message is required'}), 400
+    if not OLLAMA_AVAILABLE:
+        return jsonify({
+            'error': 'Ollama not running locally',
+            'response': 'AI chat requires Ollama on your machine (ollama serve). Career tips: tailor your résumé to each role, quantify achievements, and research the company before applying.',
+        }), 200
     try:
         resp = requests.post(
             f'{OLLAMA_URL}/api/chat',
             json={
-                'model': data.get('model', 'llama3.2'),
-                'messages': [{'role': 'user', 'content': data.get('message')}],
+                'model': data.get('model', OLLAMA_MODEL),
+                'messages': [{'role': 'user', 'content': message}],
                 'stream': False,
             },
             timeout=30,
@@ -49,3 +103,74 @@ def ollama_chat():
         return jsonify({'success': True, 'response': resp.json()['message']['content']})
     except Exception as exc:
         return jsonify({'error': str(exc)})
+
+
+@ai_bp.route('/api/ai/ollama/score/resume', methods=['POST'])
+def score_resume():
+    data = request.json or {}
+    job_desc = (data.get('job_description') or '').strip()
+    resume = (data.get('resume_text') or '').strip()
+    if not job_desc or not resume:
+        return jsonify({'error': 'job_description and resume_text are required'}), 400
+
+    score = compute_ats_score(resume, '', job_desc)
+    analysis = 'Keyword overlap between your résumé and the job description.'
+    source = 'keyword'
+
+    if OLLAMA_AVAILABLE:
+        prompt = (
+            f'Job description:\n{job_desc[:1500]}\n\nRésumé:\n{resume[:1500]}\n\n'
+            'In 2-3 sentences, explain fit strengths and gaps. Be concise.'
+        )
+        ai_text = _ollama_generate(prompt, system='You are a concise career coach.')
+        if ai_text:
+            analysis = ai_text
+            source = 'ollama'
+
+    return jsonify({'score': score, 'analysis': analysis, 'source': source})
+
+
+@ai_bp.route('/api/ai/ollama/generate/cover-letter', methods=['POST'])
+def generate_cover_letter():
+    data = request.json or {}
+    job_title = (data.get('job_title') or '').strip()
+    company = (data.get('company') or '').strip()
+    resume = (data.get('resume_text') or '').strip()
+    if not job_title or not company:
+        return jsonify({'error': 'job_title and company are required'}), 400
+
+    cover_letter = _fallback_cover_letter(job_title, company, resume)
+    source = 'template'
+
+    if OLLAMA_AVAILABLE:
+        prompt = (
+            f'Write a professional cover letter for the {job_title} position at {company}. '
+            f'Candidate background:\n{resume[:2000] or "Not provided"}\n'
+            'Use a warm, professional tone. 3 short paragraphs.'
+        )
+        ai_text = _ollama_generate(prompt, system='You write concise, professional cover letters.')
+        if ai_text and len(ai_text) > 80:
+            cover_letter = ai_text
+            source = 'ollama'
+
+    return jsonify({'cover_letter': cover_letter, 'source': source})
+
+
+@ai_bp.route('/api/ai/ollama/interview-prep', methods=['POST'])
+def interview_prep():
+    data = request.json or {}
+    job_title = (data.get('job_title') or '').strip()
+    if not job_title:
+        return jsonify({'error': 'job_title is required'}), 400
+
+    questions = _fallback_interview_questions(job_title)
+    source = 'template'
+
+    if OLLAMA_AVAILABLE:
+        prompt = f'List 8 interview questions for a {job_title} role. Number each question.'
+        ai_text = _ollama_generate(prompt, system='You are an interview coach.')
+        if ai_text:
+            questions = ai_text
+            source = 'ollama'
+
+    return jsonify({'questions': questions, 'source': source})

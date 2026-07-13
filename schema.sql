@@ -100,6 +100,16 @@ CREATE TABLE IF NOT EXISTS job_alerts (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS job_alert_sends (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL,
+    sent_at TEXT NOT NULL,
+    UNIQUE(alert_id, job_id),
+    FOREIGN KEY (alert_id) REFERENCES job_alerts(id),
+    FOREIGN KEY (job_id) REFERENCES jobs(id)
+);
+
 CREATE TABLE IF NOT EXISTS ai_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     endpoint TEXT,
