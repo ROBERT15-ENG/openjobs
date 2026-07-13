@@ -351,7 +351,38 @@
   let allApps = [];
   let allUsers = [];
 
+  function getToken() {
+    return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+  }
+
+  function authHeaders(extra = {}) {
+    const headers = { ...extra };
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    return headers;
+  }
+
+  function ensureAdmin() {
+    const token = getToken();
+    if (!token) {
+      window.location.href = '/login';
+      return false;
+    }
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (payload.role !== 'admin') {
+        window.location.href = '/user';
+        return false;
+      }
+    } catch {
+      window.location.href = '/login';
+      return false;
+    }
+    return true;
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    if (!ensureAdmin()) return;
     loadStats();
     loadJobs();
     loadApplications();
@@ -372,7 +403,7 @@
   }
 
   function loadStats() {
-    fetch('/api/admin/stats')
+    fetch('/api/admin/stats', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => {
         const s = d.summary || {};
@@ -418,7 +449,7 @@
       .catch(() => {});
 
     // Fill analytics tab insights
-    fetch('/api/admin/stats')
+    fetch('/api/admin/stats', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => {
         // Top employer
@@ -584,7 +615,7 @@
   async function deleteJob(id) {
     if (!confirm('Delete this job? This cannot be undone.')) return;
     try {
-      const res = await fetch('/api/jobs/' + id, { method: 'DELETE' });
+      const res = await fetch('/api/jobs/' + id, { method: 'DELETE', headers: authHeaders() });
       if (res.ok) {
         showAlert('jobAlert', 'success', 'Job deleted successfully.');
         loadJobs();
@@ -597,7 +628,7 @@
   }
 
   function loadApplications() {
-    fetch('/api/applications')
+    fetch('/api/applications', { headers: authHeaders() })
       .then(r => r.json())
       .then(apps => {
         allApps = apps;
@@ -613,16 +644,16 @@
       return;
     }
     tbody.innerHTML = apps.map(a => {
-      const statusMap = {pending:'badge-pending',applied:'badge-active',interview:'badge-active',rejected:'badge-inactive',offer:'badge-active'};
+      const statusMap = {applied:'badge-pending',screening:'badge-pending',interview:'badge-active',rejected:'badge-inactive',offer:'badge-active',hired:'badge-active',withdrawn:'badge-inactive'};
       const cls = statusMap[a.status] || 'badge-pending';
       const label = (a.status || 'pending').charAt(0).toUpperCase() + (a.status || 'pending').slice(1);
       return `<tr>
-        <td><div class="title-cell">Tonny Tony</div></td>
-        <td>tonny@email.com</td>
+        <td><div class="title-cell">${escHtml(a.applicant_name || a.seeker_name || '—')}</div></td>
+        <td>${escHtml(a.applicant_email || a.seeker_email || '—')}</td>
         <td>${escHtml(String(a.job_id))}</td>
         <td>${timeSince(a.applied_at)}</td>
         <td><span class="badge ${cls}">${label}</span></td>
-        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(a.notes || '—')}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(a.cover_letter || a.notes || '—')}</td>
         <td>
           <button class="btn-sm" onclick="updateAppStatus(${a.id},'interview')">✓</button>
           <button class="btn-sm danger" onclick="updateAppStatus(${a.id},'rejected')">✗</button>
@@ -633,31 +664,21 @@
 
   async function updateAppStatus(id, status) {
     try {
-      await fetch('/api/applications/' + id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status}) });
+      await fetch('/api/applications/' + id, { method:'PATCH', headers: authHeaders({'Content-Type':'application/json'}), body: JSON.stringify({status}) });
       loadApplications();
     } catch {}
   }
 
   function loadUsers() {
-    fetch('/api/user/profile?user_id=1')
-      .then(r => r.json())
-      .then(user => {
-        if (user && !user.error) {
-          allUsers = [{
-            name: user.name || 'Tonny Tony',
-            email: user.email || 'tonny@email.com',
-            role: 'user',
-            skills: user.skills || '',
-            created_at: user.created_at || '2026-01-01'
-          }];
-          renderUsersTable(allUsers);
-        }
+    fetch('/api/admin/users', { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => {
+        allUsers = data.users || [];
+        renderUsersTable(allUsers);
       })
-      .catch(() => renderUsersTable([{name:'Demo User',email:'demo@openjobs.com',role:'admin',skills:'Python,JavaScript',created_at:'2026-01-01'}]));
-    // Give it a moment then render with fallback
-    setTimeout(() => {
-      if (!allUsers.length) renderUsersTable([{name:'Tonny Tony',email:'tonny@email.com',role:'user',skills:'AI,Python,JavaScript',created_at:'2026-01-01'}]);
-    }, 500);
+      .catch(() => {
+        document.getElementById('usersTable').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted)">Could not load users</td></tr>';
+      });
   }
 
   function renderUsersTable(users) {

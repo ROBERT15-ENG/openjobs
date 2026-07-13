@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Browse companies hiring on OpenJobs. Explore employers, open roles, and locations.">
+  <title>Companies Hiring — OpenJobs</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary:#00d4aa; --bg:#09090f; --card:#111119; --border:#1e1e2e; --text:#ededf0; --muted:#6b6b80; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:Inter,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+    header { border-bottom:1px solid var(--border); padding:1rem 2rem; display:flex; justify-content:space-between; align-items:center; }
+    .logo { font-weight:800; font-size:1.2rem; } .logo span { color:var(--primary); }
+    a { color:var(--primary); text-decoration:none; }
+    .wrap { max-width:1100px; margin:0 auto; padding:2rem; }
+    h1 { font-size:2rem; margin-bottom:0.5rem; }
+    .sub { color:var(--muted); margin-bottom:2rem; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:1rem; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:1.25rem; cursor:pointer; transition:border-color .2s; }
+    .card:hover { border-color:var(--primary); }
+    .name { font-weight:700; font-size:1rem; margin-bottom:0.35rem; }
+    .meta { color:var(--muted); font-size:0.85rem; line-height:1.5; }
+    .count { display:inline-block; margin-top:0.75rem; background:rgba(0,212,170,.12); color:var(--primary); padding:0.25rem 0.6rem; border-radius:6px; font-size:0.75rem; font-weight:700; }
+    .search { width:100%; max-width:420px; padding:0.8rem 1rem; border-radius:10px; border:1px solid var(--border); background:var(--card); color:var(--text); margin-bottom:1.5rem; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo">Open<span>Jobs</span></div>
+  <a href="/">← Back to jobs</a>
+</header>
+<div class="wrap">
+  <h1>Companies Hiring</h1>
+  <p class="sub">Employers with active listings on OpenJobs.</p>
+  <input type="text" class="search" id="search" placeholder="Search companies..." oninput="filterCompanies()">
+  <div class="grid" id="grid"><div class="meta">Loading companies...</div></div>
+</div>
+<script>
+  let companies = [];
+  fetch('/api/companies/directory').then(r => r.json()).then(d => {
+    companies = d.companies || [];
+    render(companies);
+  }).catch(() => {
+    document.getElementById('grid').innerHTML = '<div class="meta">Could not load companies.</div>';
+  });
+
+  function render(list) {
+    const grid = document.getElementById('grid');
+    if (!list.length) {
+      grid.innerHTML = '<div class="meta">No companies found.</div>';
+      return;
+    }
+    grid.innerHTML = list.map(c => `
+      <div class="card" onclick="window.location.href='/?q=${encodeURIComponent(c.name)}'">
+        <div class="name">${esc(c.name)}</div>
+        <div class="meta">${esc((c.locations || '').split(',').slice(0,3).join(' · ') || 'Various locations')}</div>
+        <div class="meta" style="margin-top:0.35rem">${esc((c.categories || '').split(',').slice(0,2).join(', '))}</div>
+        <span class="count">${c.job_count} open role${c.job_count === 1 ? '' : 's'}</span>
+      </div>`).join('');
+  }
+
+  function filterCompanies() {
+    const q = document.getElementById('search').value.toLowerCase();
+    render(companies.filter(c => (c.name || '').toLowerCase().includes(q)));
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+</body>
+</html>

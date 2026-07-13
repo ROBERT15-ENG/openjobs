@@ -3,15 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.">
+  <meta name="description" content="{% if job %}{{ job.title }} at {{ job.company }} — {{ job.location }}{% else %}Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.{% endif %}">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://openjobs.example.com/job.html">
-  <meta property="og:title" content="Apply for Job — OpenJobs">
-  <meta property="og:description" content="Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.">
+  <link rel="canonical" href="{% if canonical_url %}{{ canonical_url }}{% else %}https://openjobs.example.com/job.html{% endif %}">
+  <meta property="og:title" content="{% if job %}{{ job.title }} — {{ job.company }}{% else %}Apply for Job — OpenJobs{% endif %}">
+  <meta property="og:description" content="{% if job %}{{ (job.description or '')[:200] }}{% else %}Apply for this job on OpenJobs.{% endif %}">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://openjobs.example.com/job.html">
+  <meta property="og:url" content="{% if canonical_url %}{{ canonical_url }}{% else %}https://openjobs.example.com/job.html{% endif %}">
   <meta property="og:site_name" content="OpenJobs">
-  <title>Apply — OpenJobs</title>
+  <title>{% if job %}{{ job.title }} — OpenJobs{% else %}Apply — OpenJobs{% endif %}</title>
+  {% if json_ld %}<script type="application/ld+json">{{ json_ld | safe }}</script>{% endif %}
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
@@ -101,6 +102,13 @@
     .btn-apply { width: 100%; padding: 0.875rem; background: var(--primary); color: #000; border: none; border-radius: 12px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.2s; font-family: 'Inter', sans-serif; margin-top: 0.5rem; }
     .btn-apply:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,212,170,0.35); }
     .btn-apply:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .guest-apply {
+      text-align: center; padding: 1.5rem 1rem;
+      background: linear-gradient(135deg, rgba(0,212,170,0.08), rgba(0,212,170,0.02));
+      border: 1px solid rgba(0,212,170,0.2); border-radius: 12px;
+    }
+    .guest-apply p { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem; line-height: 1.6; }
+    .guest-apply .btn-register { display: inline-block; margin-top: 0.75rem; font-size: 0.85rem; color: var(--primary); font-weight: 600; }
     .alert { padding: 0.875rem 1rem; border-radius: 10px; font-size: 0.875rem; margin-bottom: 1rem; display: none; }
     .alert-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--error); }
     .alert-success { background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.3); color: var(--success); }
@@ -153,7 +161,7 @@
       <div class="job-badges" id="jobBadges"></div>
     </div>
     <div class="hero-actions">
-      <button class="btn-save" id="saveBtn" onclick="toggleSave()">☆ Save</button>
+      <button class="btn-save" id="saveBtn" onclick="toggleSave()" aria-label="Save job">☆ Save</button>
     </div>
   </div>
 
@@ -186,7 +194,15 @@
 
     <!-- RIGHT: APPLY -->
     <div class="apply-card">
-      <div class="card">
+      <div class="card" id="guestApplyCta" style="display:none">
+        <div class="guest-apply">
+          <div class="apply-title">🚀 Apply for this Job</div>
+          <p>Sign in to apply with your saved profile, upload your résumé, and track application status in your dashboard.</p>
+          <button class="btn-apply" id="guestLoginBtn">Sign in to Apply →</button>
+          <a href="/register" class="btn-register">Or create a free account</a>
+        </div>
+      </div>
+      <div class="card" id="applyFormWrap">
         <div class="apply-title">🚀 Apply for this Job</div>
         <div class="alert alert-error" id="alertError"></div>
         <div class="alert alert-success" id="alertSuccess"></div>
@@ -236,28 +252,68 @@
 
 <script>
   // ── LOAD JOB ──
+  const pathMatch = window.location.pathname.match(/\/jobs\/(\d+)/);
   const params = new URLSearchParams(window.location.search);
-  const jobId = params.get('id') || 1;
+  const jobId = (pathMatch && pathMatch[1]) || params.get('id') || {% if job %}{{ job.id }}{% else %}null{% endif %};
 
   let currentJob = null;
 
+  function getToken() {
+    return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+  }
+
+  function loginRedirectUrl() {
+    return '/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+  }
+
+  function updateApplyUI() {
+    const token = getToken();
+    const guest = document.getElementById('guestApplyCta');
+    const form = document.getElementById('applyFormWrap');
+    const loginBtn = document.getElementById('guestLoginBtn');
+    if (token) {
+      guest.style.display = 'none';
+      form.style.display = 'block';
+    } else {
+      guest.style.display = 'block';
+      form.style.display = 'none';
+      if (loginBtn) loginBtn.onclick = () => { window.location.href = loginRedirectUrl(); };
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    updateApplyUI();
+    const token = getToken();
+    if (token) {
+      fetch('/api/user/profile', { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(r => r.ok ? r.json() : null)
+        .then(profile => {
+          if (profile && !profile.error) {
+            if (profile.name) document.getElementById('appName').value = profile.name;
+            if (profile.email) document.getElementById('appEmail').value = profile.email;
+            if (profile.phone) document.getElementById('appPhone').value = profile.phone;
+          }
+        })
+        .catch(() => {});
+    }
     loadJob(jobId);
     loadRelated(jobId);
+    checkSavedStatus();
   });
 
   function loadJob(id) {
-    fetch('/api/jobs/' + id)
+    if (!id) { showError('Job not found'); return; }
+    const headers = {};
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    fetch('/api/jobs/' + id, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(job => {
         if (!job) { showError('Job not found'); return; }
         currentJob = job;
         renderJob(job);
       })
-      .catch(() => {
-        // Demo data fallback
-        renderJob(getDemoJob(id));
-      });
+      .catch(() => showError('Could not load job. Please try again later.'));
   }
 
   function renderJob(job) {
@@ -324,7 +380,7 @@
           related.push(...(data.jobs || []).filter(j => j.id != id).slice(0, 4));
         }
         document.getElementById('relatedJobs').innerHTML = related.map(j => `
-          <div class="related-job" onclick="window.location.href='/job.html?id=${j.id}'">
+          <div class="related-job" onclick="window.location.href='${j.url || ('/jobs/' + j.id)}'">
             <div class="related-logo">${(j.company||'J')[0].toUpperCase()}</div>
             <div class="related-info">
               <div class="related-title">${escHtml(j.title)}</div>
@@ -358,6 +414,12 @@
   }
 
   async function submitApplication() {
+    const token = getToken();
+    if (!token) {
+      window.location.href = loginRedirectUrl();
+      return;
+    }
+
     const name  = document.getElementById('appName').value.trim();
     const email = document.getElementById('appEmail').value.trim();
     const cover = document.getElementById('coverLetter').value.trim();
@@ -372,38 +434,42 @@
     btn.textContent = 'Submitting...';
 
     try {
-      // If a resume file is selected, upload it first to get resume_text
       let resumeText = '';
       if (file) {
         const formData = new FormData();
         formData.append('file', file);
-        const authHeader = localStorage.getItem('token') || '';
         const uploadRes = await fetch('/api/resume/upload', {
           method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + authHeader },
+          headers: { 'Authorization': 'Bearer ' + token },
           body: formData
         });
         const uploadData = await uploadRes.json();
         if (uploadRes.ok && uploadData.success) {
-          resumeText = uploadData.extracted?.skills
-            ? 'Skills: ' + uploadData.extracted.skills.join(', ')
-            : '';
-          showAlert('success', '✅ Resume uploaded and application submitted!');
-        } else {
-          showAlert('error', uploadData.error || 'Resume upload failed but applying anyway.');
+          resumeText = uploadData.resume_text || '';
+          if (!resumeText && uploadData.skills_found?.length) {
+            resumeText = 'Skills: ' + uploadData.skills_found.join(', ');
+          }
+        } else if (!uploadRes.ok) {
+          showAlert('error', uploadData.error || 'Resume upload failed');
+          btn.disabled = false;
+          btn.textContent = 'Submit Application →';
+          return;
         }
       }
 
-      // Submit application — user_id comes from JWT on the server, not the body
       const res = await fetch('/api/applications', {
         method: 'POST',
-        headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') },
-        body: JSON.stringify({ job_id: jobId, name: name, email: email, notes: cover, resume_text: resumeText })
+        headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ job_id: parseInt(jobId, 10), cover_letter: cover, resume_text: resumeText })
       });
       const data = await res.json();
       if (res.ok && data.success) {
         showAlert('success', 'Application submitted! Check your dashboard to track status.');
         btn.textContent = '✅ Applied!';
+      } else if (res.status === 409) {
+        showAlert('error', data.error || 'You have already applied to this job.');
+        btn.disabled = false;
+        btn.textContent = 'Submit Application →';
       } else {
         showAlert('error', data.error || 'Something went wrong. Please try again.');
         btn.disabled = false;
@@ -417,12 +483,42 @@
   }
 
   let saved = false;
+  async function checkSavedStatus() {
+    const token = getToken();
+    if (!token) return;
+    try {
+      const res = await fetch('/api/saved_jobs', { headers: { 'Authorization': 'Bearer ' + token } });
+      const jobs = await res.json();
+      saved = Array.isArray(jobs) && jobs.some(j => String(j.id) === String(jobId));
+      const btn = document.getElementById('saveBtn');
+      btn.classList.toggle('saved', saved);
+      btn.textContent = saved ? '★ Saved' : '☆ Save';
+      btn.setAttribute('aria-label', saved ? 'Unsave job' : 'Save job');
+    } catch {}
+  }
+
   function toggleSave() {
-    saved = !saved;
+    const token = getToken();
+    if (!token) {
+      window.location.href = loginRedirectUrl();
+      return;
+    }
     const btn = document.getElementById('saveBtn');
-    btn.classList.toggle('saved', saved);
-    btn.textContent = saved ? '★ Saved' : '☆ Save';
-    // In real app, POST to /api/saved_jobs
+    const method = saved ? 'DELETE' : 'POST';
+    fetch('/api/saved_jobs', {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ job_id: parseInt(jobId, 10) })
+    }).then(r => r.json()).then(d => {
+      if (d.success || (method === 'POST' && d.error && d.error.includes('UNIQUE'))) {
+        saved = !saved;
+        btn.classList.toggle('saved', saved);
+        btn.textContent = saved ? '★ Saved' : '☆ Save';
+        btn.setAttribute('aria-label', saved ? 'Unsave job' : 'Save job');
+      } else {
+        alert(d.error || 'Could not update saved jobs.');
+      }
+    }).catch(() => alert('Could not save job. Try again.'));
   }
 
   // ── UTILITIES ──
@@ -452,9 +548,6 @@
   }
   function showError(msg) {
     document.getElementById('jobTitle').textContent = '⚠️ ' + msg;
-  }
-  function getDemoJob(id) {
-    return { id, title: 'Software Engineer', company: 'TechCorp', location: 'Remote', salary_min: 100000, salary_max: 140000, work_type: 'full_time', category: 'Software Development', description: 'Join our team to build next-generation software solutions. We are looking for passionate engineers who want to work on challenging problems and grow their skills.', created_at: '2026-06-15T00:00:00' };
   }
 
   // Drag & drop

@@ -193,12 +193,12 @@
         <div class="demo-label">⚡ Demo Accounts — click to fill</div>
         <div class="demo-accounts">
           <div class="demo-account">
-            <span><span class="role-tag role-seeker">Seeker</span> <span class="email">tonny@email.com</span></span>
-            <button class="demo-fill" onclick="fillDemo('tonny@email.com', 'demo1234', 'seeker')">Fill</button>
+            <span><span class="role-tag role-seeker">Seeker</span> <span class="email">demo@openjobs.com</span></span>
+            <button class="demo-fill" onclick="fillDemo('demo@openjobs.com', 'TestPass123', 'seeker')">Fill</button>
           </div>
           <div class="demo-account">
             <span><span class="role-tag role-employer">Employer</span> <span class="email">employer@openjobs.com</span></span>
-            <button class="demo-fill" onclick="fillDemo('employer@openjobs.com', 'employer123', 'employer')">Fill</button>
+            <button class="demo-fill" onclick="fillDemo('employer@openjobs.com', 'Employer123', 'employer')">Fill</button>
           </div>
         </div>
       </div>
@@ -210,6 +210,7 @@
 
 <script>
   let selectedRole = 'seeker';
+  const redirectAfterLogin = new URLSearchParams(window.location.search).get('redirect') || '';
 
   function setRole(role) {
     selectedRole = role;
@@ -258,13 +259,17 @@
       const data = await res.json();
 
       if (res.ok && data.success) {
+        localStorage.setItem('token', data.token);
+        if (document.getElementById('remember').checked) {
+          sessionStorage.removeItem('token');
+        } else {
+          sessionStorage.setItem('token', data.token);
+        }
         const role = data.user?.role || 'user';
-        // If logging in as seeker but role is employer, redirect to employer
-        let redirectUrl = '/user';
-        if (selectedRole === 'employer' || role === 'employer') {
-          redirectUrl = '/employer';
-        } else if (role === 'admin') {
-          redirectUrl = '/admin';
+        let redirectUrl = redirectAfterLogin || '/user';
+        if (!redirectAfterLogin) {
+          if (selectedRole === 'employer' || role === 'employer') redirectUrl = '/employer';
+          else if (role === 'admin') redirectUrl = '/admin';
         }
         showAlert('success', 'Login successful! Redirecting...');
         setTimeout(() => window.location.href = redirectUrl, 600);
@@ -274,18 +279,9 @@
         btn.textContent = 'Sign In →';
       }
     } catch(err) {
-      // Demo mode fallback
-      if ((email === 'tonny@email.com' || email === 'demo@openjobs.com') && password === 'demo1234') {
-        showAlert('success', 'Demo seeker mode — redirecting...');
-        setTimeout(() => window.location.href = '/user', 600);
-      } else if (email === 'employer@openjobs.com' && password === 'employer123') {
-        showAlert('success', 'Demo employer mode — redirecting...');
-        setTimeout(() => window.location.href = '/employer', 600);
-      } else {
-        showAlert('error', 'Cannot connect to server. Add demo account first.');
-        btn.disabled = false;
-        btn.textContent = 'Sign In →';
-      }
+      showAlert('error', 'Cannot connect to server. Check that the API is running.');
+      btn.disabled = false;
+      btn.textContent = 'Sign In →';
     }
   }
 

@@ -17,7 +17,8 @@ import sqlite3
 from typing import Dict, List, Optional
 
 # DB path
-DB_PATH = '/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/jobs.db'
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+DB_PATH = os.environ.get('DATABASE_PATH', os.path.join(PROJECT_ROOT, 'jobs.db'))
 
 # Only load these when AI is actually needed
 AI_ENABLED = os.environ.get('JOBSEEK_AI_ENABLED', 'true').lower() == 'true'

@@ -124,7 +124,21 @@
     .modal-close { background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; padding: 0.25rem; line-height: 1; }
     .modal-close:hover { color: var(--text); }
 
-    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+    /* KANBAN */
+    .kanban-toolbar { display: flex; gap: 1rem; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; }
+    .kanban-board { display: grid; grid-template-columns: repeat(6, minmax(180px, 1fr)); gap: 0.75rem; overflow-x: auto; padding-bottom: 0.5rem; }
+    .kanban-col { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; min-height: 320px; display: flex; flex-direction: column; }
+    .kanban-col-header { padding: 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); display: flex; justify-content: space-between; }
+    .kanban-col-body { padding: 0.5rem; flex: 1; display: flex; flex-direction: column; gap: 0.5rem; }
+    .kanban-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem; cursor: pointer; transition: border-color 0.2s; }
+    .kanban-card:hover { border-color: var(--primary); }
+    .kanban-card-name { font-weight: 700; font-size: 0.85rem; margin-bottom: 0.2rem; }
+    .kanban-card-meta { font-size: 0.72rem; color: var(--text-muted); }
+    .kanban-move { margin-top: 0.5rem; display: flex; gap: 0.25rem; flex-wrap: wrap; }
+    .kanban-move button { font-size: 0.65rem; padding: 0.2rem 0.45rem; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer; }
+    .kanban-move button:hover { border-color: var(--primary); color: var(--primary); }
+
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } .stats-grid { grid-template-columns: repeat(2, 1fr); } .kanban-board { grid-template-columns: repeat(3, minmax(160px, 1fr)); } }
     @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -337,6 +351,22 @@
       <div id="allApplications"><div class="empty-state"><div class="icon">📥</div><h3>Loading...</h3></div></div>
     </div>
 
+    <!-- PIPELINE -->
+    <div class="tab-content" id="tab-pipeline">
+      <h2 class="page-title">Hiring Pipeline</h2>
+      <p class="page-sub">Drag candidates through stages or use quick actions on each card.</p>
+      <div class="kanban-toolbar">
+        <label class="form-label" style="margin:0">Job listing</label>
+        <select class="form-select" id="pipelineJobSelect" style="max-width:320px" onchange="loadPipeline()">
+          <option value="">Select a job...</option>
+        </select>
+        <button class="btn btn-ghost" onclick="loadPipeline()">↻ Refresh</button>
+      </div>
+      <div id="kanbanBoard" class="kanban-board">
+        <div class="empty-state" style="grid-column:1/-1"><div class="icon">📋</div><h3>Select a job to view pipeline</h3></div>
+      </div>
+    </div>
+
     <!-- SETTINGS -->
     <div class="tab-content" id="tab-settings">
       <h2 class="page-title">Company Settings</h2>
@@ -377,12 +407,43 @@
   </div>
 </div>
 
-<!-- EDIT JOB MODAL -->
-<div class="modal-overlay" id="editModal">
-  <div class="modal">
+<!-- CANDIDATE DETAIL MODAL -->
+<div class="modal-overlay" id="candidateModal" role="presentation">
+  <div class="modal" style="max-width:680px" role="dialog" aria-modal="true" aria-labelledby="candidateName" id="candidateModalDialog">
     <div class="modal-header">
-      <div class="modal-title">✏️ Edit Job</div>
-      <button class="modal-close" onclick="closeEditModal()">×</button>
+      <div class="modal-title" id="candidateName">Applicant</div>
+      <button class="modal-close" onclick="closeCandidateModal()" aria-label="Close candidate details">×</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem;">
+      <div><div class="form-label">Email</div><div id="candidateEmail" style="color:var(--text)">-</div></div>
+      <div><div class="form-label">Applied</div><div id="candidateApplied" style="color:var(--text)">-</div></div>
+      <div><div class="form-label">Status</div><div id="candidateStatusWrap">-</div></div>
+      <div><div class="form-label">Match Score</div><div id="candidateScore" style="color:var(--text)">-</div></div>
+    </div>
+    <div class="form-group">
+      <div class="form-label">Cover Letter / Notes</div>
+      <div id="candidateCover" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:1rem;font-size:0.875rem;color:var(--text);white-space:pre-wrap;max-height:200px;overflow-y:auto;">-</div>
+    </div>
+    <div class="form-group">
+      <div class="form-label">Resume Text</div>
+      <div id="candidateResume" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:1rem;font-size:0.8rem;color:var(--text-muted);white-space:pre-wrap;max-height:250px;overflow-y:auto;">-</div>
+    </div>
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;" id="candidateActions">
+      <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,'screening')">Mark Reviewed</button>
+      <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,'interview')">Schedule Interview</button>
+      <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,'offer')">Send Offer</button>
+      <button class="btn btn-danger" onclick="updateAppStatus(window.currentAppId,'rejected')">Reject</button>
+      <button class="btn btn-ghost" onclick="closeCandidateModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT JOB MODAL -->
+<div class="modal-overlay" id="editModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle" id="editModalDialog">
+    <div class="modal-header">
+      <div class="modal-title" id="editModalTitle">✏️ Edit Job</div>
+      <button class="modal-close" onclick="closeEditModal()" aria-label="Close edit job dialog">×</button>
     </div>
     <form id="editJobForm" onsubmit="handleEditJob(event)">
       <input type="hidden" id="editJobId">
@@ -448,14 +509,54 @@
 </div>
 
 <script>
-  const AUTH_KEY = 'oj_employer_tok';
+  const AUTH_KEY = 'token';
   let currentUser = null;
+  let employerApps = [];
+  let employerJobs = [];
+  let pipelineApps = {};
+  let activeModalTrap = null;
+
+  function trapFocus(modalEl) {
+    if (activeModalTrap) modalEl.removeEventListener('keydown', activeModalTrap);
+    activeModalTrap = (e) => {
+      if (e.key === 'Escape') {
+        if (modalEl.id === 'candidateModalDialog') closeCandidateModal();
+        else if (modalEl.id === 'editModalDialog') closeEditModal();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const items = Array.from(modalEl.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])'));
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    modalEl.addEventListener('keydown', activeModalTrap);
+    const closeBtn = modalEl.querySelector('.modal-close');
+    if (closeBtn) closeBtn.focus();
+  }
+
+  function releaseFocus(modalEl) {
+    if (activeModalTrap) {
+      modalEl.removeEventListener('keydown', activeModalTrap);
+      activeModalTrap = null;
+    }
+  }
+  const KANBAN_STAGES = ['applied', 'screening', 'interview', 'offer', 'hired', 'rejected'];
+  const STAGE_LABELS = { applied: 'Applied', screening: 'Screening', interview: 'Interview', offer: 'Offer', hired: 'Hired', rejected: 'Rejected' };
 
   // ── AUTH HELPERS ────────────────────────────────────────────────────────────
 
-  function getToken() { return localStorage.getItem(AUTH_KEY); }
-  function setToken(t) { localStorage.setItem(AUTH_KEY, t); }
-  function clearToken() { localStorage.removeItem(AUTH_KEY); }
+  function getToken() { return localStorage.getItem(AUTH_KEY) || localStorage.getItem('oj_employer_tok'); }
+  function setToken(t) {
+    localStorage.setItem(AUTH_KEY, t);
+    localStorage.setItem('oj_employer_tok', t);
+  }
+  function clearToken() {
+    localStorage.removeItem(AUTH_KEY);
+    localStorage.removeItem('oj_employer_tok');
+  }
   function authHeaders() { return { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' }; }
 
   function showAuthTab(tab) {
@@ -548,13 +649,14 @@
 
       // Pre-fill Post a Job form from employer profile
       const coEl = document.getElementById('jobCompany');
-      if (coEl && !coEl.value) coEl.value = currentUser.name || currentUser.email || '';
+      if (coEl && !coEl.value) coEl.value = currentUser.company || currentUser.name || '';
       const locEl = document.getElementById('jobLocation');
       if (locEl && !locEl.value) locEl.value = currentUser.preferred_location || '';
     }
     loadOverview();
     loadMyJobs();
     loadApplications();
+    loadPipelineJobs();
   }
 
   // ── DATA LOADERS ────────────────────────────────────────────────────────────
@@ -620,6 +722,7 @@
       if (!res.ok) { el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><h3>Could not load applications</h3></div>'; return; }
       const d = await res.json();
       const apps = d.applications || [];
+      employerApps = apps;
       if (!apps.length) {
         el.innerHTML = '<div class="empty-state"><div class="icon">📥</div><h3>No applications yet</h3></div>';
         return;
@@ -627,13 +730,14 @@
       el.innerHTML = '<div class="card"><div class="table-wrap"><table>' +
         '<thead><tr><th>Applicant</th><th>Job</th><th>Status</th><th>Applied</th><th>Actions</th></tr></thead>' +
         '<tbody>' + apps.map(a => '<tr>' +
-          '<td><div class="table-title"><span class="app-name" data-app-id="' + a.id + '">' + escHtml(a.applicant_name || 'Unknown') + '</span></div>' +
+          '<td><div class="table-title"><a href="#" class="app-name" onclick="openCandidate(' + a.id + ');return false;">' + escHtml(a.applicant_name || 'Unknown') + '</a></div>' +
             '<div class="table-company">' + escHtml(a.applicant_email || '') + '</div></td>' +
           '<td>' + escHtml(a.job_title || a.company || '—') + '</td>' +
-          '<td><span class="badge badge-pending">' + cap(a.status || 'pending') + '</span></td>' +
+          '<td><span class="badge badge-pending">' + cap(a.status || 'applied') + '</span></td>' +
           '<td>' + timeSince(a.applied_at) + '</td>' +
           '<td>' +
-            '<button class="action-btn" onclick="updateAppStatus(' + a.id + ',\'reviewing\')">✓ Review</button>' +
+            '<button class="action-btn" onclick="openCandidate(' + a.id + ')">View</button>' +
+            '<button class="action-btn" onclick="updateAppStatus(' + a.id + ',\'screening\')">✓ Review</button>' +
             '<button class="action-btn" onclick="updateAppStatus(' + a.id + ',\'interview\')">📅 Interview</button>' +
             '<button class="action-btn danger" onclick="updateAppStatus(' + a.id + ',\'rejected\')">✗ Reject</button></td>' +
         '</tr>').join('') + '</tbody></table></div></div>';
@@ -646,6 +750,99 @@
         method: 'PATCH', headers: authHeaders(),
         body: JSON.stringify({ status })
       });
+      loadApplications();
+      loadOverview();
+      loadPipeline();
+      if (window.currentAppId === id) {
+        const app = employerApps.find(a => a.id === id);
+        if (app) {
+          app.status = status;
+          document.getElementById('candidateStatusWrap').textContent = cap(status);
+        }
+      }
+    } catch {}
+  }
+
+  function openCandidate(appId) {
+    const app = employerApps.find(a => a.id === appId) || pipelineApps[appId];
+    if (!app) return;
+    window.currentAppId = appId;
+    document.getElementById('candidateName').textContent = app.applicant_name || 'Applicant';
+    document.getElementById('candidateEmail').textContent = app.applicant_email || '—';
+    document.getElementById('candidateApplied').textContent = timeSince(app.applied_at);
+    document.getElementById('candidateStatusWrap').textContent = cap(app.status || 'applied');
+    document.getElementById('candidateScore').textContent = app.ats_score != null ? app.ats_score + '%' : '—';
+    document.getElementById('candidateCover').textContent = app.cover_letter || app.notes || 'No cover letter provided.';
+    document.getElementById('candidateResume').textContent = app.resume_text || 'No resume text on file.';
+    document.getElementById('candidateModal').classList.add('open');
+    trapFocus(document.getElementById('candidateModalDialog'));
+  }
+
+  function closeCandidateModal() {
+    releaseFocus(document.getElementById('candidateModalDialog'));
+    document.getElementById('candidateModal').classList.remove('open');
+    window.currentAppId = null;
+  }
+
+  async function loadPipelineJobs() {
+    try {
+      const res = await fetch('/api/employer/dashboard', { headers: authHeaders() });
+      if (!res.ok) return;
+      const d = await res.json();
+      employerJobs = d.my_jobs || [];
+      const sel = document.getElementById('pipelineJobSelect');
+      const current = sel.value;
+      sel.innerHTML = '<option value="">Select a job...</option>' +
+        employerJobs.map(j => '<option value="' + j.id + '">' + escHtml(j.title) + '</option>').join('');
+      if (current) sel.value = current;
+      if (!current && employerJobs.length === 1) {
+        sel.value = String(employerJobs[0].id);
+        loadPipeline();
+      }
+    } catch {}
+  }
+
+  async function loadPipeline() {
+    const jobId = document.getElementById('pipelineJobSelect').value;
+    const board = document.getElementById('kanbanBoard');
+    if (!jobId) {
+      board.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="icon">📋</div><h3>Select a job to view pipeline</h3></div>';
+      return;
+    }
+    board.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="icon">⏳</div><h3>Loading pipeline...</h3></div>';
+    try {
+      const res = await fetch('/api/kanban/' + jobId, { headers: authHeaders() });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const stages = data.board || {};
+      pipelineApps = {};
+      KANBAN_STAGES.forEach(stage => (stages[stage] || []).forEach(c => { pipelineApps[c.id] = c; }));
+      board.innerHTML = KANBAN_STAGES.map(stage => {
+        const cards = stages[stage] || [];
+        return '<div class="kanban-col"><div class="kanban-col-header"><span>' + STAGE_LABELS[stage] + '</span><span>' + cards.length + '</span></div><div class="kanban-col-body">' +
+          (cards.length ? cards.map(c => {
+            const nextStages = KANBAN_STAGES.filter(s => s !== stage && s !== 'applied');
+            return '<div class="kanban-card" onclick="openCandidate(' + c.id + ')">' +
+              '<div class="kanban-card-name">' + escHtml(c.applicant_name || 'Applicant') + '</div>' +
+              '<div class="kanban-card-meta">' + escHtml(c.applicant_email || '') + ' · ' + timeSince(c.applied_at) + '</div>' +
+              '<div class="kanban-move" onclick="event.stopPropagation()">' +
+              nextStages.slice(0, 3).map(s => '<button onclick="moveKanbanCard(' + jobId + ',' + c.id + ',\'' + s + '\')">' + STAGE_LABELS[s] + '</button>').join('') +
+              '</div></div>';
+          }).join('') : '<div style="font-size:0.75rem;color:var(--text-muted);padding:0.5rem">No candidates</div>') +
+          '</div></div>';
+      }).join('');
+    } catch {
+      board.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="icon">⚠️</div><h3>Could not load pipeline</h3></div>';
+    }
+  }
+
+  async function moveKanbanCard(jobId, appId, stage) {
+    try {
+      await fetch('/api/kanban/' + jobId + '/move', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ application_id: appId, stage })
+      });
+      loadPipeline();
       loadApplications();
       loadOverview();
     } catch {}
@@ -694,28 +891,30 @@ async function handlePostJob(e) {
         skills:           document.getElementById('jobSkills').value.trim(),
         is_active:        1
       };
-      // Try Stripe checkout first if premium plan
+      const res = await fetch('/api/jobs', {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('Server error ' + res.status);
+      const created = await res.json();
+      const jobId = created.job_id;
+
       if (plan === 'premium') {
         const ckRes = await fetch('/api/payment/checkout', {
           method: 'POST', headers: authHeaders(),
-          body: JSON.stringify({ job_id: null, plan })
+          body: JSON.stringify({ job_id: jobId, plan })
         });
         const ck = await ckRes.json();
         if (ckRes.status === 503) {
-          // No Stripe — post free in demo mode
-          document.getElementById('freeNotice').textContent = '🧪 Demo: Stripe not configured. Posting free.';
+          document.getElementById('freeNotice').textContent = '🧪 Demo: Stripe not configured. Job posted free.';
         } else if (ck.checkout_url) {
-          if (confirm('Redirect to Stripe to complete payment for $199 AUD?')) {
+          if (confirm('Job created. Redirect to Stripe to complete $199 AUD payment?')) {
             window.location.href = ck.checkout_url;
           }
           btn.disabled = false; btn.textContent = '🚀 Publish Job →';
           return;
         }
       }
-      const res = await fetch('/api/jobs', {
-        method: 'POST', headers: authHeaders(), body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error('Server error ' + res.status);
+
       document.getElementById('postSuccess').textContent = '✅ Job published successfully!';
       document.getElementById('postSuccess').style.display = 'block';
       document.getElementById('postError').style.display = 'none';
@@ -744,10 +943,14 @@ async function handlePostJob(e) {
       document.getElementById('editDesc').value = j.description || '';
       document.getElementById('editSkills').value = j.skills || '';
       document.getElementById('editModal').classList.add('open');
+      trapFocus(document.getElementById('editModalDialog'));
     } catch {}
   }
 
-  function closeEditModal() { document.getElementById('editModal').classList.remove('open'); }
+  function closeEditModal() {
+    releaseFocus(document.getElementById('editModalDialog'));
+    document.getElementById('editModal').classList.remove('open');
+  }
 
   async function handleEditJob(e) {
     e.preventDefault();
@@ -806,6 +1009,7 @@ async function handlePostJob(e) {
         name:     document.getElementById('settingsName').value.trim(),
         phone:    document.getElementById('settingsPhone').value.trim() || null,
         preferred_location: document.getElementById('settingsLocation').value.trim() || null,
+        company:  document.getElementById('settingsCompany').value.trim() || null,
       };
       const res = await fetch('/api/user/profile', {
         method: 'PATCH', headers: authHeaders(),
@@ -830,6 +1034,7 @@ async function handlePostJob(e) {
       if (t) t.classList.toggle('active', n === name);
       if (navs[i]) navs[i].classList.toggle('active', n === name);
     });
+    if (name === 'pipeline') loadPipelineJobs();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -868,36 +1073,5 @@ async function handlePostJob(e) {
     document.getElementById('dashboard').style.display = 'none';
   });
 </script>
-
-<!-- CANDIDATE DETAIL MODAL -->
-<div class="modal-overlay" id="candidateModal">
-  <div class="modal" style="max-width:680px">
-    <div class="modal-header">
-      <div class="modal-title" id="candidateName">Applicant</div>
-      <button class="modal-close" onclick="closeCandidateModal()">x</button>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem;">
-      <div><div class="form-label">Email</div><div id="candidateEmail" style="color:var(--text)">-</div></div>
-      <div><div class="form-label">Applied</div><div id="candidateApplied" style="color:var(--text)">-</div></div>
-      <div><div class="form-label">Status</div><div id="candidateStatusWrap">-</div></div>
-      <div><div class="form-label">Match Score</div><div id="candidateScore" style="color:var(--text)">-</div></div>
-    </div>
-    <div class="form-group">
-      <div class="form-label">Cover Letter / Notes</div>
-      <div id="candidateCover" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:1rem;font-size:0.875rem;color:var(--text);white-space:pre-wrap;max-height:200px;overflow-y:auto;">-</div>
-    </div>
-    <div class="form-group">
-      <div class="form-label">Resume Text</div>
-      <div id="candidateResume" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:1rem;font-size:0.8rem;color:var(--text-muted);white-space:pre-wrap;max-height:250px;overflow-y:auto;">-</div>
-    </div>
-    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;" id="candidateActions">
-      <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,\'reviewing\')">Mark Reviewed</button>
-      <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,\'shortlisted\')">Shortlist</button>
-      <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,\'interview\')">Schedule Interview</button>
-      <button class="btn btn-danger" onclick="updateAppStatus(window.currentAppId,\'rejected\')">Reject</button>
-      <button class="btn btn-ghost" onclick="closeCandidateModal()">Close</button>
-    </div>
-  </div>
-</div>
 </body>
 </html>

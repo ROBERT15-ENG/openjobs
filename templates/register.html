@@ -168,7 +168,7 @@
 
         <div class="form-group">
           <label class="form-label">What best describes you?</label>
-          <select class="form-select" id="roleType" required>
+          <select class="form-select" id="roleType" required onchange="toggleCompanyField()">
             <option value="" disabled selected>Select your path...</option>
             <option value="job_seeker">👔 Job Seeker — Looking for work</option>
             <option value="student">🎓 Student / Graduate</option>
@@ -176,6 +176,11 @@
             <option value="freelancer">💻 Freelancer / Contractor</option>
             <option value="employer">🏢 Employer — Hiring talent</option>
           </select>
+        </div>
+
+        <div class="form-group" id="companyGroup" style="display:none">
+          <label class="form-label">Company Name</label>
+          <input type="text" class="form-input" id="companyName" placeholder="Your company or organisation">
         </div>
 
         <div class="form-group">
@@ -254,6 +259,15 @@
     el.style.display = 'flex';
   }
 
+  function toggleCompanyField() {
+    const isEmployer = document.getElementById('roleType').value === 'employer';
+    const group = document.getElementById('companyGroup');
+    const company = document.getElementById('companyName');
+    group.style.display = isEmployer ? 'block' : 'none';
+    company.required = isEmployer;
+    if (!isEmployer) company.value = '';
+  }
+
   async function handleRegister(e) {
     e.preventDefault();
     const btn = document.getElementById('registerBtn');
@@ -262,8 +276,12 @@
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
     const confirm = document.getElementById('confirmPassword').value;
+    const roleType = document.getElementById('roleType').value;
+    const isEmployer = roleType === 'employer';
+    const company = document.getElementById('companyName').value.trim();
 
-    if (!first || !last || !email || !password) { showAlert('error', 'Please fill in all fields'); return; }
+    if (!first || !last || !email || !password || !roleType) { showAlert('error', 'Please fill in all fields'); return; }
+    if (isEmployer && !company) { showAlert('error', 'Company name is required for employer accounts'); return; }
     if (password !== confirm) { showAlert('error', 'Passwords do not match'); return; }
     if (password.length < 8) { showAlert('error', 'Password must be at least 8 characters'); return; }
 
@@ -271,24 +289,30 @@
     btn.textContent = 'Creating account...';
 
     try {
-      const res = await fetch('/api/auth/register', {
+      const endpoint = isEmployer ? '/api/auth/register-employer' : '/api/auth/register';
+      const payload = isEmployer
+        ? { name: first + ' ' + last, email, password, company }
+        : { name: first + ' ' + last, email, password };
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({name: first + ' ' + last, email, password, role: 'user'})
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        if (data.token) localStorage.setItem('token', data.token);
+        const dest = isEmployer ? '/employer' : '/user';
         showAlert('success', 'Account created! Redirecting to dashboard...');
-        setTimeout(() => window.location.href = '/user', 1000);
+        setTimeout(() => window.location.href = dest, 1000);
       } else {
         showAlert('error', data.error || 'Registration failed. Try again.');
         btn.disabled = false;
         btn.textContent = 'Create Account →';
       }
     } catch(err) {
-      // Demo mode fallback
-      showAlert('success', 'Demo account created! Redirecting...');
-      setTimeout(() => window.location.href = '/user', 1000);
+      showAlert('error', 'Cannot connect to server. Is the API running?');
+      btn.disabled = false;
+      btn.textContent = 'Create Account →';
     }
   }
 

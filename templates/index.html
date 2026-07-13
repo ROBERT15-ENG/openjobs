@@ -254,6 +254,7 @@
       color: var(--text-muted); cursor: pointer; transition: all 0.2s;
     }
     .job-actions .btn-sm:hover { border-color: var(--primary); color: var(--primary); }
+    .job-actions .btn-sm.saved { color: var(--warning); border-color: rgba(245,158,11,0.4); }
     .job-actions .btn-apply {
       padding: 0.4rem 0.875rem; border-radius: 8px;
       font-size: 0.8rem; font-weight: 600;
@@ -299,6 +300,8 @@
     .modal-footer .btn-save:hover { border-color: var(--primary); color: var(--primary); }
     .modal-footer .btn-apply-modal { background: var(--primary); color: #000; border: none; }
     .modal-footer .btn-apply-modal:hover { background: var(--primary-dark); box-shadow: 0 4px 20px rgba(0,212,170,0.3); }
+    .modal-footer .btn-save.saved { color: var(--warning); border-color: rgba(245,158,11,0.4); }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 
     /* ── EMPTY STATE ── */
     .empty-state { text-align: center; padding: 4rem 2rem; }
@@ -363,6 +366,13 @@
       .hero h1 { font-size: 1.6rem; }
       .stats-bar span { font-size: 0.75rem; }
       .header-inner { padding: 0 1rem; }
+      .modal-footer {
+        position: fixed; bottom: 0; left: 0; right: 0; z-index: 210;
+        background: var(--bg-card); border-top: 1px solid var(--border);
+        box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
+        padding: 1rem 1.25rem calc(1rem + env(safe-area-inset-bottom, 0px));
+      }
+      .modal { max-height: calc(100vh - 88px); margin-bottom: 72px; }
     }
 
     /* Scrollbar */
@@ -383,14 +393,14 @@
     </div>
     <nav>
       <a href="/">Find Jobs</a>
-      <a href="#">Companies</a>
-      <a href="#">Salary Guide</a>
-      <a href="#">Learning</a>
-      <a href="/templates/employer.html">For Employers</a>
+      <a href="/companies">Companies</a>
+      <a href="/salary">Salary Guide</a>
+      <a href="/user">Dashboard</a>
+      <a href="/employer">For Employers</a>
     </nav>
     <div class="header-actions">
-      <a href="#" class="btn btn-ghost">Post a Job</a>
-      <a href="#" class="btn btn-primary">Sign Up Free</a>
+      <a href="/employer" class="btn btn-ghost">Post a Job</a>
+      <a href="/register" class="btn btn-primary">Sign Up Free</a>
       <button class="hamburger" id="hamburgerBtn" onclick="toggleMobileNav()" aria-label="Toggle menu">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
@@ -403,7 +413,7 @@
 <!-- HERO -->
 <section class="hero">
   <h1>Find Your Next<br><span class="gradient">Dream Job</span></h1>
-  <p>69 jobs matched to your skills. Updated every hour. Powered by AI matching.</p>
+  <p id="heroSub">Browse open roles from top companies. Updated live. Powered by AI matching.</p>
   <div class="search-section">
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="Job title, keyword, or company..." autocomplete="off">
@@ -427,10 +437,9 @@
 
 <!-- STATS BAR -->
 <div class="stats-bar">
-  <div class="stat"><div class="stat-val" id="statJobs">69</div><div class="stat-lbl">Active Jobs</div></div>
-  <div class="stat"><div class="stat-val">51</div><div class="stat-lbl">Companies</div></div>
-  <div class="stat"><div class="stat-val">3</div><div class="stat-lbl">New Today</div></div>
-  <div class="stat"><div class="stat-val">92%</div><div class="stat-lbl">AI Match Rate</div></div>
+  <div class="stat"><div class="stat-val" id="statJobs">—</div><div class="stat-lbl">Active Jobs</div></div>
+  <div class="stat"><div class="stat-val" id="statCompanies">—</div><div class="stat-lbl">Companies</div></div>
+  <div class="stat"><div class="stat-val" id="statNewToday">—</div><div class="stat-lbl">New Today</div></div>
 </div>
 
 <!-- MAIN LAYOUT -->
@@ -524,16 +533,16 @@
 </div>
 
 <!-- JOB DETAIL MODAL -->
-<div class="modal-overlay" id="jobModal" onclick="if(event.target===this)closeModal()">
-  <div class="modal">
+<div class="modal-overlay" id="jobModal" role="presentation" onclick="if(event.target===this)closeModal()">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" id="jobModalDialog">
     <div class="modal-header">
-      <div class="modal-logo" id="modalLogo">G</div>
+      <div class="modal-logo" id="modalLogo" aria-hidden="true">G</div>
       <div class="modal-title-block">
         <div class="modal-title" id="modalTitle">Loading...</div>
         <div class="modal-company" id="modalCompany"></div>
         <div class="badges" id="modalBadges" style="margin-top:0.5rem;"></div>
       </div>
-      <button class="modal-close" onclick="closeModal()">×</button>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close job details">×</button>
     </div>
     <div class="modal-body">
       <div class="modal-meta" id="modalMeta"></div>
@@ -551,7 +560,8 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-save" onclick="saveJob()">☆ Save Job</button>
+      <button class="btn btn-save" id="modalSaveBtn" onclick="saveJob()" aria-label="Save job">☆ Save Job</button>
+      <a class="btn btn-ghost" id="modalViewLink" href="#" style="margin-right:auto;padding:0.7rem 1rem;border-radius:10px;border:1px solid var(--border);color:var(--text-muted);text-decoration:none;font-size:0.85rem;font-weight:600">View full posting</a>
       <button class="btn btn-apply-modal" onclick="applyToJob()">Apply Now →</button>
     </div>
   </div>
@@ -566,14 +576,96 @@
   // ── STATE ──────────────────────────────────────────────────────────
   let currentPage = 1;
   let currentJob = null;
+  let savedJobIds = new Set();
+  let modalTrapHandler = null;
   const PAGE_SIZE = 20;
 
+  function getToken() {
+    return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+  }
+
+  async function loadSavedJobIds() {
+    const token = getToken();
+    if (!token) {
+      savedJobIds = new Set();
+      return;
+    }
+    try {
+      const res = await fetch('/api/saved_jobs', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!res.ok) return;
+      const jobs = await res.json();
+      savedJobIds = new Set((jobs || []).map(j => j.id));
+    } catch {
+      savedJobIds = new Set();
+    }
+  }
+
+  function updateModalSaveButton() {
+    const btn = document.getElementById('modalSaveBtn');
+    if (!btn || !currentJob) return;
+    const isSaved = savedJobIds.has(currentJob.id);
+    btn.textContent = isSaved ? '★ Saved' : '☆ Save Job';
+    btn.classList.toggle('saved', isSaved);
+    btn.setAttribute('aria-label', isSaved ? 'Unsave job' : 'Save job');
+  }
+
+  function trapModalFocus(modalEl) {
+    const focusable = () => Array.from(modalEl.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])'
+    )).filter(el => el.offsetParent !== null);
+    if (modalTrapHandler) modalEl.removeEventListener('keydown', modalTrapHandler);
+    modalTrapHandler = (e) => {
+      if (e.key !== 'Tab') return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    modalEl.addEventListener('keydown', modalTrapHandler);
+    const closeBtn = modalEl.querySelector('.modal-close');
+    if (closeBtn) closeBtn.focus();
+  }
+
+  function releaseModalFocus(modalEl) {
+    if (modalTrapHandler) {
+      modalEl.removeEventListener('keydown', modalTrapHandler);
+      modalTrapHandler = null;
+    }
+  }
+
   // ── INIT ──────────────────────────────────────────────────────────
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
+    loadStats();
+    await loadSavedJobIds();
     fetchJobs();
     document.getElementById('searchInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
     document.getElementById('locationInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
+    const jobParam = new URLSearchParams(window.location.search).get('job');
+    if (jobParam) openJob(parseInt(jobParam, 10));
   });
+
+  function loadStats() {
+    fetch('/api/stats')
+      .then(r => r.ok ? r.json() : null)
+      .then(s => {
+        if (!s) return;
+        document.getElementById('statJobs').textContent = s.total_jobs ?? '—';
+        document.getElementById('statCompanies').textContent = s.total_companies ?? '—';
+        document.getElementById('statNewToday').textContent = s.new_today ?? '—';
+        const sub = document.getElementById('heroSub');
+        if (sub && s.total_jobs != null) {
+          sub.textContent = s.total_jobs + ' open roles from ' + (s.total_companies || 0) + ' companies. Updated live. Powered by AI matching.';
+        }
+      })
+      .catch(() => {});
+  }
 
   // ── FETCH JOBS ────────────────────────────────────────────────────
   function fetchJobs() {
@@ -593,6 +685,9 @@
       .filter(wa  => document.getElementById('wa-' + wa)?.checked);
 
     let url = `/api/jobs?page=${currentPage}&limit=${PAGE_SIZE}`;
+    const headers = {};
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
     if (search) url += `&q=${encodeURIComponent(search)}`;
     if (location) url += `&location=${encodeURIComponent(location)}`;
     if (category) url += `&category=${encodeURIComponent(category)}`;
@@ -601,7 +696,7 @@
     if (workTypes.length)  url += `&work_type=${workTypes.join(',')}`;
     if (workArr.length)    url += `&work_arrangement=${workArr.join(',')}`;
 
-    fetch(url)
+    fetch(url, { headers })
       .then(r => r.json())
       .then(data => {
         let jobs = data.jobs || [];
@@ -629,10 +724,13 @@
       const summary = job.search_summary || (job.description || '').substring(0, 150) + '...';
       const descLen = (job.description || '').length;
       const isEmpty = descLen < 100;
-      const matchClass = job.score >= 80 ? 'match-high' : job.score >= 60 ? 'match-mid' : 'match-low';
+      const matchBadge = (job.score != null && job.score > 0)
+        ? `<div class="match-badge ${job.score >= 80 ? 'match-high' : job.score >= 60 ? 'match-mid' : 'match-low'}">${Math.round(job.score)}% match</div>`
+        : '';
+      const isSaved = savedJobIds.has(job.id);
 
       return `
-      <div class="job-card animate-in" style="animation-delay:${i*40}ms" onclick="openJob(${job.id})">
+      <div class="job-card animate-in" style="animation-delay:${i*40}ms" onclick="openJob(${job.id})" role="button" tabindex="0" onkeydown="if(event.key==='Enter')openJob(${job.id})">
         <div class="job-logo">${companyLetter}</div>
         <div class="job-content">
           <div class="job-top">
@@ -640,7 +738,7 @@
               <div class="job-title">${escHtml(job.title)}</div>
               <div class="job-company">${escHtml(job.company)} · ${escHtml(job.location)}</div>
             </div>
-            <div class="match-badge ${matchClass}">${job.score || 70}% match</div>
+            ${matchBadge}
           </div>
           <div class="badges">${badge}</div>
           <div class="job-summary">${isEmpty ? '📋 Description available on job detail page' : escHtml(summary)}</div>
@@ -654,7 +752,7 @@
           </div>
         </div>
         <div class="job-actions" onclick="event.stopPropagation()">
-          <button class="btn-sm" onclick="saveJobToggle(${job.id}, this, event)">☆</button>
+          <button class="btn-sm${isSaved ? ' saved' : ''}" onclick="saveJobToggle(${job.id}, this, event)" aria-label="${isSaved ? 'Unsave' : 'Save'} job">${isSaved ? '★' : '☆'}</button>
           <button class="btn-apply" onclick="openJob(${job.id}); event.stopPropagation()">Apply</button>
         </div>
       </div>`;
@@ -699,7 +797,6 @@
         document.getElementById('modalCompany').textContent = job.company + ' · ' + job.location;
         document.getElementById('modalBadges').innerHTML = badge;
         document.getElementById('modalDesc').textContent = job.description || 'No description available.';
-        document.getElementById('modalSalary').textContent = formatSalary(job) || 'Competitive';
         document.getElementById('modalMeta').innerHTML = `
           ${salaryEl(job)}
           <div class="modal-meta-item">📍 ${escHtml(job.location)}</div>
@@ -729,10 +826,15 @@
         }
         document.getElementById('jobModal').classList.add('open');
         document.body.style.overflow = 'hidden';
+        const viewLink = document.getElementById('modalViewLink');
+        if (viewLink) viewLink.href = job.url || ('/jobs/' + job.id);
+        updateModalSaveButton();
+        trapModalFocus(document.getElementById('jobModalDialog'));
       });
   }
 
   function closeModal() {
+    releaseModalFocus(document.getElementById('jobModalDialog'));
     document.getElementById('jobModal').classList.remove('open');
     document.body.style.overflow = '';
   }
@@ -744,15 +846,22 @@
 
   function applyToJob() {
     if (!currentJob) return;
+    const token = getToken();
+    if (!token) { window.location.href = '/login?redirect=' + encodeURIComponent('/?job=' + currentJob.id); return; }
     fetch('/api/applications', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({job_id: currentJob.id, user_id: 1})
-    }).then(r => r.json())
-      .then(d => {
-        if (d.success) {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({job_id: currentJob.id})
+    }).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d })))
+      .then(({ ok, status, data: d }) => {
+        if (ok && d.success) {
           alert('✅ Application submitted! Track it in your dashboard.');
           closeModal();
+        } else if (status === 409) {
+          alert('ℹ️ ' + (d.error || 'You have already applied to this job.'));
         } else {
           alert('⚠️ ' + (d.error || 'Something went wrong'));
         }
@@ -760,18 +869,49 @@
       .catch(() => alert('⚠️ Could not submit application. Try again.'));
   }
 
-  function saveJob() { alert('💾 Job saved to your profile!'); closeModal(); }
-  function saveJobToggle(id, btn, e) {
-    if (e) e.stopPropagation();
-    const isSaved = btn.textContent === '★';
+  function saveJob() {
+    if (!currentJob) return;
+    const token = getToken();
+    if (!token) { window.location.href = '/login?redirect=' + encodeURIComponent('/?job=' + currentJob.id); return; }
+    const isSaved = savedJobIds.has(currentJob.id);
     fetch('/api/saved_jobs', {
       method: isSaved ? 'DELETE' : 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({job_id: id, user_id: 1})
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ job_id: currentJob.id })
     }).then(r => r.json()).then(d => {
-      if (d.success || d.error && d.error.includes('UNIQUE')) {
-        btn.textContent = isSaved ? '☆' : '★';
-        btn.style.color = isSaved ? '' : 'var(--warning)';
+      if (d.success || (!isSaved && d.error && d.error.includes('UNIQUE'))) {
+        if (isSaved) savedJobIds.delete(currentJob.id);
+        else savedJobIds.add(currentJob.id);
+        updateModalSaveButton();
+        fetchJobs();
+        if (!isSaved) alert('💾 Job saved to your profile!');
+        else alert('Removed from saved jobs.');
+        if (!isSaved) closeModal();
+      } else {
+        alert(d.error || 'Could not save job.');
+      }
+    }).catch(() => alert('Could not save job. Try again.'));
+  }
+  function saveJobToggle(id, btn, e) {
+    if (e) e.stopPropagation();
+    const token = getToken();
+    if (!token) { window.location.href = '/login?redirect=' + encodeURIComponent('/?job=' + id); return; }
+    const isSaved = savedJobIds.has(id);
+    fetch('/api/saved_jobs', {
+      method: isSaved ? 'DELETE' : 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({job_id: id})
+    }).then(r => r.json()).then(d => {
+      if (d.success || (d.error && d.error.includes('UNIQUE'))) {
+        if (isSaved) savedJobIds.delete(id);
+        else savedJobIds.add(id);
+        btn.textContent = savedJobIds.has(id) ? '★' : '☆';
+        btn.classList.toggle('saved', savedJobIds.has(id));
+        btn.setAttribute('aria-label', savedJobIds.has(id) ? 'Unsave job' : 'Save job');
+        if (currentJob && currentJob.id === id) updateModalSaveButton();
       } else {
         alert('Could not save job. Is the server running?');
       }
