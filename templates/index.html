@@ -209,6 +209,26 @@
       transition: all 0.2s;
       display: inline-flex; align-items: center; justify-content: center; gap: 4px;
     }
+    /* ── CITY SUB-FILTER ── */
+    .city-subfilter {
+      animation: slideDown 0.18s ease-out;
+      justify-content: flex-start !important;
+    }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .city-chip {
+      min-height: 36px;
+      padding: 0.3rem 0.75rem; border-radius: 20px;
+      border: 1px solid var(--color-border); background: transparent;
+      color: var(--color-text-muted); font-size: var(--type-caption);
+      cursor: pointer; transition: all 0.15s; font-family: inherit;
+    }
+    .city-chip:hover, .city-chip.active {
+      border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-glow);
+    }
+
     .quick-chip:hover, .quick-chip.active {
       border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-glow);
     }
@@ -521,14 +541,23 @@
         Search
       </button>
     </div>
-    <div class="quick-filters">
-      <button class="quick-chip active" onclick="setQuickFilter(this, '')">All Jobs</button>
-      <button class="quick-chip" onclick="setQuickFilter(this, 'Remote')"><svg class="ico" style="color:var(--color-primary)"><use href="#ico-globe"/></svg> Remote</button>
-      <button class="quick-chip" onclick="setQuickFilter(this, 'full_time')">Full-time</button>
-      <button class="quick-chip" onclick="setQuickFilter(this, 'part_time')">Part-time</button>
-      <button class="quick-chip" onclick="setQuickFilter(this, 'internship')">Internship</button>
-      <button class="quick-chip" onclick="setQuickFilter(this, 'Nairobi')">Nairobi</button>
-      <button class="quick-chip" onclick="setQuickFilter(this, 'Sydney')">Sydney</button>
+    <div class="quick-filters" id="countryChips">
+      <button class="quick-chip active" data-country="" onclick="setCountryFilter(this, '')">🌍 All</button>
+      <button class="quick-chip" data-country="remote" onclick="setCountryFilter(this, 'remote')">🌎 Remote</button>
+      <button class="quick-chip" data-country="africa" onclick="setCountryFilter(this, 'africa')">🌍 Africa</button>
+      <button class="quick-chip" data-country="asia" onclick="setCountryFilter(this, 'asia')">🌏 Asia</button>
+      <button class="quick-chip" data-country="europe" onclick="setCountryFilter(this, 'europe')">🌍 Europe</button>
+      <button class="quick-chip" data-country="usa" onclick="setCountryFilter(this, 'usa')">🇺🇸 USA</button>
+      <button class="quick-chip" data-country="oceania" onclick="setCountryFilter(this, 'oceania')">🌏 Oceania</button>
+      <button class="quick-chip" data-country="full_time" onclick="setQuickFilter(this, 'full_time')">Full-time</button>
+      <button class="quick-chip" data-country="part_time" onclick="setQuickFilter(this, 'part_time')">Part-time</button>
+      <button class="quick-chip" data-country="contract" onclick="setQuickFilter(this, 'contract')">Contract</button>
+      <button class="quick-chip" data-country="internship" onclick="setQuickFilter(this, 'internship')">Internship</button>
+    </div>
+    <!-- City sub-filter — shown when a country/region is selected -->
+    <div class="quick-filters city-subfilter" id="citySubfilter" style="display:none; margin-top:0.4rem;">
+      <span style="font-size:var(--type-caption);color:var(--color-text-muted);align-self:center;margin-right:0.25rem;">Major cities <span id="regionLabel"></span>:</span>
+      <div id="cityChips"></div>
     </div>
   </div>
 </section>
@@ -599,12 +628,47 @@
       <div class="filter-group">
         <select class="filter-select" id="filterLocation" onchange="fetchJobs()">
           <option value="">All Locations</option>
-          <option value="Nairobi">Nairobi</option>
-          <option value="Sydney">Sydney</option>
-          <option value="Melbourne">Melbourne</option>
-          <option value="Remote">Remote / Global</option>
-          <option value="Lagos">Lagos</option>
-          <option value="USA">USA</option>
+          <optgroup label="🌍 Africa">
+            <option value="Nairobi">Nairobi</option>
+            <option value="Lagos">Lagos</option>
+            <option value="Accra">Accra</option>
+            <option value="Kampala">Kampala</option>
+            <option value="Johannesburg">Johannesburg</option>
+            <option value="Cairo">Cairo</option>
+            <option value="Dar es Salaam">Dar es Salaam</option>
+          </optgroup>
+          <optgroup label="🌏 Asia">
+            <option value="Singapore">Singapore</option>
+            <option value="Bangalore">Bangalore</option>
+            <option value="Mumbai">Mumbai</option>
+            <option value="Dubai">Dubai</option>
+            <option value="Hong Kong">Hong Kong</option>
+            <option value="Tokyo">Tokyo</option>
+          </optgroup>
+          <optgroup label="🌍 Europe">
+            <option value="London">London</option>
+            <option value="Berlin">Berlin</option>
+            <option value="Paris">Paris</option>
+            <option value="Amsterdam">Amsterdam</option>
+            <option value="Zurich">Zurich</option>
+          </optgroup>
+          <optgroup label="🇺🇸 USA">
+            <option value="New York">New York</option>
+            <option value="San Francisco">San Francisco</option>
+            <option value="Seattle">Seattle</option>
+            <option value="Austin">Austin</option>
+            <option value="Los Angeles">Los Angeles</option>
+          </optgroup>
+          <optgroup label="🌏 Oceania">
+            <option value="Sydney">Sydney</option>
+            <option value="Melbourne">Melbourne</option>
+            <option value="Brisbane">Brisbane</option>
+            <option value="Perth">Perth</option>
+            <option value="Auckland">Auckland</option>
+          </optgroup>
+          <optgroup label="🌎 Remote">
+            <option value="Remote">Remote / Global</option>
+          </optgroup>
         </select>
       </div>
     </div>
@@ -1131,6 +1195,117 @@
 
   // Keyboard close modal
   document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+
+
+// ── COUNTRY / CITY TWO-TIER LOCATION FILTER ────────────────────────────
+const COUNTRY_CITIES = {
+  africa:  ['Nairobi', 'Lagos', 'Accra', 'Kampala', 'Johannesburg', 'Cairo', 'Dar es Salaam', 'Kigali', 'Addis Ababa'],
+  asia:    ['Singapore', 'Bangalore', 'Mumbai', 'Manila', 'Ho Chi Minh', 'Bangkok', 'Jakarta', 'Kuala Lumpur', 'Hong Kong', 'Tokyo', 'Seoul', 'Dubai', 'Tel Aviv'],
+  europe:  ['London', 'Berlin', 'Paris', 'Amsterdam', 'Stockholm', 'Madrid', 'Barcelona', 'Warsaw', 'Prague', 'Vienna', 'Zurich', 'Lisbon', 'Dublin', 'Milan', 'Rome'],
+  usa:     ['New York', 'San Francisco', 'Seattle', 'Austin', 'Boston', 'Chicago', 'Los Angeles', 'Denver', 'Atlanta', 'Miami', 'Washington DC'],
+  oceania: ['Sydney', 'Melbourne', 'Brisbane', 'Auckland', 'Perth', 'Wellington'],
+  remote:  [],
+};
+
+let activeRegion = '';
+let activeCity = '';
+let currentLocationHint = '';  // e.g. 'africa' — passed to API for region-wide search
+
+function setCountryFilter(btn, country) {
+  // Deactivate country chips
+  document.querySelectorAll('#countryChips .quick-chip').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+
+  activeRegion = country;
+  activeCity = '';
+
+  const sub = document.getElementById('citySubfilter');
+  const cityWrap = document.getElementById('cityChips');
+  const regionLabel = document.getElementById('regionLabel');
+
+  if (!country || !COUNTRY_CITIES[country] || COUNTRY_CITIES[country].length === 0) {
+    sub.style.display = 'none';
+    cityWrap.innerHTML = '';
+    currentLocationHint = '';
+    fetchJobs();
+    return;
+  }
+
+  const regionNames = { africa:'Africa', asia:'Asia', europe:'Europe', usa:'USA', oceania:'Oceania' };
+  if (regionLabel) regionLabel.textContent = 'in ' + (regionNames[country] || country);
+
+  cityWrap.innerHTML = COUNTRY_CITIES[country].map(city =>
+    `<button class="city-chip" data-city="${city}" onclick="setCityFilter(this, '${city.replace(/'/g,"\\'")}')">${city}</button>`
+  ).join('');
+  sub.style.display = 'flex';
+  currentLocationHint = country;
+  fetchJobs();
+}
+
+function setCityFilter(chip, city) {
+  document.querySelectorAll('.city-chip').forEach(c => c.classList.remove('active'));
+  if (activeCity === city) { activeCity = ''; fetchJobs(); return; }
+  chip.classList.add('active');
+  activeCity = city;
+  currentLocationHint = '';
+  fetchJobs();
+}
+
+// Override fetchJobs to include country + city
+const _origFetchJobs = window.fetchJobs || function(){};
+function fetchJobs() {
+  const params = new URLSearchParams();
+
+  // Work-type from active quick chips (non-country)
+  const wtChip = [...document.querySelectorAll('#countryChips .quick-chip')]
+    .find(c => ['full_time','part_time','contract','internship'].includes(c.dataset.country) && c.classList.contains('active'));
+  const workType = wtChip ? wtChip.dataset.country : '';
+
+  const search = (document.getElementById('searchInput')||{}).value?.trim() || '';
+  const sidebarLoc = (document.getElementById('filterLocation')||{}).value || '';
+  const isRemote = [...document.querySelectorAll('#countryChips .quick-chip')]
+    .some(c => c.dataset.country === 'remote' && c.classList.contains('active'));
+  const sort = (document.getElementById('sortSelect')||{}).value || 'newest';
+
+  if (workType) params.set('work_type', workType);
+  if (search) params.set('q', search);
+  if (sidebarLoc && !activeCity) params.set('location', sidebarLoc);
+  if (isRemote) params.set('work_arrangement', 'remote');
+  if (activeCity) {
+    params.set('location', activeCity);
+  } else if (currentLocationHint) {
+    params.set('location_hint', currentLocationHint);
+  }
+  params.set('sort', sort);
+  params.set('limit', '30');
+
+  const token = localStorage.getItem('token');
+  const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+  document.getElementById('jobsList').innerHTML = '<div style="text-align:center;padding:3rem;color:var(--color-text-muted);"><div style="display:inline-block;width:20px;height:20px;border:2px solid var(--color-border);border-top-color:var(--color-primary);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:8px;"></div> Loading...</div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+  document.getElementById('resultsCount').textContent = '…';
+
+  fetch('/api/jobs?' + params.toString(), { headers })
+    .then(r => r.json())
+    .then(data => renderJobs(Array.isArray(data) ? data : (data.jobs||[])))
+    .catch(() => {
+      document.getElementById('jobsList').innerHTML = '<p style="color:var(--color-danger);text-align:center;padding:2rem;">Failed to load jobs.</p>';
+    });
+}
+
+// Override setQuickFilter to work with country chips
+function setQuickFilter(btn, value) {
+  document.querySelectorAll('#countryChips .quick-chip').forEach(c => {
+    if (['full_time','part_time','contract','internship'].includes(c.dataset.country)) c.classList.remove('active');
+  });
+  btn.classList.add('active');
+  activeRegion = ''; activeCity = ''; currentLocationHint = '';
+  const sub = document.getElementById('citySubfilter');
+  if (sub) sub.style.display = 'none';
+  document.getElementById('cityChips').innerHTML = '';
+  fetchJobs();
+}
+
 </script>
 </body>
 </html>

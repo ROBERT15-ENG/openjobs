@@ -806,50 +806,96 @@ def _check_password_complexity(password: str):
         return False, "Need at least one symbol (!@#$%^&* etc)"
     return True, "OK"
 
-# ============ GUEST BROWSE (public /api/jobs — no auth required) ============
-@app.route('/api/jobs', methods=['GET'])
+def _block_token(token):
+    """Add a token to the blocklist."""
+    if _USING_REDIS_BLOCKLIST:
+        import time
+        # Keep blocked tokens for 7 days (max token age)
+        _redis_client.setex(f"blocked:{token}", 7 * 24 * 3600, "1")
+    else:
+        BLOCKED_TOKENS.add(token)  # in-memory fallback, reset on restart
 
+def _is_token_blocked(token):
+    """Check if a token is in the blocklist."""
+    if _USING_REDIS_BLOCKLIST:
+        return bool(_redis_client.exists(f"blocked:{token}"))
+    return token in BLOCKED_TOKENS
 
-def list_jobs_public():
-    """Public job listing — guests can browse without logging in."""
+def _extract_skills_fast(text: str):
+    """Fast keyword-based skill extraction against skills_taxonomy.
+    Uses direct sqlite3 — no Flask context required.
+    """
     try:
         db_path = os.path.join(os.path.dirname(__file__), '..', 'jobs.db')
-        con = sqlite3.connect(db_path)
-        con.row_factory = sqlite3.Row
-        cur = con.execute("""
-            SELECT id, title, company, location, salary, salary_min, salary_max, salary_currency,
-                   work_type, job_type, skills, created_at, view_count,
-                   is_featured, application_count, company_rating, company_logo
-            FROM jobs
-            WHERE is_active = 1
-              AND (expires_at IS NULL OR expires_at > date('now'))
-            ORDER BY created_at DESC LIMIT 50
-        """)
-        rows = [dict(r) for r in cur.fetchall()]
-        con.close()
-        for r in rows:
-            r['tags'] = [s.strip() for s in r.get('skills', '').split(',') if s.strip()] if r.get('skills') else []
-            r['views'] = r.pop('view_count', 0)
-            # Auto-generate salary display string from min/max
-            if r.get('salary_min') or r.get('salary_max'):
-                r['salary'] = _fmt_salary(r.get('salary_min'), r.get('salary_max'), r.get('salary_currency', 'AUD'))
-        return jsonify({'jobs': rows, 'guest': True})
+        db = sqlite3.connect(db_path)
+        rows = db.execute("SELECT name, aliases FROM skills_taxonomy").fetchall()
+        db.close()
+        text_lower = text.lower()
+        matched = []
+        for name, aliases in rows:
+            if name.lower() in text_lower:
+                matched.append(name)
+            elif aliases:
+                for alias in aliases.split(','):
+                    if alias.strip().lower() in text_lower:
+                        matched.append(name)
+                        break
+        return list(dict.fromkeys(matched))
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f'[_extract_skills_fast] {e}')
+        return []
 
 
-def _fmt_salary(smin, smax, currency='AUD'):
-    if not smin and not smax:
-        return ''
-    def f(n):
-        if not n: return ''
-        n = int(n)
-        return currency + ' ' + str(round(n/1000)*1) + 'k'
-    if smin and smax and smin != smax:
-        return f(smin) + ' - ' + f(smax)
-    if smin:
-        return 'From ' + f(smin)
-    return 'Up to ' + f(smax)
+
+def _create_token(user_id, email, role, employer_id=None):
+    """Create a real HMAC-signed JWT token."""
+    payload = {
+        'user_id': user_id,
+        'email': email,
+        'role': role,
+        'employer_id': employer_id or user_id,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7),
+        'iat': datetime.datetime.utcnow(),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
+
+
+def _decode_token(token):
+    """Decode and verify a JWT token. Returns payload or None."""
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+    except jwt.ExpiredSignatureError:
+        return None  # 'Token expired'
+    except jwt.InvalidTokenError:
+        return None  # 'Invalid token'
+
+
+def require_auth(f):
+    """Decorator to protect routes with JWT token."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.headers.get('Authorization', '')
+        if not auth.startswith('Bearer '):
+            return jsonify({'error': 'Missing or invalid Authorization header'}), 401
+        token = auth.split(' ', 1)[1]
+        if _is_token_blocked(token):
+            return jsonify({'error': 'Token has been revoked'}), 401
+        payload = _decode_token(token)
+        if not payload:
+            return jsonify({'error': 'Invalid or expired token'}), 401
+        request.user_id    = int(payload.get('user_id', 0))
+        request.user_role  = payload.get('role', 'user')
+        request.user_email = payload.get('email', '')
+        request.employer_id = payload.get('employer_id') or payload.get('user_id')
+        return f(*args, **kwargs)
+    return decorated
+
+
+secrets = __import__('secrets')
+
+@app.route('/api/auth/google', methods=['POST'])
+@limiter.limit('10 per minute')
+
 def get_jobs():
     db = get_db()
     
