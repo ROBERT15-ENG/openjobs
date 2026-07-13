@@ -210,6 +210,7 @@
 
 <script>
   let selectedRole = 'seeker';
+  const redirectAfterLogin = new URLSearchParams(window.location.search).get('redirect') || '';
 
   function setRole(role) {
     selectedRole = role;
@@ -259,13 +260,16 @@
 
       if (res.ok && data.success) {
         localStorage.setItem('token', data.token);
+        if (document.getElementById('remember').checked) {
+          sessionStorage.removeItem('token');
+        } else {
+          sessionStorage.setItem('token', data.token);
+        }
         const role = data.user?.role || 'user';
-        // If logging in as seeker but role is employer, redirect to employer
-        let redirectUrl = '/user';
-        if (selectedRole === 'employer' || role === 'employer') {
-          redirectUrl = '/employer';
-        } else if (role === 'admin') {
-          redirectUrl = '/admin';
+        let redirectUrl = redirectAfterLogin || '/user';
+        if (!redirectAfterLogin) {
+          if (selectedRole === 'employer' || role === 'employer') redirectUrl = '/employer';
+          else if (role === 'admin') redirectUrl = '/admin';
         }
         showAlert('success', 'Login successful! Redirecting...');
         setTimeout(() => window.location.href = redirectUrl, 600);

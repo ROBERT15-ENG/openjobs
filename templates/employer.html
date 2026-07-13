@@ -408,11 +408,11 @@
 </div>
 
 <!-- CANDIDATE DETAIL MODAL -->
-<div class="modal-overlay" id="candidateModal">
-  <div class="modal" style="max-width:680px">
+<div class="modal-overlay" id="candidateModal" role="presentation">
+  <div class="modal" style="max-width:680px" role="dialog" aria-modal="true" aria-labelledby="candidateName" id="candidateModalDialog">
     <div class="modal-header">
       <div class="modal-title" id="candidateName">Applicant</div>
-      <button class="modal-close" onclick="closeCandidateModal()">×</button>
+      <button class="modal-close" onclick="closeCandidateModal()" aria-label="Close candidate details">×</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem;">
       <div><div class="form-label">Email</div><div id="candidateEmail" style="color:var(--text)">-</div></div>
@@ -439,11 +439,11 @@
 </div>
 
 <!-- EDIT JOB MODAL -->
-<div class="modal-overlay" id="editModal">
-  <div class="modal">
+<div class="modal-overlay" id="editModal" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle" id="editModalDialog">
     <div class="modal-header">
-      <div class="modal-title">✏️ Edit Job</div>
-      <button class="modal-close" onclick="closeEditModal()">×</button>
+      <div class="modal-title" id="editModalTitle">✏️ Edit Job</div>
+      <button class="modal-close" onclick="closeEditModal()" aria-label="Close edit job dialog">×</button>
     </div>
     <form id="editJobForm" onsubmit="handleEditJob(event)">
       <input type="hidden" id="editJobId">
@@ -514,6 +514,35 @@
   let employerApps = [];
   let employerJobs = [];
   let pipelineApps = {};
+  let activeModalTrap = null;
+
+  function trapFocus(modalEl) {
+    if (activeModalTrap) modalEl.removeEventListener('keydown', activeModalTrap);
+    activeModalTrap = (e) => {
+      if (e.key === 'Escape') {
+        if (modalEl.id === 'candidateModalDialog') closeCandidateModal();
+        else if (modalEl.id === 'editModalDialog') closeEditModal();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const items = Array.from(modalEl.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])'));
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    modalEl.addEventListener('keydown', activeModalTrap);
+    const closeBtn = modalEl.querySelector('.modal-close');
+    if (closeBtn) closeBtn.focus();
+  }
+
+  function releaseFocus(modalEl) {
+    if (activeModalTrap) {
+      modalEl.removeEventListener('keydown', activeModalTrap);
+      activeModalTrap = null;
+    }
+  }
   const KANBAN_STAGES = ['applied', 'screening', 'interview', 'offer', 'hired', 'rejected'];
   const STAGE_LABELS = { applied: 'Applied', screening: 'Screening', interview: 'Interview', offer: 'Offer', hired: 'Hired', rejected: 'Rejected' };
 
@@ -746,9 +775,11 @@
     document.getElementById('candidateCover').textContent = app.cover_letter || app.notes || 'No cover letter provided.';
     document.getElementById('candidateResume').textContent = app.resume_text || 'No resume text on file.';
     document.getElementById('candidateModal').classList.add('open');
+    trapFocus(document.getElementById('candidateModalDialog'));
   }
 
   function closeCandidateModal() {
+    releaseFocus(document.getElementById('candidateModalDialog'));
     document.getElementById('candidateModal').classList.remove('open');
     window.currentAppId = null;
   }
@@ -912,10 +943,14 @@ async function handlePostJob(e) {
       document.getElementById('editDesc').value = j.description || '';
       document.getElementById('editSkills').value = j.skills || '';
       document.getElementById('editModal').classList.add('open');
+      trapFocus(document.getElementById('editModalDialog'));
     } catch {}
   }
 
-  function closeEditModal() { document.getElementById('editModal').classList.remove('open'); }
+  function closeEditModal() {
+    releaseFocus(document.getElementById('editModalDialog'));
+    document.getElementById('editModal').classList.remove('open');
+  }
 
   async function handleEditJob(e) {
     e.preventDefault();

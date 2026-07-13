@@ -101,6 +101,13 @@
     .btn-apply { width: 100%; padding: 0.875rem; background: var(--primary); color: #000; border: none; border-radius: 12px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.2s; font-family: 'Inter', sans-serif; margin-top: 0.5rem; }
     .btn-apply:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,212,170,0.35); }
     .btn-apply:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .guest-apply {
+      text-align: center; padding: 1.5rem 1rem;
+      background: linear-gradient(135deg, rgba(0,212,170,0.08), rgba(0,212,170,0.02));
+      border: 1px solid rgba(0,212,170,0.2); border-radius: 12px;
+    }
+    .guest-apply p { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem; line-height: 1.6; }
+    .guest-apply .btn-register { display: inline-block; margin-top: 0.75rem; font-size: 0.85rem; color: var(--primary); font-weight: 600; }
     .alert { padding: 0.875rem 1rem; border-radius: 10px; font-size: 0.875rem; margin-bottom: 1rem; display: none; }
     .alert-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--error); }
     .alert-success { background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.3); color: var(--success); }
@@ -153,7 +160,7 @@
       <div class="job-badges" id="jobBadges"></div>
     </div>
     <div class="hero-actions">
-      <button class="btn-save" id="saveBtn" onclick="toggleSave()">☆ Save</button>
+      <button class="btn-save" id="saveBtn" onclick="toggleSave()" aria-label="Save job">☆ Save</button>
     </div>
   </div>
 
@@ -186,7 +193,15 @@
 
     <!-- RIGHT: APPLY -->
     <div class="apply-card">
-      <div class="card">
+      <div class="card" id="guestApplyCta" style="display:none">
+        <div class="guest-apply">
+          <div class="apply-title">🚀 Apply for this Job</div>
+          <p>Sign in to apply with your saved profile, upload your résumé, and track application status in your dashboard.</p>
+          <button class="btn-apply" id="guestLoginBtn">Sign in to Apply →</button>
+          <a href="/register" class="btn-register">Or create a free account</a>
+        </div>
+      </div>
+      <div class="card" id="applyFormWrap">
         <div class="apply-title">🚀 Apply for this Job</div>
         <div class="alert alert-error" id="alertError"></div>
         <div class="alert alert-success" id="alertSuccess"></div>
@@ -241,8 +256,32 @@
 
   let currentJob = null;
 
+  function getToken() {
+    return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+  }
+
+  function loginRedirectUrl() {
+    return '/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+  }
+
+  function updateApplyUI() {
+    const token = getToken();
+    const guest = document.getElementById('guestApplyCta');
+    const form = document.getElementById('applyFormWrap');
+    const loginBtn = document.getElementById('guestLoginBtn');
+    if (token) {
+      guest.style.display = 'none';
+      form.style.display = 'block';
+    } else {
+      guest.style.display = 'block';
+      form.style.display = 'none';
+      if (loginBtn) loginBtn.onclick = () => { window.location.href = loginRedirectUrl(); };
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    updateApplyUI();
+    const token = getToken();
     if (token) {
       fetch('/api/user/profile', { headers: { 'Authorization': 'Bearer ' + token } })
         .then(r => r.ok ? r.json() : null)
@@ -369,9 +408,9 @@
   }
 
   async function submitApplication() {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const token = getToken();
     if (!token) {
-      window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = loginRedirectUrl();
       return;
     }
 
@@ -439,7 +478,7 @@
 
   let saved = false;
   async function checkSavedStatus() {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const token = getToken();
     if (!token) return;
     try {
       const res = await fetch('/api/saved_jobs', { headers: { 'Authorization': 'Bearer ' + token } });
@@ -448,13 +487,14 @@
       const btn = document.getElementById('saveBtn');
       btn.classList.toggle('saved', saved);
       btn.textContent = saved ? '★ Saved' : '☆ Save';
+      btn.setAttribute('aria-label', saved ? 'Unsave job' : 'Save job');
     } catch {}
   }
 
   function toggleSave() {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const token = getToken();
     if (!token) {
-      window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = loginRedirectUrl();
       return;
     }
     const btn = document.getElementById('saveBtn');
@@ -468,6 +508,7 @@
         saved = !saved;
         btn.classList.toggle('saved', saved);
         btn.textContent = saved ? '★ Saved' : '☆ Save';
+        btn.setAttribute('aria-label', saved ? 'Unsave job' : 'Save job');
       } else {
         alert(d.error || 'Could not update saved jobs.');
       }

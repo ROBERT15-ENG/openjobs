@@ -443,6 +443,8 @@
 
   // ── LOAD DASHBOARD DATA ──
   async function loadDashboard() {
+    const appsEl = document.getElementById('allAppsList');
+    if (appsEl) appsEl.innerHTML = '<div class="empty-state"><div class="emoji">⏳</div><h3>Loading applications...</h3></div>';
     try {
       const res = await fetch('/api/dashboard/seeker', { headers: authHeaders() });
       if (!res.ok) throw new Error('API unavailable');
@@ -596,7 +598,11 @@
     window.scrollTo({top: 0, behavior: 'smooth'});
 
     if (name === 'saved') loadSavedJobs();
-    if (name === 'applications') renderApplications();
+    if (name === 'applications' || name === 'overview' || name === 'recommendations') {
+      loadDashboard().then(() => {
+        if (name === 'applications') renderApplications();
+      });
+    }
   }
 
   async function loadSavedJobs() {

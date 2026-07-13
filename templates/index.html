@@ -254,6 +254,7 @@
       color: var(--text-muted); cursor: pointer; transition: all 0.2s;
     }
     .job-actions .btn-sm:hover { border-color: var(--primary); color: var(--primary); }
+    .job-actions .btn-sm.saved { color: var(--warning); border-color: rgba(245,158,11,0.4); }
     .job-actions .btn-apply {
       padding: 0.4rem 0.875rem; border-radius: 8px;
       font-size: 0.8rem; font-weight: 600;
@@ -299,6 +300,8 @@
     .modal-footer .btn-save:hover { border-color: var(--primary); color: var(--primary); }
     .modal-footer .btn-apply-modal { background: var(--primary); color: #000; border: none; }
     .modal-footer .btn-apply-modal:hover { background: var(--primary-dark); box-shadow: 0 4px 20px rgba(0,212,170,0.3); }
+    .modal-footer .btn-save.saved { color: var(--warning); border-color: rgba(245,158,11,0.4); }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 
     /* ── EMPTY STATE ── */
     .empty-state { text-align: center; padding: 4rem 2rem; }
@@ -363,6 +366,13 @@
       .hero h1 { font-size: 1.6rem; }
       .stats-bar span { font-size: 0.75rem; }
       .header-inner { padding: 0 1rem; }
+      .modal-footer {
+        position: fixed; bottom: 0; left: 0; right: 0; z-index: 210;
+        background: var(--bg-card); border-top: 1px solid var(--border);
+        box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
+        padding: 1rem 1.25rem calc(1rem + env(safe-area-inset-bottom, 0px));
+      }
+      .modal { max-height: calc(100vh - 88px); margin-bottom: 72px; }
     }
 
     /* Scrollbar */
@@ -523,16 +533,16 @@
 </div>
 
 <!-- JOB DETAIL MODAL -->
-<div class="modal-overlay" id="jobModal" onclick="if(event.target===this)closeModal()">
-  <div class="modal">
+<div class="modal-overlay" id="jobModal" role="presentation" onclick="if(event.target===this)closeModal()">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" id="jobModalDialog">
     <div class="modal-header">
-      <div class="modal-logo" id="modalLogo">G</div>
+      <div class="modal-logo" id="modalLogo" aria-hidden="true">G</div>
       <div class="modal-title-block">
         <div class="modal-title" id="modalTitle">Loading...</div>
         <div class="modal-company" id="modalCompany"></div>
         <div class="badges" id="modalBadges" style="margin-top:0.5rem;"></div>
       </div>
-      <button class="modal-close" onclick="closeModal()">×</button>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close job details">×</button>
     </div>
     <div class="modal-body">
       <div class="modal-meta" id="modalMeta"></div>
@@ -550,7 +560,7 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-save" onclick="saveJob()">☆ Save Job</button>
+      <button class="btn btn-save" id="modalSaveBtn" onclick="saveJob()" aria-label="Save job">☆ Save Job</button>
       <button class="btn btn-apply-modal" onclick="applyToJob()">Apply Now →</button>
     </div>
   </div>
@@ -565,11 +575,74 @@
   // ── STATE ──────────────────────────────────────────────────────────
   let currentPage = 1;
   let currentJob = null;
+  let savedJobIds = new Set();
+  let modalTrapHandler = null;
   const PAGE_SIZE = 20;
 
+  function getToken() {
+    return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+  }
+
+  async function loadSavedJobIds() {
+    const token = getToken();
+    if (!token) {
+      savedJobIds = new Set();
+      return;
+    }
+    try {
+      const res = await fetch('/api/saved_jobs', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!res.ok) return;
+      const jobs = await res.json();
+      savedJobIds = new Set((jobs || []).map(j => j.id));
+    } catch {
+      savedJobIds = new Set();
+    }
+  }
+
+  function updateModalSaveButton() {
+    const btn = document.getElementById('modalSaveBtn');
+    if (!btn || !currentJob) return;
+    const isSaved = savedJobIds.has(currentJob.id);
+    btn.textContent = isSaved ? '★ Saved' : '☆ Save Job';
+    btn.classList.toggle('saved', isSaved);
+    btn.setAttribute('aria-label', isSaved ? 'Unsave job' : 'Save job');
+  }
+
+  function trapModalFocus(modalEl) {
+    const focusable = () => Array.from(modalEl.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])'
+    )).filter(el => el.offsetParent !== null);
+    if (modalTrapHandler) modalEl.removeEventListener('keydown', modalTrapHandler);
+    modalTrapHandler = (e) => {
+      if (e.key !== 'Tab') return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    modalEl.addEventListener('keydown', modalTrapHandler);
+    const closeBtn = modalEl.querySelector('.modal-close');
+    if (closeBtn) closeBtn.focus();
+  }
+
+  function releaseModalFocus(modalEl) {
+    if (modalTrapHandler) {
+      modalEl.removeEventListener('keydown', modalTrapHandler);
+      modalTrapHandler = null;
+    }
+  }
+
   // ── INIT ──────────────────────────────────────────────────────────
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     loadStats();
+    await loadSavedJobIds();
     fetchJobs();
     document.getElementById('searchInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
     document.getElementById('locationInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
@@ -650,9 +723,10 @@
       const matchBadge = (job.score != null && job.score > 0)
         ? `<div class="match-badge ${job.score >= 80 ? 'match-high' : job.score >= 60 ? 'match-mid' : 'match-low'}">${Math.round(job.score)}% match</div>`
         : '';
+      const isSaved = savedJobIds.has(job.id);
 
       return `
-      <div class="job-card animate-in" style="animation-delay:${i*40}ms" onclick="openJob(${job.id})">
+      <div class="job-card animate-in" style="animation-delay:${i*40}ms" onclick="openJob(${job.id})" role="button" tabindex="0" onkeydown="if(event.key==='Enter')openJob(${job.id})">
         <div class="job-logo">${companyLetter}</div>
         <div class="job-content">
           <div class="job-top">
@@ -674,7 +748,7 @@
           </div>
         </div>
         <div class="job-actions" onclick="event.stopPropagation()">
-          <button class="btn-sm" onclick="saveJobToggle(${job.id}, this, event)">☆</button>
+          <button class="btn-sm${isSaved ? ' saved' : ''}" onclick="saveJobToggle(${job.id}, this, event)" aria-label="${isSaved ? 'Unsave' : 'Save'} job">${isSaved ? '★' : '☆'}</button>
           <button class="btn-apply" onclick="openJob(${job.id}); event.stopPropagation()">Apply</button>
         </div>
       </div>`;
@@ -748,10 +822,13 @@
         }
         document.getElementById('jobModal').classList.add('open');
         document.body.style.overflow = 'hidden';
+        updateModalSaveButton();
+        trapModalFocus(document.getElementById('jobModalDialog'));
       });
   }
 
   function closeModal() {
+    releaseModalFocus(document.getElementById('jobModalDialog'));
     document.getElementById('jobModal').classList.remove('open');
     document.body.style.overflow = '';
   }
@@ -763,8 +840,8 @@
 
   function applyToJob() {
     if (!currentJob) return;
-    const token = localStorage.getItem('token');
-    if (!token) { window.location.href = '/login'; return; }
+    const token = getToken();
+    if (!token) { window.location.href = '/login?redirect=' + encodeURIComponent('/?job=' + currentJob.id); return; }
     fetch('/api/applications', {
       method: 'POST',
       headers: {
@@ -788,16 +865,22 @@
 
   function saveJob() {
     if (!currentJob) return;
-    const token = localStorage.getItem('token');
-    if (!token) { window.location.href = '/login'; return; }
+    const token = getToken();
+    if (!token) { window.location.href = '/login?redirect=' + encodeURIComponent('/?job=' + currentJob.id); return; }
+    const isSaved = savedJobIds.has(currentJob.id);
     fetch('/api/saved_jobs', {
-      method: 'POST',
+      method: isSaved ? 'DELETE' : 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({ job_id: currentJob.id })
     }).then(r => r.json()).then(d => {
-      if (d.success) {
-        alert('💾 Job saved to your profile!');
-        closeModal();
+      if (d.success || (!isSaved && d.error && d.error.includes('UNIQUE'))) {
+        if (isSaved) savedJobIds.delete(currentJob.id);
+        else savedJobIds.add(currentJob.id);
+        updateModalSaveButton();
+        fetchJobs();
+        if (!isSaved) alert('💾 Job saved to your profile!');
+        else alert('Removed from saved jobs.');
+        if (!isSaved) closeModal();
       } else {
         alert(d.error || 'Could not save job.');
       }
@@ -805,9 +888,9 @@
   }
   function saveJobToggle(id, btn, e) {
     if (e) e.stopPropagation();
-    const token = localStorage.getItem('token');
-    if (!token) { window.location.href = '/login'; return; }
-    const isSaved = btn.textContent === '★';
+    const token = getToken();
+    if (!token) { window.location.href = '/login?redirect=' + encodeURIComponent('/?job=' + id); return; }
+    const isSaved = savedJobIds.has(id);
     fetch('/api/saved_jobs', {
       method: isSaved ? 'DELETE' : 'POST',
       headers: {
@@ -816,9 +899,13 @@
       },
       body: JSON.stringify({job_id: id})
     }).then(r => r.json()).then(d => {
-      if (d.success || d.error && d.error.includes('UNIQUE')) {
-        btn.textContent = isSaved ? '☆' : '★';
-        btn.style.color = isSaved ? '' : 'var(--warning)';
+      if (d.success || (d.error && d.error.includes('UNIQUE'))) {
+        if (isSaved) savedJobIds.delete(id);
+        else savedJobIds.add(id);
+        btn.textContent = savedJobIds.has(id) ? '★' : '☆';
+        btn.classList.toggle('saved', savedJobIds.has(id));
+        btn.setAttribute('aria-label', savedJobIds.has(id) ? 'Unsave job' : 'Save job');
+        if (currentJob && currentJob.id === id) updateModalSaveButton();
       } else {
         alert('Could not save job. Is the server running?');
       }

@@ -12,6 +12,18 @@ and this project uses semantic versioning for release tags.
 - Job alerts API and UI
 - Password reset email flow
 
+## [2.2.1] - 2026-07-13
+
+### UX polish
+
+#### Improved
+- **Homepage**: saved-job stars (★) persist on list load for signed-in users; toggle save/unsave from cards and modal
+- **Homepage modal**: sticky Apply/Save bar on mobile, focus trap, ARIA dialog labels, keyboard-friendly job cards
+- **Job page**: guests see sign-in CTA instead of a misleading apply form; logged-in users see the full form
+- **Login**: `?redirect=` param returns users to the job or page they came from after sign-in
+- **Seeker dashboard**: applications and overview tabs refresh live data from the API on each visit
+- **Employer modals**: focus trap, Escape to close, and ARIA labels on candidate and edit-job dialogs
+
 ## [2.2.0] - 2026-07-13
 
 ### Phase 3 — Frontend wiring & UX
