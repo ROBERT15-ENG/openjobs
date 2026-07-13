@@ -4,6 +4,7 @@ from auth_utils import require_auth
 from constants import APPLICATION_STATUSES
 from db import get_db
 from flask import Blueprint, jsonify, request
+from org_util import get_employer_job_ids
 from status import normalize_status
 
 employer_bp = Blueprint('employer', __name__)
@@ -12,13 +13,17 @@ employer_bp = Blueprint('employer', __name__)
 @employer_bp.route('/api/employer/dashboard', methods=['GET'])
 @require_auth
 def employer_dashboard():
-    emp_id = request.employer_id
+    emp_id = request.user_id
     db = get_db()
-    my_jobs = db.execute(
-        'SELECT * FROM jobs WHERE employer_id = ? AND is_active = 1 ORDER BY created_at DESC',
-        (emp_id,),
-    ).fetchall()
-    job_ids = [job['id'] for job in my_jobs]
+    job_ids = get_employer_job_ids(db, emp_id)
+    if job_ids:
+        placeholders = ','.join('?' * len(job_ids))
+        my_jobs = db.execute(
+            f'SELECT * FROM jobs WHERE id IN ({placeholders}) AND is_active = 1 ORDER BY created_at DESC',
+            job_ids,
+        ).fetchall()
+    else:
+        my_jobs = []
 
     if job_ids:
         placeholders = ','.join('?' * len(job_ids))
@@ -49,8 +54,9 @@ def employer_dashboard():
         recent_apps = []
 
     total_views = db.execute(
-        'SELECT COALESCE(SUM(view_count), 0) FROM jobs WHERE employer_id = ?', (emp_id,)
-    ).fetchone()[0]
+        f'SELECT COALESCE(SUM(view_count), 0) FROM jobs WHERE id IN ({placeholders})',
+        job_ids,
+    ).fetchone()[0] if job_ids else 0
 
     return jsonify({
         'stats': {
@@ -69,14 +75,9 @@ def employer_dashboard():
 @employer_bp.route('/api/employer/applications', methods=['GET'])
 @require_auth
 def employer_applications():
-    emp_id = request.employer_id
-    status = request.args.get('status', 'all')
     db = get_db()
-    job_ids = [
-        row['id'] for row in db.execute(
-            'SELECT id FROM jobs WHERE employer_id = ? AND is_active = 1', (emp_id,)
-        ).fetchall()
-    ]
+    status = request.args.get('status', 'all')
+    job_ids = get_employer_job_ids(db, request.user_id)
     if not job_ids:
         return jsonify({'applications': []})
 
@@ -103,3 +104,31 @@ def employer_applications():
     query += ' ORDER BY a.applied_at DESC'
     apps = db.execute(query, params).fetchall()
     return jsonify({'applications': [dict(app) for app in apps]})
+
+
+@employer_bp.route('/api/employer/applications/bulk-status', methods=['POST'])
+@require_auth
+def employer_bulk_status():
+    if request.user_role != 'employer':
+        return jsonify({'error': 'Employer access required'}), 403
+    data = request.json or {}
+    ids = data.get('ids') or []
+    status = (data.get('status') or '').strip().lower()
+    if not ids:
+        return jsonify({'error': 'ids array is required'}), 400
+    if not status:
+        return jsonify({'error': 'status is required'}), 400
+
+    db = get_db()
+    job_ids = set(get_employer_job_ids(db, request.user_id))
+    updated = 0
+    for app_id in ids:
+        app_row = db.execute('SELECT job_id FROM applications WHERE id = ?', (int(app_id),)).fetchone()
+        if not app_row or app_row['job_id'] not in job_ids:
+            continue
+        ok, _, _ = update_application_status(
+            db, int(app_id), status, send_email=True, actor_role='employer'
+        )
+        if ok:
+            updated += 1
+    return jsonify({'success': True, 'updated': updated})

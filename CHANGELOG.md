@@ -4,13 +4,26 @@ All notable changes to the OpenJobs platform are documented in this file.
 
 ---
 
-## Quick review — PR #8 (v2.5.0 product gaps)
+## Quick review — PR #8 (v2.5.0–2.5.1 product gaps)
 
 **Branch:** `cursor/product-gaps-6b92` → `main`  
 **Stripe:** still demo mode (deferred)  
-**Tests:** run `pytest tests/ -q`
+**Tests:** run `pytest tests/ -q` (53 tests)
 
-### What changed
+### What changed (latest)
+
+| Area | Summary |
+|------|---------|
+| Date posted | `date_posted` on API; `posted_at` set on job create; sort uses `COALESCE(posted_at, created_at)` |
+| Distance | `?near=Sydney&radius_km=50` + homepage radius filter; city-centre geocoding |
+| Report job | `POST /api/jobs/<id>/report`; admin reports queue |
+| Status updates | Kanban moves send emails; seeker withdraw UI; full `/api/applications` list |
+| Messaging | Application-scoped threads: `POST/GET /api/conversations` |
+| Team accounts | Org created on employer signup; `GET/POST /api/employer/team` |
+| Bulk actions | Admin bulk reject; user delete; employer bulk status API |
+| Legal | `/cookies` page, footer links, cookie consent banner |
+
+### Prior v2.5.0 items
 
 | Area | Summary |
 |------|---------|

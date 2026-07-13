@@ -9,6 +9,7 @@ from auth_utils import create_token, hash_password, require_auth, verify_passwor
 from db import get_db, get_db_path
 from extensions import BLOCKED_TOKENS, limiter
 from flask import Blueprint, jsonify, request
+from org_util import create_organization_for_employer
 from resume_util import ALLOWED_EXT, extract_resume_text
 from skills_util import extract_skills_fast
 
@@ -103,6 +104,8 @@ def register_employer():
     )
     db.commit()
     user_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+    create_organization_for_employer(db, company, user_id)
+    db.commit()
     token = create_token({'id': user_id, 'email': email, 'role': 'employer'})
     return jsonify({
         'success': True,

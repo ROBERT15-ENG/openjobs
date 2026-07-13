@@ -503,6 +503,20 @@
     </div>
 
     <div class="filter-card">
+      <h3>Distance</h3>
+      <div class="filter-group">
+        <select class="filter-select" id="filterRadius" onchange="fetchJobs()">
+          <option value="">Any distance</option>
+          <option value="25">Within 25 km</option>
+          <option value="50">Within 50 km</option>
+          <option value="100">Within 100 km</option>
+          <option value="200">Within 200 km</option>
+        </select>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin:0.5rem 0 0">Uses city centre when a location is selected</p>
+      </div>
+    </div>
+
+    <div class="filter-card">
       <h3>Location</h3>
       <div class="filter-group">
         <select class="filter-select" id="filterLocation" onchange="fetchJobs()">
@@ -577,8 +591,17 @@
 
 <!-- FOOTER -->
 <footer>
-  <p>OpenJobs — AI-Powered Job Matching · © 2026 · Built by Alex ⚡</p>
+  <p>OpenJobs — AI-Powered Job Matching · © 2026</p>
+  <p style="margin-top:0.5rem;font-size:0.85rem">
+    <a href="/terms" style="color:var(--text-muted)">Terms</a> ·
+    <a href="/privacy" style="color:var(--text-muted)">Privacy</a> ·
+    <a href="/cookies" style="color:var(--text-muted)">Cookies</a>
+  </p>
 </footer>
+<div id="cookieBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;background:var(--bg-card);border-top:1px solid var(--border);padding:1rem 1.5rem;z-index:9999;gap:1rem;align-items:center;justify-content:center;flex-wrap:wrap">
+  <span style="font-size:0.85rem;color:var(--text-muted)">We use essential cookies for sign-in and preferences. <a href="/cookies" style="color:var(--primary)">Learn more</a></span>
+  <button onclick="acceptCookies()" style="background:var(--primary);color:#000;border:none;padding:0.5rem 1rem;border-radius:8px;font-weight:600;cursor:pointer">Accept</button>
+</div>
 
 <script>
   // ── STATE ──────────────────────────────────────────────────────────
@@ -650,6 +673,10 @@
 
   // ── INIT ──────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async () => {
+    if (!localStorage.getItem('cookie_consent')) {
+      const banner = document.getElementById('cookieBanner');
+      if (banner) banner.style.display = 'flex';
+    }
     loadStats();
     await loadSavedJobIds();
     fetchJobs();
@@ -705,6 +732,11 @@
     if (workArr.length)    url += `&work_arrangement=${workArr.join(',')}`;
     if (document.getElementById('filterVisa')?.checked) url += '&visa=1';
     if (sort) url += `&sort=${encodeURIComponent(sort)}`;
+    const radius = document.getElementById('filterRadius')?.value;
+    const nearCity = locationFilter || location;
+    if (radius && nearCity) {
+      url += `&near=${encodeURIComponent(nearCity)}&radius_km=${radius}`;
+    }
 
     fetch(url, { headers })
       .then(r => r.json())
@@ -727,7 +759,7 @@
     list.innerHTML = jobs.map((job, i) => {
       const badge = getWorkBadge(job);
       const salary = formatSalary(job);
-      const timeAgo = timeSince(job.created_at);
+      const timeAgo = timeSince(job.date_posted || job.created_at);
       const companyLetter = (job.company || 'J')[0].toUpperCase();
       const summary = job.search_summary || (job.description || '').substring(0, 150) + '...';
       const descLen = (job.description || '').length;
@@ -735,7 +767,8 @@
       const matchBadge = (job.score != null && job.score > 0)
         ? `<div class="match-badge ${job.score >= 80 ? 'match-high' : job.score >= 60 ? 'match-mid' : 'match-low'}">${job.match_tier ? escHtml(job.match_tier) + ' · ' : ''}${Math.round(job.score)}% match</div>`
         : '';
-      const newBadge = isNewJob(job.created_at) ? '<span class="badge" style="background:rgba(0,212,170,0.15);color:var(--primary);font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:6px;margin-left:0.5rem">NEW</span>' : '';
+      const newBadge = isNewJob(job.date_posted || job.created_at) ? '<span class="badge" style="background:rgba(0,212,170,0.15);color:var(--primary);font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:6px;margin-left:0.5rem">NEW</span>' : '';
+      const distBadge = job.distance_km != null ? `<span class="badge" style="background:rgba(59,130,246,0.12);color:#60a5fa;font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:6px;margin-left:0.5rem">${job.distance_km} km</span>` : '';
       const isSaved = savedJobIds.has(job.id);
 
       return `
@@ -744,7 +777,7 @@
         <div class="job-content">
           <div class="job-top">
             <div>
-              <div class="job-title">${escHtml(job.title)}${newBadge}</div>
+              <div class="job-title">${escHtml(job.title)}${newBadge}${distBadge}</div>
               <div class="job-company">${escHtml(job.company)} · ${escHtml(job.location)}</div>
             </div>
             ${matchBadge}
@@ -809,7 +842,8 @@
         document.getElementById('modalMeta').innerHTML = `
           ${salaryEl(job)}
           <div class="modal-meta-item">📍 ${escHtml(job.location)}</div>
-          <div class="modal-meta-item">🕐 ${timeSince(job.created_at)}</div>
+          <div class="modal-meta-item">🕐 Posted ${timeSince(job.date_posted || job.created_at)}</div>
+          ${job.distance_km != null ? `<div class="modal-meta-item">📏 ${job.distance_km} km away</div>` : ''}
           ${job.category ? `<div class="modal-meta-item">🏷 ${escHtml(job.category)}</div>` : ''}
           ${job.work_type ? `<div class="modal-meta-item">💼 ${escHtml(formatWorkType(job.work_type))}</div>` : ''}
         `;
@@ -1013,6 +1047,12 @@
 
   function toggleMobileNav() {
     document.querySelector('nav').classList.toggle('open');
+  }
+
+  function acceptCookies() {
+    localStorage.setItem('cookie_consent', '1');
+    const banner = document.getElementById('cookieBanner');
+    if (banner) banner.style.display = 'none';
   }
 
   // Keyboard close modal

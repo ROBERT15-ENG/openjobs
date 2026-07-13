@@ -417,7 +417,10 @@
   </div>
 </div>
 
-<footer>OpenJobs Dashboard — ⚡ Built by Alex</footer>
+<footer>
+  <p>OpenJobs Dashboard · © 2026</p>
+  <p style="margin-top:0.5rem;font-size:0.85rem"><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/cookies">Cookies</a></p>
+</footer>
 
 <script>
   // ── INIT ──
@@ -542,13 +545,22 @@
 
   function renderApplications() {
     const filter = document.getElementById('appFilter')?.value || '';
-    const apps = (dashboardData?.recent_applications || []).filter(a => !filter || a.status === filter);
     const el = document.getElementById('allAppsList');
-    if (!apps.length) {
-      el.innerHTML = '<div class="empty-state"><div class="emoji">📋</div><h3>No applications</h3><p>No applications match this filter</p></div>';
-      return;
-    }
-    el.innerHTML = apps.map(a => appItemHtml(a)).join('');
+    el.innerHTML = '<div class="empty-state"><div class="emoji">⏳</div><h3>Loading applications...</h3></div>';
+    fetch('/api/applications', { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then(apps => {
+        allApplications = apps;
+        const filtered = apps.filter(a => !filter || a.status === filter);
+        if (!filtered.length) {
+          el.innerHTML = '<div class="empty-state"><div class="emoji">📋</div><h3>No applications</h3><p>No applications match this filter</p></div>';
+          return;
+        }
+        el.innerHTML = filtered.map(a => appItemHtml(a)).join('');
+      })
+      .catch(() => {
+        el.innerHTML = '<div class="empty-state"><div class="emoji">⚠️</div><h3>Could not load applications</h3></div>';
+      });
   }
 
   function appItemHtml(a) {
@@ -557,22 +569,57 @@
     const time = timeSince(a.applied_at);
     const statusClass = 'status-' + (a.status || 'applied');
     const statusLabel = (a.status || 'applied').charAt(0).toUpperCase() + (a.status || 'applied').slice(1);
+    const canWithdraw = a.status && !['withdrawn', 'rejected', 'hired'].includes(a.status);
+    const actions = canWithdraw
+      ? `<button class="btn btn-ghost" style="margin-top:0.5rem;font-size:0.75rem;padding:0.3rem 0.6rem" onclick="withdrawApplication(${a.id})">Withdraw</button>
+         <button class="btn btn-ghost" style="margin-top:0.5rem;font-size:0.75rem;padding:0.3rem 0.6rem;margin-left:0.25rem" onclick="openMessages(${a.id})">Message</button>`
+      : `<button class="btn btn-ghost" style="margin-top:0.5rem;font-size:0.75rem;padding:0.3rem 0.6rem" onclick="openMessages(${a.id})">Message</button>`;
     return `
       <div class="app-item">
         <div class="app-logo">${letter}</div>
         <div class="app-info">
-          <div class="app-title">${escHtml(a.title)}</div>
-          <div class="app-company">${escHtml(a.company)} · ${escHtml(a.location)}</div>
+          <div class="app-title">${escHtml(a.job_title || a.title || 'Application')}</div>
+          <div class="app-company">${escHtml(a.job_company || a.company || '')}</div>
           <div class="app-meta">
-            ${salary ? `<div class="app-meta-item">💰 ${salary}</div>` : ''}
             <div class="app-meta-item">🕐 Applied ${time}</div>
+            ${a.updated_at ? `<div class="app-meta-item">🔄 Updated ${timeSince(a.updated_at)}</div>` : ''}
           </div>
         </div>
         <div>
           <div class="app-status ${statusClass}">${statusLabel}</div>
-          ${a.notes ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;text-align:right;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.notes)}</div>` : ''}
+          ${actions}
         </div>
       </div>`;
+  }
+
+  async function withdrawApplication(appId) {
+    if (!confirm('Withdraw this application?')) return;
+    const res = await fetch('/api/applications/' + appId, {
+      method: 'PATCH', headers: authHeaders(),
+      body: JSON.stringify({ status: 'withdrawn' }),
+    });
+    if (res.ok) renderApplications();
+    else alert((await res.json().catch(() => ({}))).error || 'Could not withdraw');
+  }
+
+  async function openMessages(applicationId) {
+    const start = await fetch('/api/conversations', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ application_id: applicationId }),
+    });
+    const data = await start.json();
+    if (!start.ok) { alert(data.error || 'Could not open messages'); return; }
+    const convId = data.conversation.id;
+    const msgRes = await fetch('/api/conversations/' + convId + '/messages', { headers: authHeaders() });
+    const msgData = await msgRes.json();
+    const history = (msgData.messages || []).map(m => (m.sender_id === getCurrentUserId() ? 'You: ' : 'Them: ') + m.body).join('\n\n') || '(no messages yet)';
+    const body = prompt('Messages with employer:\n\n' + history + '\n\nType a new message:', '');
+    if (!body) return;
+    await fetch('/api/conversations/' + convId + '/messages', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ body }),
+    });
+    alert('Message sent.');
   }
 
   function renderRecJobs(jobs) {

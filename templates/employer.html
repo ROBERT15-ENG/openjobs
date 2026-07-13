@@ -400,7 +400,15 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-title" style="margin-bottom:0.75rem">🚪 Session</div>
+        <div class="card-title" style="margin-bottom:1rem">👥 Team Accounts</div>
+        <p class="page-sub" style="margin-bottom:1rem">Invite recruiters to manage jobs and applicants on your company account.</p>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem">
+          <input type="email" class="form-input" id="teamEmail" placeholder="colleague@company.com" style="flex:1;min-width:200px">
+          <button class="btn-submit" onclick="inviteTeamMember()">Add member</button>
+        </div>
+        <div id="teamList" class="muted">Loading team...</div>
+      </div>
+      <div class="card">
         <button class="btn btn-danger" onclick="doLogout()">Sign Out</button>
       </div>
     </div>
@@ -429,6 +437,7 @@
       <div id="candidateResume" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:1rem;font-size:0.8rem;color:var(--text-muted);white-space:pre-wrap;max-height:250px;overflow-y:auto;">-</div>
     </div>
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;" id="candidateActions">
+      <button class="btn btn-primary" onclick="messageCandidate(window.currentAppId)">💬 Message</button>
       <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,'screening')">Mark Reviewed</button>
       <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,'interview')">Schedule Interview</button>
       <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,'offer')">Send Offer</button>
@@ -657,6 +666,7 @@
     loadMyJobs();
     loadApplications();
     loadPipelineJobs();
+    loadTeam();
   }
 
   // ── DATA LOADERS ────────────────────────────────────────────────────────────
@@ -782,6 +792,63 @@
     releaseFocus(document.getElementById('candidateModalDialog'));
     document.getElementById('candidateModal').classList.remove('open');
     window.currentAppId = null;
+  }
+
+  async function messageCandidate(appId) {
+    if (!appId) return;
+    const start = await fetch('/api/conversations', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ application_id: appId }),
+    });
+    const data = await start.json();
+    if (!start.ok) { alert(data.error || 'Could not open messages'); return; }
+    const convId = data.conversation.id;
+    const msgRes = await fetch('/api/conversations/' + convId + '/messages', { headers: authHeaders() });
+    const msgData = await msgRes.json();
+    const history = (msgData.messages || []).map(m => m.body).join('\n\n') || '(no messages yet)';
+    const body = prompt('Message candidate:\n\n' + history + '\n\nYour message:', '');
+    if (!body) return;
+    await fetch('/api/conversations/' + convId + '/messages', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ body }),
+    });
+    alert('Message sent.');
+  }
+
+  async function loadTeam() {
+    const el = document.getElementById('teamList');
+    if (!el) return;
+    try {
+      const res = await fetch('/api/employer/team', { headers: authHeaders() });
+      const data = await res.json();
+      const members = data.members || [];
+      if (!members.length) {
+        el.innerHTML = 'No team members yet.';
+        return;
+      }
+      el.innerHTML = '<ul style="margin:0;padding-left:1.2rem">' + members.map(m =>
+        '<li>' + escHtml(m.name) + ' (' + escHtml(m.email) + ') — ' + escHtml(m.role || 'member') + '</li>'
+      ).join('') + '</ul>';
+    } catch {
+      el.textContent = 'Could not load team.';
+    }
+  }
+
+  async function inviteTeamMember() {
+    const email = document.getElementById('teamEmail').value.trim();
+    if (!email) return;
+    const res = await fetch('/api/employer/team', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ email, role: 'recruiter' }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      document.getElementById('teamEmail').value = '';
+      loadTeam();
+      alert(data.message || 'Member added.');
+    } else {
+      alert(data.error || 'Could not add member.');
+    }
   }
 
   async function loadPipelineJobs() {

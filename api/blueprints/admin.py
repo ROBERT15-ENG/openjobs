@@ -4,6 +4,7 @@ import csv
 import datetime
 import io
 
+from application_status import update_application_status
 from auth_utils import require_role
 from constants import SEEKER_ROLES
 from db import get_db
@@ -147,3 +148,63 @@ def run_job_alerts():
     dry_run = bool(data.get('dry_run', False))
     result = run_job_alert_matching(since_hours=since_hours, dry_run=dry_run)
     return jsonify({'success': True, **result})
+
+
+@admin_bp.route('/api/admin/jobs/bulk', methods=['POST'])
+@require_role('admin')
+def bulk_jobs():
+    data = request.json or {}
+    ids = data.get('ids') or []
+    action = (data.get('action') or '').strip().lower()
+    if not ids or not isinstance(ids, list):
+        return jsonify({'error': 'ids array is required'}), 400
+    if action not in ('deactivate', 'delete'):
+        return jsonify({'error': 'action must be deactivate or delete'}), 400
+
+    db = get_db()
+    placeholders = ','.join('?' * len(ids))
+    if action == 'deactivate':
+        db.execute(f'UPDATE jobs SET is_active = 0 WHERE id IN ({placeholders})', ids)
+    else:
+        db.execute(f'UPDATE jobs SET is_active = 0 WHERE id IN ({placeholders})', ids)
+    db.commit()
+    return jsonify({'success': True, 'updated': len(ids), 'action': action})
+
+
+@admin_bp.route('/api/admin/applications/bulk', methods=['POST'])
+@require_role('admin')
+def bulk_applications():
+    data = request.json or {}
+    ids = data.get('ids') or []
+    status = (data.get('status') or '').strip().lower()
+    if not ids:
+        return jsonify({'error': 'ids array is required'}), 400
+    if not status:
+        return jsonify({'error': 'status is required'}), 400
+
+    db = get_db()
+    updated = 0
+    for app_id in ids:
+        ok, _, _ = update_application_status(
+            db, int(app_id), status, send_email=True, actor_role='admin'
+        )
+        if ok:
+            updated += 1
+    return jsonify({'success': True, 'updated': updated})
+
+
+@admin_bp.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@require_role('admin')
+def delete_user(user_id):
+    db = get_db()
+    user = db.execute('SELECT id, role FROM users WHERE id = ?', (user_id,)).fetchone()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    if user['role'] == 'admin':
+        return jsonify({'error': 'Cannot delete admin accounts'}), 403
+    db.execute('DELETE FROM organization_members WHERE user_id = ?', (user_id,))
+    db.execute('DELETE FROM saved_jobs WHERE user_id = ?', (user_id,))
+    db.execute('DELETE FROM applications WHERE user_id = ?', (user_id,))
+    db.execute('DELETE FROM users WHERE id = ?', (user_id,))
+    db.commit()
+    return jsonify({'success': True})

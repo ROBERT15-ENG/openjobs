@@ -3,12 +3,14 @@
 import datetime
 import sqlite3
 
+from application_status import update_application_status
 from apply_util import generate_apply_cover_letter, profile_resume_text
 from auth_utils import require_auth
 from constants import APPLICATION_STATUSES, KANBAN_STAGES
 from db import get_db
 from extensions import limiter
 from flask import Blueprint, jsonify, request
+from org_util import employer_can_access_job, get_employer_job_ids
 from status import is_valid_kanban_stage, is_valid_status, kanban_stage_for, normalize_status
 
 applications_bp = Blueprint('applications', __name__)
@@ -30,9 +32,7 @@ def get_applications():
             """
         ).fetchall()
     elif request.user_role == 'employer':
-        job_ids = [row['id'] for row in db.execute(
-            'SELECT id FROM jobs WHERE employer_id = ?', (request.employer_id,)
-        ).fetchall()]
+        job_ids = get_employer_job_ids(db, request.user_id)
         if not job_ids:
             return jsonify([])
         placeholders = ','.join('?' * len(job_ids))
@@ -177,7 +177,9 @@ def update_application(app_id):
 
     if request.user_role == 'admin':
         pass
-    elif request.user_role == 'employer' and app_row['employer_id'] == request.employer_id:
+    elif request.user_role == 'employer' and employer_can_access_job(
+        db, request.user_id, request.user_role, {'employer_id': app_row['employer_id']}
+    ):
         pass
     elif app_row['user_id'] == request.user_id:
         if new_status != 'withdrawn':
@@ -186,33 +188,12 @@ def update_application(app_id):
         return jsonify({'error': 'Not authorized'}), 403
 
     old_status = normalize_status(app_row['status'])
-
-    db.execute(
-        'UPDATE applications SET status = ?, updated_at = ? WHERE id = ?',
-        (new_status, datetime.datetime.now().isoformat(), app_id),
+    ok, result, _ = update_application_status(
+        db, app_id, new_status, send_email=True, actor_role=request.user_role
     )
-    db.commit()
-    updated = db.execute('SELECT * FROM applications WHERE id = ?', (app_id,)).fetchone()
-
-    if (
-        new_status
-        and request.user_role in ('employer', 'admin')
-        and app_row['applicant_email']
-        and new_status != old_status
-    ):
-        try:
-            from email_notifier import send_application_status_update
-            send_application_status_update(
-                app_row['applicant_email'],
-                app_row['applicant_name'] or 'there',
-                app_row['job_title'] or 'your application',
-                app_row['job_company'] or '',
-                new_status,
-            )
-        except Exception as exc:
-            print(f'[update_application] status email error: {exc}')
-
-    return jsonify({'success': True, 'application': dict(updated)})
+    if not ok:
+        return jsonify({'error': result}), 404
+    return jsonify({'success': True, 'application': result})
 
 
 @applications_bp.route('/api/applications/<int:app_id>', methods=['DELETE'])
@@ -234,7 +215,7 @@ def delete_application(app_id):
 def get_kanban(job_id):
     db = get_db()
     job = db.execute('SELECT employer_id FROM jobs WHERE id=?', (job_id,)).fetchone()
-    if not job or (job['employer_id'] != request.employer_id and request.user_role != 'admin'):
+    if not job or not employer_can_access_job(db, request.user_id, request.user_role, dict(job)):
         return jsonify({'error': 'Not found'}), 404
 
     apps = db.execute(
@@ -272,9 +253,9 @@ def move_kanban_card(job_id):
     if not is_valid_kanban_stage(new_status):
         return jsonify({'error': f'Invalid stage. Must be one of: {list(KANBAN_STAGES)}'}), 400
 
-    db.execute(
-        'UPDATE applications SET status=?, updated_at=? WHERE id=? AND job_id=?',
-        (new_status, datetime.datetime.now().isoformat(), app_id, job_id),
+    ok, result, _ = update_application_status(
+        db, app_id, new_status, send_email=True, actor_role=request.user_role
     )
-    db.commit()
-    return jsonify({'success': True, 'status': new_status})
+    if not ok:
+        return jsonify({'error': result}), 404
+    return jsonify({'success': True, 'status': new_status, 'application': result})

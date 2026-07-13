@@ -169,6 +169,11 @@ def terms_page():
     return _render_page('terms.html', {'terms': True})
 
 
+@pages_bp.route('/cookies')
+def cookies_page():
+    return _render_page('cookies.html', {'cookies': True})
+
+
 @pages_bp.route('/api/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy', 'timestamp': datetime.datetime.now().isoformat()})
