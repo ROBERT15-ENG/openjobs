@@ -644,7 +644,7 @@
       return;
     }
     tbody.innerHTML = apps.map(a => {
-      const statusMap = {pending:'badge-pending',applied:'badge-active',interview:'badge-active',rejected:'badge-inactive',offer:'badge-active'};
+      const statusMap = {applied:'badge-pending',screening:'badge-pending',interview:'badge-active',rejected:'badge-inactive',offer:'badge-active',hired:'badge-active',withdrawn:'badge-inactive'};
       const cls = statusMap[a.status] || 'badge-pending';
       const label = (a.status || 'pending').charAt(0).toUpperCase() + (a.status || 'pending').slice(1);
       return `<tr>

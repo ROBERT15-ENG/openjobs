@@ -10,6 +10,8 @@ pip install -r requirements.txt -q
 if [ ! -f jobs.db ]; then
   echo "Initializing database..."
   python3 scripts/init_db.py
+else
+  python3 scripts/migrate_status.py
 fi
 
 echo "Starting OpenJobs server on http://localhost:5700"

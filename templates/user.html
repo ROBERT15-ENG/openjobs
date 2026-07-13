@@ -296,7 +296,7 @@
         <select style="padding:0.5rem 0.875rem;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:0.8rem" id="appFilter" onchange="renderApplications()">
           <option value="">All Status</option>
           <option value="applied">Applied</option>
-          <option value="pending">Pending</option>
+          <option value="applied">Applied</option>
           <option value="screening">Screening</option>
           <option value="interview">Interview</option>
           <option value="rejected">Rejected</option>
@@ -489,7 +489,7 @@
   function renderDashboard(d) {
     const s = d.stats || {};
     document.getElementById('statApps').textContent = s.total_applications || 0;
-    document.getElementById('statPending').textContent = s.pending || 0;
+    document.getElementById('statPending').textContent = s.applied ?? s.pending ?? 0;
     document.getElementById('statInterviews').textContent = s.interviews || 0;
     document.getElementById('statSaved').textContent = s.saved || 0;
     renderRecentApps(d.recent_applications || []);

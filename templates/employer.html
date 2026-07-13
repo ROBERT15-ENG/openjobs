@@ -639,7 +639,7 @@
           '<td><span class="badge badge-pending">' + cap(a.status || 'pending') + '</span></td>' +
           '<td>' + timeSince(a.applied_at) + '</td>' +
           '<td>' +
-            '<button class="action-btn" onclick="updateAppStatus(' + a.id + ',\'reviewing\')">✓ Review</button>' +
+            '<button class="action-btn" onclick="updateAppStatus(' + a.id + ',\'screening\')">✓ Review</button>' +
             '<button class="action-btn" onclick="updateAppStatus(' + a.id + ',\'interview\')">📅 Interview</button>' +
             '<button class="action-btn danger" onclick="updateAppStatus(' + a.id + ',\'rejected\')">✗ Reject</button></td>' +
         '</tr>').join('') + '</tbody></table></div></div>';
@@ -897,7 +897,7 @@ async function handlePostJob(e) {
       <div id="candidateResume" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:1rem;font-size:0.8rem;color:var(--text-muted);white-space:pre-wrap;max-height:250px;overflow-y:auto;">-</div>
     </div>
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1rem;" id="candidateActions">
-      <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,\'reviewing\')">Mark Reviewed</button>
+      <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,'screening')">Mark Reviewed</button>
       <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,\'shortlisted\')">Shortlist</button>
       <button class="btn btn-primary" onclick="updateAppStatus(window.currentAppId,\'interview\')">Schedule Interview</button>
       <button class="btn btn-danger" onclick="updateAppStatus(window.currentAppId,\'rejected\')">Reject</button>

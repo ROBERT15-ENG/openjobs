@@ -117,7 +117,16 @@ def init_db(force: bool = False) -> None:
 
     db.commit()
     db.close()
+    migrate_statuses()
     print(f'Initialized database at {DB_PATH}')
+
+
+def migrate_statuses() -> None:
+    db = sqlite3.connect(DB_PATH)
+    db.execute("UPDATE applications SET status='applied' WHERE status='pending'")
+    db.execute("UPDATE applications SET status='screening' WHERE status='reviewing'")
+    db.commit()
+    db.close()
 
 
 if __name__ == '__main__':
