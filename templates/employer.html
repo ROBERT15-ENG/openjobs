@@ -99,6 +99,27 @@
     .empty-state h3 { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 0.4rem; }
     .empty-state p { font-size: 0.875rem; }
 
+    /* KANBAN PIPELINE */
+    .pipeline-bar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
+    .pipeline-bar .form-select { width: auto; min-width: 260px; }
+    .kanban-board { display: flex; gap: 1rem; overflow-x: auto; align-items: flex-start; padding-bottom: 1rem; }
+    .kanban-col { flex: 0 0 230px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 0.75rem; min-height: 220px; transition: border-color 0.15s, background 0.15s; }
+    .kanban-col.dragover { border-color: var(--primary); background: var(--bg-card-hover); }
+    .kanban-col-head { display: flex; align-items: center; gap: 0.45rem; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 0.75rem; padding: 0 0.25rem; }
+    .kanban-count { margin-left: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.1rem 0.45rem; font-size: 0.72rem; color: var(--text-muted); }
+    .kanban-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .dot-applied { background: #60a5fa; } .dot-screening { background: #fbbf24; } .dot-interview { background: #a78bfa; }
+    .dot-offer { background: #34d399; } .dot-hired { background: #4ade80; } .dot-rejected { background: #f87171; }
+    .kanban-card { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 0.7rem 0.75rem; margin-bottom: 0.6rem; cursor: grab; transition: border-color 0.15s, transform 0.15s; }
+    .kanban-card:hover { border-color: var(--border-light); transform: translateY(-1px); }
+    .kanban-card:active { cursor: grabbing; }
+    .kanban-name { font-size: 0.85rem; font-weight: 600; margin-bottom: 0.15rem; }
+    .kanban-email { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .kanban-foot { display: flex; align-items: center; gap: 0.5rem; font-size: 0.7rem; color: var(--text-dim); }
+    .kanban-ats { color: var(--primary); font-weight: 700; }
+    .kanban-move { margin-left: auto; background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border); border-radius: 6px; font-size: 0.7rem; padding: 0.15rem 0.3rem; font-family: 'Inter', sans-serif; cursor: pointer; max-width: 90px; }
+    .kanban-move:hover { border-color: var(--primary); color: var(--primary); }
+
     /* AUTH */
     .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); }
     .auth-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 2.5rem; width: 100%; max-width: 420px; }
@@ -350,6 +371,17 @@
         <span id="appCountLabel" style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);"></span>
       </div>
       <div id="allApplications"><div class="empty-state"><div class="icon">📥</div><h3>Loading...</h3></div></div>
+    </div>
+
+    <!-- PIPELINE (KANBAN) -->
+    <div class="tab-content" id="tab-pipeline">
+      <h2 class="page-title">Pipeline</h2>
+      <p class="page-sub">Drag candidates between stages — or use the Move menu on a card.</p>
+      <div class="pipeline-bar">
+        <label class="form-label" style="margin:0;">Job</label>
+        <select class="form-select" id="pipelineJobSelect" onchange="pipelineJobChanged()"></select>
+      </div>
+      <div class="kanban-board" id="kanbanBoard"><div class="empty-state"><div class="icon">📋</div><h3>Loading…</h3></div></div>
     </div>
 
     <!-- SETTINGS -->
@@ -686,6 +718,7 @@
       const res = await fetch('/api/employer/applications', { headers: authHeaders() });
       if (!res.ok) { el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><h3>Could not load applications</h3></div>'; return; }
       const d = await res.json();
+      const apps = d.applications || [];
       window._allApplications = apps;
       if (!apps.length) {
         el.innerHTML = '<div class="empty-state"><div class="icon">📥</div><h3>No applications yet</h3></div>';
@@ -701,10 +734,10 @@
       el.innerHTML = '<div class="card"><div class="table-wrap"><table>' +
         '<thead><tr><th>Applicant</th><th>Job</th><th>Status</th><th>Applied</th><th>Actions</th></tr></thead>' +
         '<tbody>' + apps.map(a => '<tr ' +
-          '\'data-name="' + (a.applicant_name||'').toLowerCase().replace(/"/g,'') + '" ' +
-          '\'data-status="' + (a.status||'pending') + '" ' +
-          '\'data-applied="' + (a.applied_at||'') + '" ' +
-          '\'data-id="' + a.id + '">' +
+          'data-name="' + (a.applicant_name||'').toLowerCase().replace(/"/g,'') + '" ' +
+          'data-status="' + (a.status||'pending') + '" ' +
+          'data-applied="' + (a.applied_at||'') + '" ' +
+          'data-id="' + a.id + '">' +
           '<td><div class="table-title">' + escHtml(a.applicant_name || 'Unknown') + '</div>' +
             '<div class="table-company">' + escHtml(a.applicant_email || '') + '</div></td>' +
           '<td>' + escHtml(a.job_title || a.company || '—') + '</td>' +
@@ -728,6 +761,99 @@
       loadApplications();
       loadOverview();
     } catch {}
+  }
+
+  // ── PIPELINE (KANBAN) ───────────────────────────────────────────────────────
+
+  const KANBAN_STAGES = ['applied', 'screening', 'interview', 'offer', 'hired', 'rejected'];
+  const KANBAN_LABELS = { applied: 'Applied', screening: 'Screening', interview: 'Interview', offer: 'Offer', hired: 'Hired', rejected: 'Rejected' };
+  let _pipelineJobId = null;
+
+  async function loadPipeline() {
+    const sel = document.getElementById('pipelineJobSelect');
+    const board = document.getElementById('kanbanBoard');
+    try {
+      const res = await fetch('/api/employer/dashboard', { headers: authHeaders() });
+      if (!res.ok) throw new Error();
+      const d = await res.json();
+      const jobs = d.my_jobs || [];
+      if (!jobs.length) {
+        sel.innerHTML = '';
+        board.innerHTML = '<div class="empty-state"><div class="icon">📋</div><h3>No active jobs</h3><p>Post a job to start tracking candidates.</p></div>';
+        return;
+      }
+      sel.innerHTML = jobs.map(j => '<option value="' + j.id + '">' + escHtml(j.title) + '</option>').join('');
+      if (_pipelineJobId && jobs.some(j => j.id === _pipelineJobId)) sel.value = _pipelineJobId;
+      _pipelineJobId = parseInt(sel.value, 10);
+      await loadKanban(_pipelineJobId);
+    } catch {
+      board.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><h3>Could not load pipeline</h3></div>';
+    }
+  }
+
+  function pipelineJobChanged() {
+    _pipelineJobId = parseInt(document.getElementById('pipelineJobSelect').value, 10);
+    loadKanban(_pipelineJobId);
+  }
+
+  async function loadKanban(jobId) {
+    const board = document.getElementById('kanbanBoard');
+    try {
+      const res = await fetch('/api/kanban/' + jobId, { headers: authHeaders() });
+      if (!res.ok) throw new Error();
+      const d = await res.json();
+      renderKanban(d.board || {});
+    } catch {
+      board.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><h3>Could not load board</h3></div>';
+    }
+  }
+
+  function renderKanban(b) {
+    document.getElementById('kanbanBoard').innerHTML = KANBAN_STAGES.map(stage => {
+      const cards = b[stage] || [];
+      return '<div class="kanban-col" data-stage="' + stage + '" ondragover="kanbanDragOver(event)" ondragleave="kanbanDragLeave(event)" ondrop="kanbanDrop(event)">' +
+        '<div class="kanban-col-head"><span class="kanban-dot dot-' + stage + '"></span>' + KANBAN_LABELS[stage] +
+        '<span class="kanban-count">' + cards.length + '</span></div>' +
+        cards.map(a => kanbanCard(a, stage)).join('') +
+      '</div>';
+    }).join('');
+  }
+
+  function kanbanCard(a, stage) {
+    const ats = (a.ats_score != null && a.ats_score !== '') ? '<span class="kanban-ats">' + a.ats_score + '%</span>' : '';
+    return '<div class="kanban-card" draggable="true" data-app="' + a.id + '" ondragstart="kanbanDragStart(event)">' +
+      '<div class="kanban-name">' + escHtml(a.applicant_name || 'Unknown') + '</div>' +
+      '<div class="kanban-email">' + escHtml(a.applicant_email || '') + '</div>' +
+      '<div class="kanban-foot"><span>' + timeSince(a.applied_at) + '</span>' + ats +
+        '<select class="kanban-move" onchange="kanbanSelectMove(this, ' + a.id + ')" title="Move to stage">' +
+          '<option value="">Move…</option>' +
+          KANBAN_STAGES.filter(s => s !== stage).map(s => '<option value="' + s + '">' + KANBAN_LABELS[s] + '</option>').join('') +
+        '</select></div></div>';
+  }
+
+  function kanbanDragStart(e) {
+    e.dataTransfer.setData('text/plain', e.currentTarget.dataset.app);
+    e.dataTransfer.effectAllowed = 'move';
+  }
+  function kanbanDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('dragover'); }
+  function kanbanDragLeave(e) { e.currentTarget.classList.remove('dragover'); }
+  function kanbanDrop(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('dragover');
+    const appId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+    if (appId) kanbanMove(appId, e.currentTarget.dataset.stage);
+  }
+  function kanbanSelectMove(sel, appId) { if (sel.value) kanbanMove(appId, sel.value); }
+
+  async function kanbanMove(appId, stage) {
+    try {
+      await fetch('/api/kanban/' + _pipelineJobId + '/move', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ application_id: appId, stage })
+      });
+    } catch {}
+    loadKanban(_pipelineJobId);
+    loadOverview();
   }
 
   // ── POST JOB ───────────────────────────────────────────────────────────────
@@ -916,6 +1042,7 @@ async function handlePostJob(e) {
       if (t) t.classList.toggle('active', n === name);
       if (navs[i]) navs[i].classList.toggle('active', n === name);
     });
+    if (name === 'pipeline') loadPipeline();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 

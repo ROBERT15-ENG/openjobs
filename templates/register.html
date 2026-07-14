@@ -281,8 +281,8 @@
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showAlert('success', 'Account created! Redirecting to dashboard...');
-        setTimeout(() => window.location.href = '/user', 1000);
+        showAlert('success', data.message || 'Account created! Please log in.');
+        setTimeout(() => window.location.href = '/login', 1000);
       } else {
         showAlert('error', data.error || 'Registration failed. Try again.');
         btn.disabled = false;

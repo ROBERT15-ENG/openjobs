@@ -414,7 +414,7 @@
   // ── LOAD DASHBOARD DATA ──
   async function loadDashboard() {
     try {
-      const res = await fetch('/api/dashboard/seeker?user_id=getCurrentUserId()');
+      const res = await fetch('/api/dashboard/seeker?user_id=' + getCurrentUserId());
       if (!res.ok) throw new Error('API unavailable');
       dashboardData = await res.json();
       renderDashboard(dashboardData);
@@ -441,7 +441,7 @@
   }
 
   function loadUserProfile() {
-    fetch('/api/user/profile?user_id=getCurrentUserId()')
+    fetch('/api/user/profile?user_id=' + getCurrentUserId())
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data && !data.error) {

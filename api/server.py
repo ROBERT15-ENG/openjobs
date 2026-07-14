@@ -83,6 +83,10 @@ def close_db(e=None):
 
 # ============ AUTH MIDDLEWARE ============
 # ── Token Blocklist (Redis-backed, with in-memory fallback) ──────────────────
+# Defaults must exist even when REDIS_URL is unset — the try body is skipped
+# entirely in that case and the except never fires.
+_redis_client = None
+_USING_REDIS_BLOCKLIST = False
 try:
     if REDIS_URL:
         import redis
@@ -228,29 +232,32 @@ def register():
     if existing:
         return jsonify({'error': 'Email already registered'}), 400
     
-    db.execute("INSERT INTO users (name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
-               (name, email, hash_password(password), role, datetime.datetime.now().isoformat()))
+    # Without SMTP the confirmation email can never arrive, so auto-confirm
+    smtp_configured = bool(os.environ.get('SMTP_HOST'))
+    db.execute("INSERT INTO users (name, email, password_hash, role, created_at, email_confirmed) VALUES (?, ?, ?, ?, ?, ?)",
+               (name, email, hash_password(password), role, datetime.datetime.now().isoformat(),
+                0 if smtp_configured else 1))
     db.commit()
     user_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-    db.close()
 
-    # Generate email confirmation token
-    confirm_token = secrets.token_urlsafe(32)
-    confirm_expires = (datetime.datetime.now() + datetime.timedelta(hours=24)).isoformat()
-    db2 = get_db()
-    db2.execute("UPDATE users SET confirm_token = ?, confirm_expires = ? WHERE id = ?",
-                 (confirm_token, confirm_expires, user_id))
-    db2.commit()
-    db2.close()
-
-    # Send confirmation email
-    confirm_link = f"{APP_URL}/api/auth/confirm-email?token={confirm_token}"
-    _send_confirmation_email(email, name, confirm_link)
+    if smtp_configured:
+        confirm_token = secrets.token_urlsafe(32)
+        confirm_expires = (datetime.datetime.now() + datetime.timedelta(hours=24)).isoformat()
+        db.execute("UPDATE users SET confirm_token = ?, confirm_expires = ? WHERE id = ?",
+                   (confirm_token, confirm_expires, user_id))
+        db.commit()
+        confirm_link = f"{APP_URL}/api/auth/confirm-email?token={confirm_token}"
+        _send_confirmation_email(email, name, confirm_link)
+        return jsonify({
+            'success': True,
+            'message': 'Registered! Check your email to confirm your account.',
+            'email_confirmed': False
+        }), 201
 
     return jsonify({
         'success': True,
-        'message': 'Registered! Check your email to confirm your account.',
-        'email_confirmed': False
+        'message': 'Registered! You can now log in.',
+        'email_confirmed': True
     }), 201
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -266,7 +273,7 @@ def login():
     if not user or not verify_password(password, user['password_hash']):
         return jsonify({'error': 'Invalid credentials'}), 401
 
-    if not user.get('email_confirmed'):
+    if not user['email_confirmed']:
         db.close()
         return jsonify({
             'error': 'email_not_confirmed',
@@ -665,6 +672,7 @@ def upload_resume():
         if m: extracted_kyc['address'] = m.group(1).strip(); break
 
     # Save extracted KYC hints (user reviews and confirms)
+    db_path = os.path.join(os.path.dirname(__file__), '..', 'jobs.db')
     if extracted_kyc:
         db_kyc = sqlite3.connect(db_path)
         for k, v in extracted_kyc.items():
@@ -675,7 +683,6 @@ def upload_resume():
         db_kyc.close()
 
     # ── Extract skills immediately using keyword matching ───────────────────────
-    db_path = os.path.join(os.path.dirname(__file__), '..', 'jobs.db')
     extracted_skills = _extract_skills_fast(text)
     if extracted_skills:
         db2 = sqlite3.connect(db_path)
@@ -891,11 +898,21 @@ def require_auth(f):
     return decorated
 
 
-secrets = __import__('secrets')
+def _fmt_salary(smin, smax, currency='AUD'):
+    if not smin and not smax:
+        return ''
+    def f(n):
+        if not n: return ''
+        n = int(n)
+        return currency + ' ' + str(round(n/1000)*1) + 'k'
+    if smin and smax and smin != smax:
+        return f(smin) + ' - ' + f(smax)
+    if smin:
+        return 'From ' + f(smin)
+    return 'Up to ' + f(smax)
 
-@app.route('/api/auth/google', methods=['POST'])
-@limiter.limit('10 per minute')
 
+@app.route('/api/jobs', methods=['GET'])
 def get_jobs():
     db = get_db()
     

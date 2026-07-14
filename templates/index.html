@@ -766,6 +766,7 @@
   // ── STATE ──────────────────────────────────────────────────────────
   let currentPage = 1;
   let currentJob = null;
+  let prevTitle = document.title;
   const PAGE_SIZE = 20;
 
   // ── INIT ──────────────────────────────────────────────────────────
@@ -920,7 +921,6 @@
         document.getElementById('modalCompany').textContent = job.company + ' · ' + job.location;
         document.getElementById('modalBadges').innerHTML = getWorkBadge(job);
         document.getElementById('modalDesc').textContent = job.description || 'No description available.';
-        document.getElementById('modalSalary').textContent = formatSalary(job) || 'Competitive';
         document.getElementById('modalMeta').innerHTML = `
           ${salaryEl(job)}
           <div class="modal-meta-item"><svg class="ico" style="color:var(--color-primary)"><use href="#ico-location"/></svg> ${escHtml(job.location)}</div>
@@ -981,12 +981,27 @@
     return s ? `<div class="modal-meta-item" style="color:var(--primary);font-weight:600;">💰 ${s}</div>` : '';
   }
 
+  function authToken() { return localStorage.getItem('token') || ''; }
+  function currentUserId() {
+    try {
+      const t = authToken();
+      if (!t) return null;
+      return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).user_id || null;
+    } catch { return null; }
+  }
+  function requireLogin(action) {
+    alert('Please log in to ' + action + '.');
+    window.location.href = '/login';
+  }
+
   function applyToJob() {
     if (!currentJob) return;
+    const token = authToken();
+    if (!token) { requireLogin('apply'); return; }
     fetch('/api/applications', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({job_id: currentJob.id, user_id: 1})
+      headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + token},
+      body: JSON.stringify({job_id: currentJob.id})
     }).then(r => r.json())
       .then(d => {
         if (d.success) {
@@ -1001,10 +1016,12 @@
 
   function saveJob() {
     if (!currentJob) return;
+    const uid = currentUserId();
+    if (!uid) { requireLogin('save jobs'); return; }
     fetch('/api/saved_jobs', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({job_id: currentJob.id, user_id: 1})
+      body: JSON.stringify({job_id: currentJob.id, user_id: uid})
     }).then(r => r.json())
       .then(d => {
         if (d.success || d.message) {
@@ -1019,11 +1036,13 @@
   }
   function saveJobToggle(id, btn, e) {
     if (e) e.stopPropagation();
+    const uid = currentUserId();
+    if (!uid) { requireLogin('save jobs'); return; }
     const isSaved = btn.textContent === '★';
     fetch('/api/saved_jobs', {
       method: isSaved ? 'DELETE' : 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({job_id: id, user_id: 1})
+      body: JSON.stringify({job_id: id, user_id: uid})
     })
     .then(r => r.json())
     .then(d => {
@@ -1033,14 +1052,6 @@
       }
     })
     .catch(() => {});
-  }.then(r => r.json()).then(d => {
-      if (d.success || d.error && d.error.includes('UNIQUE')) {
-        btn.textContent = isSaved ? '☆' : '★';
-        btn.style.color = isSaved ? '' : 'var(--warning)';
-      } else {
-        alert('Could not save job. Is the server running?');
-      }
-    }).catch(() => alert('Could not save job. Try again.'));
   }
 
   // ── SEARCH HELPERS ─────────────────────────────────────────────────
