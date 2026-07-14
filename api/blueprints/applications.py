@@ -187,7 +187,6 @@ def update_application(app_id):
     else:
         return jsonify({'error': 'Not authorized'}), 403
 
-    old_status = normalize_status(app_row['status'])
     ok, result, _ = update_application_status(
         db, app_id, new_status, send_email=True, actor_role=request.user_role
     )

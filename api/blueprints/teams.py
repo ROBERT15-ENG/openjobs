@@ -59,7 +59,7 @@ def add_team_member():
     if not email:
         return jsonify({'error': 'email is required'}), 400
     if role not in TEAM_ROLES or role == 'owner':
-        return jsonify({'error': f'role must be one of: admin, recruiter'}), 400
+        return jsonify({'error': 'role must be one of: admin, recruiter'}), 400
 
     db = get_db()
     org_id = get_user_organization_id(db, request.user_id)

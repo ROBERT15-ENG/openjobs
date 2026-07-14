@@ -1,5 +1,6 @@
 """Employer dashboard routes."""
 
+from application_status import update_application_status
 from auth_utils import require_auth
 from constants import APPLICATION_STATUSES
 from db import get_db

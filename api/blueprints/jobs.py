@@ -10,10 +10,8 @@ from flask import Blueprint, jsonify, request
 from geo_util import geocode_location, haversine_km
 from job_util import enrich_job, geocode_job_location
 from match_util import match_tier_label
-from semantic_matcher import keyword_score
 from org_util import employer_can_access_job
-from seo_util import job_url_path
-
+from semantic_matcher import keyword_score
 from skills_util import extract_skills_fast
 
 jobs_bp = Blueprint('jobs', __name__)
