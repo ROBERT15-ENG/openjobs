@@ -1,7 +1,7 @@
 """Employer dashboard routes."""
 
 from application_status import update_application_status
-from auth_utils import require_auth
+from auth_utils import require_auth, require_employer
 from constants import APPLICATION_STATUSES
 from db import get_db
 from flask import Blueprint, jsonify, request
@@ -12,7 +12,7 @@ employer_bp = Blueprint('employer', __name__)
 
 
 @employer_bp.route('/api/employer/dashboard', methods=['GET'])
-@require_auth
+@require_employer
 def employer_dashboard():
     emp_id = request.user_id
     db = get_db()
@@ -74,7 +74,7 @@ def employer_dashboard():
 
 
 @employer_bp.route('/api/employer/applications', methods=['GET'])
-@require_auth
+@require_employer
 def employer_applications():
     db = get_db()
     status = request.args.get('status', 'all')

@@ -177,8 +177,11 @@ def update_application(app_id):
 
     if request.user_role == 'admin':
         pass
-    elif request.user_role == 'employer' and employer_can_access_job(
-        db, request.user_id, request.user_role, {'employer_id': app_row['employer_id']}
+    elif request.user_role == 'employer' and (
+        employer_can_access_job(
+            db, request.user_id, request.user_role, {'employer_id': app_row['employer_id']}
+        )
+        or app_row['employer_id'] == request.employer_id
     ):
         pass
     elif app_row['user_id'] == request.user_id:

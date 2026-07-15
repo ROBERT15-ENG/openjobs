@@ -10,6 +10,13 @@ from flask import current_app, jsonify, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
+def _employer_id_from_payload(payload: dict):
+    """Return employer id only for employer accounts."""
+    if payload.get('role') != 'employer':
+        return None
+    return payload.get('employer_id') or int(payload.get('user_id', 0) or 0)
+
+
 def hash_password(password: str) -> str:
     return generate_password_hash(password)
 
@@ -56,7 +63,7 @@ def require_auth(f):
         request.user_id = int(payload.get('user_id', 0))
         request.user_role = payload.get('role', 'user')
         request.user_email = payload.get('email', '')
-        request.employer_id = payload.get('employer_id') or payload.get('user_id')
+        request.employer_id = _employer_id_from_payload(payload)
         return f(*args, **kwargs)
     return decorated
 
@@ -71,6 +78,19 @@ def require_role(role: str):
             return f(*args, **kwargs)
         return decorated
     return decorator
+
+
+def require_employer(f):
+    """Allow employer or admin accounts (for job management APIs)."""
+
+    @wraps(f)
+    @require_auth
+    def decorated(*args, **kwargs):
+        if request.user_role not in ('employer', 'admin'):
+            return jsonify({'error': 'Requires employer role'}), 403
+        return f(*args, **kwargs)
+
+    return decorated
 
 
 def optional_auth(f):
@@ -94,7 +114,7 @@ def optional_auth(f):
                         request.user_id = int(payload.get('user_id', 0))
                         request.user_role = payload.get('role', 'user')
                         request.user_email = payload.get('email', '')
-                        request.employer_id = payload.get('employer_id') or payload.get('user_id')
+                        request.employer_id = _employer_id_from_payload(payload)
         return f(*args, **kwargs)
 
     return decorated

@@ -43,15 +43,63 @@ All notable changes to the OpenJobs platform are documented in this file.
 
 ---
 
+---
+
+## Quick review — PR #7 (v2.4.1 security hardening)
+
+**Branch:** `cursor/security-hardening-6b92` → `main`  
+**Tests:** 47 passing (`pytest tests/ -q`) — includes 7 new security tests  
+**CI:** ruff, pytest, pip-audit (now fails on CVEs)
+
+### What to focus on when reviewing
+
+| Area | Files | Reviewer note |
+|------|-------|---------------|
+| Auth / roles | `api/auth_utils.py`, `api/blueprints/jobs.py`, `employer.py` | Seekers can no longer post jobs; `employer_id` only on employer accounts |
+| XSS | `api/seo_util.py`, `templates/user.html` | JSON-LD `<` escaped; skill tags use `escHtml()` |
+| Config / deploy | `api/app_factory.py`, `.env.example` | **Breaking in prod:** must set `SECRET_KEY`; optional `CORS_ORIGINS`, `ADMIN_PASSWORD` |
+| AI abuse | `api/blueprints/ai.py` | All AI POST routes now require login + rate limits |
+| Applications | `api/blueprints/applications.py` | Seekers may only set status → `withdrawn` |
+| Payments | `api/blueprints/payments.py` | Webhook checks `user_id` owns job; generic error messages |
+| Emails | `email_notifier.py`, `auth.py` | Dynamic HTML content escaped |
+| Uploads | `api/blueprints/auth.py` | File size checked **before** disk write |
+| CI | `.github/workflows/ci.yml` | `pip-audit` no longer ignored (`\|\| true` removed) |
+
+### Breaking / behavior changes
+
+- `POST /api/jobs` → **403** for seeker tokens (was allowed)
+- `POST /api/ai/ollama/*` → **401** without auth (was public)
+- `PATCH /api/applications/<id>` → seekers rejected unless status is `withdrawn`
+- Production boot → **fails** if `SECRET_KEY` is missing or default
+- CORS → no longer `*`; defaults to `BASE_URL` + localhost
+
+### Deploy checklist (production)
+
+```bash
+export SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+export FLASK_ENV=production
+export ADMIN_PASSWORD=<strong-password>   # optional; avoids default admin123
+export CORS_ORIGINS=https://yourdomain.com
+```
+
+### Deferred (not in this PR)
+
+- Redis JWT blocklist / shared rate limits
+- HttpOnly cookie sessions (replace `localStorage` JWT)
+- OAuth, live Stripe payments, full CSP
+
+---
+
 ## [Unreleased]
 
 ### Added
 - `DEPLOYMENT_CHECKLIST.md` — phased pre/post deploy checklist
 
 ### Planned
+- Redis-backed JWT blocklist and rate limiting
 - Stripe live payments
-- OAuth (Google, LinkedIn)
-- Redis sessions, PostgreSQL
+- LinkedIn OAuth
+- PostgreSQL
 
 ## [2.5.1] - 2026-07-13 — PR #8 follow-up
 
@@ -99,11 +147,50 @@ All notable changes to the OpenJobs platform are documented in this file.
 
 ### Deferred
 - Stripe checkout (demo posting remains free)
-- OAuth social login buttons (still show setup message)
+
+## [2.4.1] - 2026-07-13 — PR #7
+
+> Security audit P0 + P1 fixes. **47 tests passing.**
+
+### Security — Critical / High
+
+| Fix | Detail |
+|-----|--------|
+| `SECRET_KEY` | Refuses default/missing secret when `FLASK_ENV=production` |
+| JSON-LD XSS | `seo_util.py` escapes `<` in structured data |
+| `employer_id` | Only set for `role=employer` (fixes seeker impersonation) |
+| Job mutations | `POST/PATCH/DELETE /api/jobs` → `@require_employer` |
+| Employer APIs | `/api/employer/*` → employer or admin only |
+| CORS | Restricted to `BASE_URL` / localhost (`CORS_ORIGINS` override) |
+| AI endpoints | Auth + rate limits on all POST routes |
+| Stripe webhook | Verifies `metadata.user_id` owns `job_id` |
+
+### Security — Medium
+
+| Fix | Detail |
+|-----|--------|
+| Application status | Seekers can only set `withdrawn` |
+| Resume upload | Size validated before `file.save()` |
+| Emails | `html.escape()` on user/job data in HTML emails |
+| Skill tags | `escHtml()` on profile skill add (`user.html`) |
+| View counter | Rate limited (`30/min`) |
+| Admin seed | `ADMIN_PASSWORD` env + warning for default |
+| Error responses | Stripe/payment errors no longer leak internals |
+
+### Added
+
+- Response headers: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`
+- Rate limits: `register-employer`, `forgot-password`, `reset-password`
+- `tests/test_security.py` — 7 regression tests
+- CI: `pip-audit` fails build on vulnerabilities
+
+### Changed files (18)
+
+`api/app_factory.py` · `api/auth_utils.py` · `api/seo_util.py` · `api/blueprints/{jobs,employer,auth,applications,ai,payments}.py` · `email_notifier.py` · `templates/user.html` · `scripts/init_db.py` · `.env.example` · `.github/workflows/ci.yml` · `tests/{test_security,test_jobs,test_sprint16}.py`
 
 ## [2.4.0] - 2026-07-13 — PR #6 (merged)
 
-### Sprint 1–6 — Gap fixes
+> Sprint 1–6 gap fixes. **39 tests** at release.
 
 #### Fixed
 - **register.html**: employer sign-up uses `POST /api/auth/register-employer` with company field; redirects to `/employer`

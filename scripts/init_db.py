@@ -27,11 +27,14 @@ def init_db(force: bool = False) -> None:
     db.executescript(schema)
 
     now = datetime.datetime.now().isoformat()
+    admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
+    if admin_password == 'admin123':
+        print('WARNING: Default admin password in use. Set ADMIN_PASSWORD before production deploy.')
 
     users = [
         ('Demo Seeker', 'demo@openjobs.com', generate_password_hash('TestPass123'), 'user'),
         ('Demo Employer', 'employer@openjobs.com', generate_password_hash('Employer123'), 'employer'),
-        ('Platform Admin', 'admin@openjobs.com', generate_password_hash('admin123'), 'admin'),
+        ('Platform Admin', 'admin@openjobs.com', generate_password_hash(admin_password), 'admin'),
     ]
     for name, email, pw_hash, role in users:
         db.execute(
