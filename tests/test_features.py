@@ -45,7 +45,7 @@ def test_messaging_flow(client):
 
 def test_employer_team_on_register(client):
     res = client.post('/api/auth/register-employer', json={
-        'name': 'Acme HR', 'email': 'hr@acme.test', 'password': 'pass123', 'company': 'Acme Corp',
+        'name': 'Acme HR', 'email': 'hr@acme.test', 'password': 'SecurePass1', 'company': 'Acme Corp',
     })
     assert res.status_code == 201
     token = res.get_json()['token']

@@ -7,6 +7,7 @@ import jwt
 from constants import JWT_ALGORITHM, JWT_EXPIRY_DAYS
 from extensions import BLOCKED_TOKENS
 from flask import current_app, jsonify, request
+from session_util import extract_bearer_or_cookie_token
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -22,6 +23,8 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, pw_hash: str) -> bool:
+    if not pw_hash:
+        return False
     return check_password_hash(pw_hash, password)
 
 
@@ -45,25 +48,36 @@ def decode_token(token: str):
         return None
 
 
+def _apply_auth_payload(payload: dict) -> None:
+    request.user_id = int(payload.get('user_id', 0))
+    request.user_role = payload.get('role', 'user')
+    request.user_email = payload.get('email', '')
+    request.employer_id = _employer_id_from_payload(payload)
+
+
+def _authenticate_request():
+    """Return (payload, error_response) — error_response is (json, status) or None."""
+    token = extract_bearer_or_cookie_token(request)
+    if not token:
+        return None, (jsonify({'error': 'Missing or invalid Authorization header'}), 401)
+    if token in BLOCKED_TOKENS:
+        return None, (jsonify({'error': 'Token has been revoked'}), 401)
+    payload = decode_token(token)
+    if not payload:
+        return None, (jsonify({'error': 'Invalid token'}), 401)
+    exp = payload.get('exp')
+    if exp and datetime.datetime.utcfromtimestamp(exp) < datetime.datetime.utcnow():
+        return None, (jsonify({'error': 'Token expired'}), 401)
+    return payload, None
+
+
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth = request.headers.get('Authorization', '')
-        if not auth.startswith('Bearer '):
-            return jsonify({'error': 'Missing or invalid Authorization header'}), 401
-        token = auth.split(' ', 1)[1]
-        if token in BLOCKED_TOKENS:
-            return jsonify({'error': 'Token has been revoked'}), 401
-        payload = decode_token(token)
-        if not payload:
-            return jsonify({'error': 'Invalid token'}), 401
-        exp = payload.get('exp')
-        if exp and datetime.datetime.utcfromtimestamp(exp) < datetime.datetime.utcnow():
-            return jsonify({'error': 'Token expired'}), 401
-        request.user_id = int(payload.get('user_id', 0))
-        request.user_role = payload.get('role', 'user')
-        request.user_email = payload.get('email', '')
-        request.employer_id = _employer_id_from_payload(payload)
+        payload, err = _authenticate_request()
+        if err:
+            return err
+        _apply_auth_payload(payload)
         return f(*args, **kwargs)
     return decorated
 
@@ -94,7 +108,7 @@ def require_employer(f):
 
 
 def optional_auth(f):
-    """Attach user context when a valid Bearer token is present."""
+    """Attach user context when a valid Bearer token or session cookie is present."""
 
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -103,18 +117,13 @@ def optional_auth(f):
         request.user_email = None
         request.employer_id = None
 
-        auth = request.headers.get('Authorization', '')
-        if auth.startswith('Bearer '):
-            token = auth.split(' ', 1)[1]
-            if token not in BLOCKED_TOKENS:
-                payload = decode_token(token)
-                if payload:
-                    exp = payload.get('exp')
-                    if not exp or datetime.datetime.utcfromtimestamp(exp) >= datetime.datetime.utcnow():
-                        request.user_id = int(payload.get('user_id', 0))
-                        request.user_role = payload.get('role', 'user')
-                        request.user_email = payload.get('email', '')
-                        request.employer_id = _employer_id_from_payload(payload)
+        token = extract_bearer_or_cookie_token(request)
+        if token and token not in BLOCKED_TOKENS:
+            payload = decode_token(token)
+            if payload:
+                exp = payload.get('exp')
+                if not exp or datetime.datetime.utcfromtimestamp(exp) >= datetime.datetime.utcnow():
+                    _apply_auth_payload(payload)
         return f(*args, **kwargs)
 
     return decorated

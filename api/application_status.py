@@ -40,14 +40,23 @@ def update_application_status(db, app_id, new_status, *, send_email=True, actor_
         and new_status != old_status
     ):
         try:
-            from email_notifier import send_application_status_update
-            send_application_status_update(
-                app_row['applicant_email'],
-                app_row['applicant_name'] or 'there',
-                app_row['job_title'] or 'your application',
-                app_row['job_company'] or '',
-                new_status,
-            )
+            if new_status == 'rejected':
+                from email_notifier import send_rejection_email
+                send_rejection_email(
+                    app_row['applicant_email'],
+                    app_row['applicant_name'] or 'there',
+                    app_row['job_title'] or 'your application',
+                    app_row['job_company'] or '',
+                )
+            else:
+                from email_notifier import send_application_status_update
+                send_application_status_update(
+                    app_row['applicant_email'],
+                    app_row['applicant_name'] or 'there',
+                    app_row['job_title'] or 'your application',
+                    app_row['job_company'] or '',
+                    new_status,
+                )
         except Exception as exc:
             print(f'[application_status] email error: {exc}')
 

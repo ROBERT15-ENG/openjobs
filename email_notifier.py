@@ -166,6 +166,25 @@ def send_application_status_update(
     return send_email(to_email, f"Update: {job_title} — {safe_status}", html_body)
 
 
+def send_rejection_email(to_email: str, applicant_name: str, job_title: str, company: str) -> dict:
+    """Dedicated rejection notice (ekip pattern) when status moves to rejected."""
+    html_body = f"""
+    <html><body style="font-family:Arial,sans-serif;background:#0f0f0f;color:#fff;padding:20px;">
+      <div style="max-width:600px;margin:0 auto;">
+        <h1 style="color:#ff6b6b;">Application update</h1>
+        <p>Hi <strong>{html.escape(applicant_name)}</strong>,</p>
+        <p>Thank you for your interest in the <strong>{html.escape(job_title)}</strong> role at
+        <strong>{html.escape(company)}</strong>.</p>
+        <p>After careful review, we regret to inform you that your application is unlikely to proceed
+        further at this stage. This is not a reflection of your abilities — we simply had a high volume
+        of qualified candidates.</p>
+        <p>We encourage you to keep browsing — new roles are posted regularly.</p>
+        <p><a href="{html.escape(BASE_URL)}" style="color:#00d4ff;">View open positions</a></p>
+      </div>
+    </body></html>"""
+    return send_email(to_email, f"Update on your application: {job_title}", html_body)
+
+
 if __name__ == "__main__":
     # Test if configured
     print(f"SMTP Configured: {is_configured()}")

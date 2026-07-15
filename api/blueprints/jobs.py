@@ -11,6 +11,7 @@ from geo_util import geocode_location, haversine_km
 from job_util import enrich_job, geocode_job_location
 from match_util import match_tier_label
 from org_util import employer_can_access_job
+from regions_util import REGIONS, infer_country_region, normalize_country
 from semantic_matcher import keyword_score
 from skills_util import extract_skills_fast
 
@@ -132,6 +133,20 @@ def get_jobs():
         )
         where.append(visa_clause)
 
+    country = normalize_country(request.args.get('country'))
+    if country:
+        where.append('(UPPER(COALESCE(country, \'\')) = ? OR LOWER(location) LIKE ?)')
+        loc_pat = '%australia%' if country == 'AU' else f'%{country.lower()}%'
+        if country == 'SG':
+            loc_pat = '%singapore%'
+        params.extend([country, loc_pat])
+
+    region = (request.args.get('region') or '').strip().lower()
+    if region:
+        where.append('(LOWER(COALESCE(region, \'\')) = ? OR LOWER(location) LIKE ?)')
+        region_name = (REGIONS.get(region) or {}).get('name', region)
+        params.extend([region, f'%{region_name.lower()}%'])
+
     where_clause = ' AND '.join(where)
 
     sort = request.args.get('sort', 'newest')
@@ -215,13 +230,16 @@ def create_job():
     expires_at = data.get('expires_at') or (datetime.datetime.now() + datetime.timedelta(days=30)).isoformat()
     employer_id = getattr(request, 'employer_id', None)
     lat, lng = geocode_job_location(data.get('location', ''))
+    inferred_country, inferred_region = infer_country_region(data.get('location', ''))
+    country = normalize_country(data.get('country')) or inferred_country
+    region = (data.get('region') or inferred_region or '').strip().lower() or None
     db.execute(
         """INSERT INTO jobs (
             title, company, location, description, salary, category, is_active, created_at, posted_at,
             work_type, work_arrangement, salary_min, salary_max, salary_currency,
             search_summary, selling_points, video_url, expires_at, skills, employer_id,
-            latitude, longitude
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            latitude, longitude, country, region
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data.get('title'),
             data.get('company'),
@@ -245,6 +263,8 @@ def create_job():
             employer_id,
             lat,
             lng,
+            country,
+            region,
         ),
     )
     db.commit()
@@ -269,6 +289,7 @@ def update_job(job_id):
         'title', 'description', 'location', 'salary', 'salary_min', 'salary_max',
         'salary_currency', 'category', 'work_type', 'work_arrangement',
         'is_active', 'expires_at', 'skills', 'selling_points', 'video_url',
+        'country', 'region',
     ]
     updates = {key: value for key, value in data.items() if key in allowed}
     if not updates:
@@ -285,6 +306,17 @@ def update_job(job_id):
         lat, lng = geocode_job_location(updates['location'])
         updates['latitude'] = lat
         updates['longitude'] = lng
+        if 'country' not in updates or 'region' not in updates:
+            inferred_country, inferred_region = infer_country_region(updates['location'])
+            if 'country' not in updates and inferred_country:
+                updates['country'] = inferred_country
+            if 'region' not in updates and inferred_region:
+                updates['region'] = inferred_region
+
+    if 'country' in updates:
+        updates['country'] = normalize_country(updates['country'])
+    if 'region' in updates and updates['region']:
+        updates['region'] = str(updates['region']).strip().lower()
 
     set_clause = ', '.join(f'{key} = ?' for key in updates)
     db.execute(f'UPDATE jobs SET {set_clause} WHERE id = ?', list(updates.values()) + [job_id])
@@ -447,3 +479,8 @@ def predict_salary():
     if 'lead' in title_lower:
         base += 30000
     return jsonify({'success': True, 'predicted': base, 'range': {'min': base * 0.85, 'max': base * 1.15}})
+
+
+@jobs_bp.route('/api/regions', methods=['GET'])
+def list_regions():
+    return jsonify({'success': True, 'regions': REGIONS})

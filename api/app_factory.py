@@ -50,7 +50,11 @@ def create_app(test_config=None):
 
     try:
         from flask_cors import CORS
-        CORS(app, resources={r'/api/*': {'origins': _cors_origins()}})
+        CORS(
+            app,
+            resources={r'/api/*': {'origins': _cors_origins()}},
+            supports_credentials=True,
+        )
     except ImportError:
         pass
 
@@ -64,4 +68,19 @@ def create_app(test_config=None):
     limiter.init_app(app)
     app.teardown_appcontext(close_db)
     register_blueprints(app)
+
+    # Idempotent column adds for upgrades from older schema.sql
+    if not (test_config and test_config.get('TESTING')):
+        try:
+            import sqlite3
+
+            from db import get_db_path
+            from schema_migrate import ensure_schema
+            conn = sqlite3.connect(get_db_path())
+            conn.row_factory = sqlite3.Row
+            ensure_schema(conn)
+            conn.close()
+        except Exception as exc:
+            print(f'[schema_migrate] skipped: {exc}')
+
     return app

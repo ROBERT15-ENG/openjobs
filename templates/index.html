@@ -500,6 +500,27 @@
       <div class="filter-check-group">
         <label class="filter-check"><input type="checkbox" id="filterVisa" onchange="fetchJobs()"> <span>🌍 Visa sponsorship</span></label>
       </div>
+      <div class="filter-group" style="margin-top:0.75rem">
+        <label for="filterCountry">Country</label>
+        <select class="filter-select" id="filterCountry" onchange="fetchJobs()">
+          <option value="">All countries</option>
+          <option value="AU">Australia</option>
+          <option value="SG">Singapore</option>
+          <option value="XX">Remote / Worldwide</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="filterRegion">Region</label>
+        <select class="filter-select" id="filterRegion" onchange="fetchJobs()">
+          <option value="">All regions</option>
+          <option value="au-syd">Sydney</option>
+          <option value="au-mel">Melbourne</option>
+          <option value="au-bne">Brisbane</option>
+          <option value="au-per">Perth</option>
+          <option value="sg">Singapore</option>
+          <option value="remote">Remote</option>
+        </select>
+      </div>
     </div>
 
     <div class="filter-card">
@@ -731,6 +752,10 @@
     if (workTypes.length)  url += `&work_type=${workTypes.join(',')}`;
     if (workArr.length)    url += `&work_arrangement=${workArr.join(',')}`;
     if (document.getElementById('filterVisa')?.checked) url += '&visa=1';
+    const country = document.getElementById('filterCountry')?.value;
+    if (country) url += `&country=${encodeURIComponent(country)}`;
+    const region = document.getElementById('filterRegion')?.value;
+    if (region) url += `&region=${encodeURIComponent(region)}`;
     if (sort) url += `&sort=${encodeURIComponent(sort)}`;
     const radius = document.getElementById('filterRadius')?.value;
     const nearCity = locationFilter || location;

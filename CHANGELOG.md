@@ -101,6 +101,19 @@ export CORS_ORIGINS=https://yourdomain.com
 - LinkedIn OAuth
 - PostgreSQL
 
+## [2.5.2] - 2026-07-14 — PR #8 merge strong attrs
+
+### Added (from PR #7 security + ekip)
+- **HttpOnly `oj_session` cookie** on login/register; auth accepts cookie or Bearer
+- **Email confirmation** when SMTP is configured (auto-confirm in local/dev)
+- **Google Sign-In** `POST /api/auth/google` (optional `GOOGLE_CLIENT_ID` + google-auth)
+- **Country / region filters** `?country=` `?region=` + `GET /api/regions`
+- **KYC profile fields** + `GET/PATCH /api/kyc/*`
+- **Rejection email** when application status → `rejected`
+- Password complexity (8+ chars, upper/lower/digit)
+- Railway deploy configs (`railway.toml`, `railway.json`)
+- Merged PR #7 security gates onto this branch
+
 ## [2.5.1] - 2026-07-13 — PR #8 follow-up
 
 ### Added

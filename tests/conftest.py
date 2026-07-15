@@ -36,11 +36,11 @@ def _seed_db(db_path: str) -> None:
     conn.execute(
         """INSERT INTO jobs (
             title, company, location, description, salary, category, is_active, created_at, posted_at,
-            work_type, work_arrangement, employer_id, latitude, longitude
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            work_type, work_arrangement, employer_id, latitude, longitude, country, region
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             'Backend Engineer', 'Acme', 'Sydney, NSW', 'Python role with visa sponsorship available for eligible candidates', '100k', 'Development', 1, now, now,
-            'full_time', 'remote', employer_id, -33.8688, 151.2093,
+            'full_time', 'remote', employer_id, -33.8688, 151.2093, 'AU', 'au-syd',
         ),
     )
     conn.commit()

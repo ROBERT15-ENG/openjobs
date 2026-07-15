@@ -2,6 +2,7 @@
 
 import datetime
 import html
+import os
 import secrets
 import sqlite3
 import threading
@@ -11,12 +12,39 @@ from db import get_db, get_db_path
 from extensions import BLOCKED_TOKENS, limiter
 from flask import Blueprint, jsonify, request
 from org_util import create_organization_for_employer
+from password_util import validate_password
 from resume_util import ALLOWED_EXT, extract_resume_text
+from session_util import clear_session_cookie, extract_bearer_or_cookie_token, set_session_cookie
 from skills_util import extract_skills_fast
 
+from email_notifier import is_configured as smtp_configured
 from email_notifier import send_email
 
 auth_bp = Blueprint('auth', __name__)
+
+
+def _auth_response(payload: dict, status: int = 200, token: str | None = None):
+    resp = jsonify(payload)
+    if token:
+        set_session_cookie(resp, token)
+    return resp, status
+
+
+def _send_confirmation_email(to_email: str, user_name: str, confirm_link: str) -> dict:
+    safe_name = html.escape(user_name or to_email.split('@')[0])
+    safe_link = html.escape(confirm_link)
+    html_body = f"""
+    <html><body style="font-family:Arial,sans-serif;background:#0f0f0f;color:#fff;padding:20px;">
+      <div style="max-width:600px;margin:0 auto;text-align:center;">
+        <h1 style="color:#00d4ff;">Confirm your email</h1>
+        <p>Hi {safe_name}, click below to verify your OpenJobs account:</p>
+        <div style="margin:30px 0;">
+          <a href="{safe_link}" style="background:#00d4ff;color:#000;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;">Confirm Email</a>
+        </div>
+        <p style="color:#888;font-size:12px;">This link expires in 24 hours.</p>
+      </div>
+    </body></html>"""
+    return send_email(to_email, 'Confirm your OpenJobs account', html_body)
 
 
 @auth_bp.route('/api/auth/register', methods=['POST'])
@@ -32,26 +60,49 @@ def register():
         return jsonify({'error': 'Missing required fields'}), 400
     if '@' not in email or '.' not in email:
         return jsonify({'error': 'Invalid email format'}), 400
-    if len(password) < 6:
-        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    pw_err = validate_password(password)
+    if pw_err:
+        return jsonify({'error': pw_err}), 400
 
     db = get_db()
     if db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone():
         return jsonify({'error': 'Email already registered'}), 400
 
+    # Without SMTP, confirmation email cannot arrive — auto-confirm (ekip pattern)
+    confirmed = 0 if smtp_configured() else 1
     db.execute(
-        'INSERT INTO users (name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
-        (name, email, hash_password(password), role, datetime.datetime.now().isoformat()),
+        """INSERT INTO users (name, email, password_hash, role, created_at, email_confirmed)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (name, email, hash_password(password), role, datetime.datetime.now().isoformat(), confirmed),
     )
     db.commit()
     user_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+
+    if not confirmed:
+        confirm_token = secrets.token_urlsafe(32)
+        confirm_expires = (datetime.datetime.now() + datetime.timedelta(hours=24)).isoformat()
+        db.execute(
+            'UPDATE users SET confirm_token = ?, confirm_expires = ? WHERE id = ?',
+            (confirm_token, confirm_expires, user_id),
+        )
+        db.commit()
+        from flask import current_app
+        confirm_link = f"{current_app.config['BASE_URL']}/api/auth/confirm-email?token={confirm_token}"
+        _send_confirmation_email(email, name, confirm_link)
+        return jsonify({
+            'success': True,
+            'message': 'Registered! Check your email to confirm your account.',
+            'email_confirmed': False,
+        }), 201
+
     token = create_token({'id': user_id, 'email': email, 'role': role})
-    return jsonify({
+    return _auth_response({
         'success': True,
         'message': 'Registered successfully',
         'token': token,
+        'email_confirmed': True,
         'user': {'id': user_id, 'name': name, 'email': email, 'role': role, 'employer_id': None},
-    }), 201
+    }, 201, token)
 
 
 @auth_bp.route('/api/auth/login', methods=['POST'])
@@ -62,13 +113,18 @@ def login():
     password = data.get('password', '')
     db = get_db()
     user = db.execute(
-        'SELECT id, name, email, password_hash, role FROM users WHERE email = ?',
+        'SELECT id, name, email, password_hash, role, email_confirmed FROM users WHERE email = ?',
         (email,),
     ).fetchone()
     if not user or not verify_password(password, user['password_hash']):
         return jsonify({'error': 'Invalid credentials'}), 401
+    if user['email_confirmed'] is not None and int(user['email_confirmed']) == 0:
+        return jsonify({
+            'error': 'email_not_confirmed',
+            'message': 'Please confirm your email before logging in.',
+        }), 403
     token = create_token(user)
-    return jsonify({
+    return _auth_response({
         'success': True,
         'token': token,
         'user': {
@@ -78,7 +134,7 @@ def login():
             'role': user['role'],
             'employer_id': user['id'] if user['role'] == 'employer' else None,
         },
-    })
+    }, 200, token)
 
 
 @auth_bp.route('/api/auth/register-employer', methods=['POST'])
@@ -93,27 +149,49 @@ def register_employer():
         return jsonify({'error': 'Name, email, password, and company are required'}), 400
     if '@' not in email or '.' not in email:
         return jsonify({'error': 'Invalid email'}), 400
-    if len(password) < 6:
-        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    pw_err = validate_password(password)
+    if pw_err:
+        return jsonify({'error': pw_err}), 400
 
     db = get_db()
     if db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone():
         return jsonify({'error': 'Email already registered'}), 400
 
+    confirmed = 0 if smtp_configured() else 1
     db.execute(
-        'INSERT INTO users (name, email, password_hash, role, company, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        (name, email, hash_password(password), 'employer', company, datetime.datetime.now().isoformat()),
+        """INSERT INTO users (name, email, password_hash, role, company, created_at, email_confirmed)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (name, email, hash_password(password), 'employer', company, datetime.datetime.now().isoformat(), confirmed),
     )
     db.commit()
     user_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
     create_organization_for_employer(db, company, user_id)
     db.commit()
+
+    if not confirmed:
+        confirm_token = secrets.token_urlsafe(32)
+        confirm_expires = (datetime.datetime.now() + datetime.timedelta(hours=24)).isoformat()
+        db.execute(
+            'UPDATE users SET confirm_token = ?, confirm_expires = ? WHERE id = ?',
+            (confirm_token, confirm_expires, user_id),
+        )
+        db.commit()
+        from flask import current_app
+        confirm_link = f"{current_app.config['BASE_URL']}/api/auth/confirm-email?token={confirm_token}"
+        _send_confirmation_email(email, name, confirm_link)
+        return jsonify({
+            'success': True,
+            'message': 'Registered! Check your email to confirm your account.',
+            'email_confirmed': False,
+        }), 201
+
     token = create_token({'id': user_id, 'email': email, 'role': 'employer'})
-    return jsonify({
+    return _auth_response({
         'success': True,
         'token': token,
+        'email_confirmed': True,
         'user': {'id': user_id, 'name': name, 'email': email, 'role': 'employer', 'company': company, 'employer_id': user_id},
-    }), 201
+    }, 201, token)
 
 
 @auth_bp.route('/api/auth/forgot-password', methods=['POST'])
@@ -163,8 +241,9 @@ def reset_password():
     password = data.get('password', '')
     if not token or not password:
         return jsonify({'error': 'Token and new password are required'}), 400
-    if len(password) < 6:
-        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    pw_err = validate_password(password)
+    if pw_err:
+        return jsonify({'error': pw_err}), 400
 
     db = get_db()
     user = db.execute(
@@ -182,12 +261,110 @@ def reset_password():
     return jsonify({'success': True, 'message': 'Password reset successful!'}), 200
 
 
+@auth_bp.route('/api/auth/confirm-email', methods=['GET'])
+def confirm_email():
+    token = request.args.get('token', '').strip()
+    if not token:
+        return jsonify({'error': 'Confirmation token required'}), 400
+    db = get_db()
+    user = db.execute(
+        'SELECT id, email_confirmed FROM users WHERE confirm_token = ? AND confirm_expires > ?',
+        (token, datetime.datetime.now().isoformat()),
+    ).fetchone()
+    if not user:
+        return jsonify({'error': 'Invalid or expired confirmation token'}), 400
+    if user['email_confirmed']:
+        return jsonify({'success': True, 'message': 'Email already confirmed'}), 200
+    db.execute(
+        'UPDATE users SET email_confirmed = 1, confirm_token = NULL, confirm_expires = NULL WHERE id = ?',
+        (user['id'],),
+    )
+    db.commit()
+    return jsonify({'success': True, 'message': 'Email confirmed! You can now log in.'}), 200
+
+
+@auth_bp.route('/api/auth/google', methods=['POST'])
+@limiter.limit('10 per minute')
+def google_auth():
+    """Google Sign-In via ID token (ekip lineage). Requires google-auth + GOOGLE_CLIENT_ID."""
+    data = request.json or {}
+    google_token = data.get('token')
+    if not google_token:
+        return jsonify({'error': 'Google token required'}), 400
+
+    client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
+    try:
+        from google.auth.transport import requests as gauth
+        from google.oauth2 import id_token as gid_token
+        id_info = gid_token.verify_oauth2_token(
+            google_token,
+            gauth.Request(),
+            audience=client_id or None,
+        )
+    except ImportError:
+        return jsonify({'error': 'Google Sign-In not available (install google-auth)'}), 503
+    except Exception as exc:
+        return jsonify({'error': 'Invalid Google token', 'detail': str(exc)}), 401
+
+    google_id = id_info.get('sub')
+    email = id_info.get('email')
+    name = id_info.get('name', '') or (email.split('@')[0] if email else 'Google User')
+    if not email or not google_id:
+        return jsonify({'error': 'Email not available from Google account'}), 400
+
+    db = get_db()
+    user = db.execute(
+        'SELECT id, name, email, role FROM users WHERE google_id = ? OR email = ?',
+        (google_id, email),
+    ).fetchone()
+
+    if not user:
+        try:
+            db.execute(
+                """INSERT INTO users (name, email, password_hash, google_id, email_confirmed, role, created_at)
+                   VALUES (?, ?, '', ?, 1, 'user', ?)""",
+                (name, email, google_id, datetime.datetime.now().isoformat()),
+            )
+            db.commit()
+            uid = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            role = 'user'
+        except sqlite3.IntegrityError:
+            return jsonify({
+                'error': 'Email already registered with a password. Please sign in with email instead.',
+            }), 409
+    else:
+        uid = user['id']
+        role = user['role']
+        db.execute(
+            'UPDATE users SET google_id = COALESCE(google_id, ?), email_confirmed = 1 WHERE id = ?',
+            (google_id, uid),
+        )
+        if name and name != user['name']:
+            db.execute('UPDATE users SET name = ? WHERE id = ?', (name, uid))
+        db.commit()
+
+    token = create_token({'id': uid, 'email': email, 'role': role})
+    return _auth_response({
+        'success': True,
+        'token': token,
+        'user': {
+            'id': uid,
+            'name': name,
+            'email': email,
+            'role': role,
+            'employer_id': uid if role == 'employer' else None,
+        },
+    }, 200, token)
+
+
 @auth_bp.route('/api/auth/logout', methods=['POST'])
 def logout():
-    auth = request.headers.get('Authorization', '')
-    if auth.startswith('Bearer '):
-        BLOCKED_TOKENS.add(auth.split(' ', 1)[1])
-    return jsonify({'success': True, 'message': 'Logged out'})
+    token = extract_bearer_or_cookie_token(request)
+    if token:
+        BLOCKED_TOKENS.add(token)
+    resp = jsonify({'success': True, 'message': 'Logged out'})
+    clear_session_cookie(resp)
+    return resp
 
 
 @auth_bp.route('/api/auth/me', methods=['GET'])
@@ -195,7 +372,9 @@ def logout():
 def me():
     db = get_db()
     user = db.execute(
-        'SELECT id, name, email, role, skills, phone, company, preferred_location, created_at FROM users WHERE id = ?',
+        """SELECT id, name, email, role, skills, phone, company, preferred_location,
+                  email_confirmed, kyc_status, country, created_at
+           FROM users WHERE id = ?""",
         (request.user_id,),
     ).fetchone()
     if not user:
