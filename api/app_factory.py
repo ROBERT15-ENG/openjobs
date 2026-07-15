@@ -69,18 +69,19 @@ def create_app(test_config=None):
     app.teardown_appcontext(close_db)
     register_blueprints(app)
 
-    # Idempotent column adds for upgrades from older schema.sql
-    if not (test_config and test_config.get('TESTING')):
-        try:
-            import sqlite3
+    # Idempotent column/table adds for upgrades from older schema.sql
+    try:
+        import sqlite3
 
-            from db import get_db_path
-            from schema_migrate import ensure_schema
-            conn = sqlite3.connect(get_db_path())
-            conn.row_factory = sqlite3.Row
-            ensure_schema(conn)
-            conn.close()
-        except Exception as exc:
-            print(f'[schema_migrate] skipped: {exc}')
+        from db import get_db_path
+        from schema_migrate import ensure_schema
+        conn = sqlite3.connect(get_db_path())
+        conn.row_factory = sqlite3.Row
+        ensure_schema(conn)
+        conn.close()
+    except Exception as exc:
+        print(f'[schema_migrate] FATAL: {exc}', file=sys.stderr)
+        if not (test_config and test_config.get('TESTING')):
+            raise
 
     return app

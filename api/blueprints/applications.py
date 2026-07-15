@@ -245,15 +245,23 @@ def get_kanban(job_id):
 @require_auth
 def move_kanban_card(job_id):
     db = get_db()
-    job = db.execute('SELECT employer_id FROM jobs WHERE id=?', (job_id,)).fetchone()
-    if not job or (job['employer_id'] != request.employer_id and request.user_role != 'admin'):
+    job = db.execute('SELECT id, employer_id FROM jobs WHERE id=?', (job_id,)).fetchone()
+    if not job or not employer_can_access_job(db, request.user_id, request.user_role, dict(job)):
         return jsonify({'error': 'Not found'}), 404
 
     data = request.json or {}
     app_id = data.get('application_id')
     new_status = normalize_status(data.get('stage'))
+    if not app_id:
+        return jsonify({'error': 'application_id is required'}), 400
     if not is_valid_kanban_stage(new_status):
         return jsonify({'error': f'Invalid stage. Must be one of: {list(KANBAN_STAGES)}'}), 400
+
+    app_row = db.execute(
+        'SELECT id, job_id FROM applications WHERE id = ?', (app_id,)
+    ).fetchone()
+    if not app_row or app_row['job_id'] != job_id:
+        return jsonify({'error': 'Application not found for this job'}), 404
 
     ok, result, _ = update_application_status(
         db, app_id, new_status, send_email=True, actor_role=request.user_role

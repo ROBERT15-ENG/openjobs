@@ -293,18 +293,27 @@ def google_auth():
         return jsonify({'error': 'Google token required'}), 400
 
     client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
+    if not client_id:
+        return jsonify({
+            'error': 'Google Sign-In is not configured',
+            'message': 'Set GOOGLE_CLIENT_ID to enable Google authentication.',
+        }), 503
+
     try:
         from google.auth.transport import requests as gauth
         from google.oauth2 import id_token as gid_token
         id_info = gid_token.verify_oauth2_token(
             google_token,
             gauth.Request(),
-            audience=client_id or None,
+            audience=client_id,
         )
     except ImportError:
         return jsonify({'error': 'Google Sign-In not available (install google-auth)'}), 503
     except Exception as exc:
         return jsonify({'error': 'Invalid Google token', 'detail': str(exc)}), 401
+
+    if not id_info.get('email_verified'):
+        return jsonify({'error': 'Google email is not verified'}), 401
 
     google_id = id_info.get('sub')
     email = id_info.get('email')

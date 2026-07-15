@@ -10,9 +10,9 @@ Use this before and after every production deploy. Pair with [PRODUCTION.md](./P
 
 ### Code & PRs
 
-- [ ] **PR #7** (security hardening) reviewed and merged to `main`
-- [ ] **PR #8** (product gaps v2.5.x) reviewed and merged (or deploy from that branch knowingly)
-- [ ] CI green on `main`: `pytest tests/ -q` and `ruff check api tests`
+- [ ] **PR #8** (product gaps + security + ekip attrs v2.5.2) reviewed and merged to `main`
+- [ ] CI green on the PR: `pytest` + `ruff` (note: PR #7 security is already merged into #8)
+- [ ] On upgrade from an older `jobs.db`, confirm boot runs `ensure_schema` (orgs/messages/`posted_at`)
 - [ ] Tag or note the commit SHA you are deploying
 
 ### Decisions (write these down)
@@ -42,13 +42,16 @@ Copy [.env.example](./.env.example) → `.env` on the server (or set vars in hos
 ### Strongly recommended
 
 - [ ] `ADMIN_PASSWORD` — set **before** `init_db` (overrides default `admin123`)
-- [ ] `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `FROM_EMAIL`
-- [ ] `CORS_ORIGINS` — your domain only *(after PR #7; until then CORS may be `*`)*
+- [ ] `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `FROM_EMAIL`  
+  *(If SMTP is set, new users must confirm email before login.)*
+- [ ] `CORS_ORIGINS` — your public origin only (credentials enabled)
+- [ ] `SESSION_COOKIE_SECURE=1` behind HTTPS
 
 ### Optional
 
 - [ ] `OLLAMA_URL` — only if AI runs on same private network
 - [ ] `TELEGRAM_BOT_TOKEN` — if using `bot/telegram_bot.py`
+- [ ] `GOOGLE_CLIENT_ID` — required for `POST /api/auth/google`
 - [ ] `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` — when payments go live
 
 ### Verify secrets are not defaults

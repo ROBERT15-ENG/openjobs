@@ -106,13 +106,20 @@ export CORS_ORIGINS=https://yourdomain.com
 ### Added (from PR #7 security + ekip)
 - **HttpOnly `oj_session` cookie** on login/register; auth accepts cookie or Bearer
 - **Email confirmation** when SMTP is configured (auto-confirm in local/dev)
-- **Google Sign-In** `POST /api/auth/google` (optional `GOOGLE_CLIENT_ID` + google-auth)
+- **Google Sign-In** `POST /api/auth/google` (requires `GOOGLE_CLIENT_ID` + verified email)
 - **Country / region filters** `?country=` `?region=` + `GET /api/regions`
 - **KYC profile fields** + `GET/PATCH /api/kyc/*`
 - **Rejection email** when application status → `rejected`
 - Password complexity (8+ chars, upper/lower/digit)
 - Railway deploy configs (`railway.toml`, `railway.json`)
 - Merged PR #7 security gates onto this branch
+- Full `ensure_schema` upgrade path (tables + columns + employer org backfill)
+
+### Fixed (pre-merge audit)
+- Restored `ruff` in `requirements.txt` (CI lint)
+- Kanban move verifies `application_id` belongs to `job_id` (IDOR)
+- Google auth refuses requests without `GOOGLE_CLIENT_ID`
+- Schema migrate creates orgs/messages/reports tables and `posted_at`
 
 ## [2.5.1] - 2026-07-13 — PR #8 follow-up
 

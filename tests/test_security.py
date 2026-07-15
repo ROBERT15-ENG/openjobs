@@ -79,3 +79,39 @@ def test_malicious_job_title_in_json_ld_template(client):
     page = client.get(f'/jobs/{job_id}/dev')
     body = page.get_data(as_text=True)
     assert '<script>alert("xss")</script>' not in body
+
+
+def test_kanban_move_rejects_foreign_application(client):
+    """Employer A must not move applications that belong to another job."""
+    emp = auth_token(client, 'employer@test.com')
+    seeker = auth_token(client, 'seeker@test.com')
+
+    job_b = client.post('/api/jobs', headers=auth_headers(emp), json={
+        'title': 'Other Role',
+        'company': 'Acme',
+        'location': 'Sydney',
+        'description': 'Second job',
+    }).get_json()['job_id']
+
+    apply_a = client.post('/api/applications', headers=auth_headers(seeker), json={'job_id': 1})
+    assert apply_a.status_code == 201
+    app_on_job_1 = apply_a.get_json()['application_id']
+
+    # Try to move job-1's application via job_b's kanban endpoint
+    move = client.post(
+        f'/api/kanban/{job_b}/move',
+        headers=auth_headers(emp),
+        json={'application_id': app_on_job_1, 'stage': 'interview'},
+    )
+    assert move.status_code == 404
+
+    # Application status unchanged
+    apps = client.get('/api/applications', headers=auth_headers(seeker)).get_json()
+    target = next(a for a in apps if a['id'] == app_on_job_1)
+    assert target['status'] in ('applied', 'pending')
+
+
+def test_google_auth_requires_client_id(client, monkeypatch):
+    monkeypatch.delenv('GOOGLE_CLIENT_ID', raising=False)
+    res = client.post('/api/auth/google', json={'token': 'fake-id-token'})
+    assert res.status_code == 503
