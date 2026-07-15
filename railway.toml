@@ -1,0 +1,6 @@
+[deploy]
+buildCommand = "pip install --no-cache-dir -r requirements.txt"
+startCommand = "cd api && python3 server.py"
+
+[deploy.metadata]
+# Prefer Railway startCommand above; Dockerfile snippet kept for reference only.

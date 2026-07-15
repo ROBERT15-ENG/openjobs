@@ -50,4 +50,5 @@ def job_posting_json_ld(job: dict, base_url: str) -> str:
         }
     if job.get('work_arrangement') == 'remote' or 'remote' in (job.get('location') or '').lower():
         payload['jobLocationType'] = 'TELECOMMUTE'
-    return json.dumps(payload, ensure_ascii=False)
+    # Prevent </script> breakout when embedded in HTML (XSS)
+    return json.dumps(payload, ensure_ascii=False).replace('<', '\\u003c')

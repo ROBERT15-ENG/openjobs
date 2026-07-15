@@ -3,12 +3,16 @@
 import datetime
 import json
 
-from auth_utils import optional_auth, require_auth
+from auth_utils import optional_auth, require_employer
 from db import get_db
 from extensions import limiter
 from flask import Blueprint, jsonify, request
+from geo_util import geocode_location, haversine_km
+from job_util import enrich_job, geocode_job_location
+from match_util import match_tier_label
+from org_util import employer_can_access_job
+from regions_util import REGIONS, infer_country_region, normalize_country
 from semantic_matcher import keyword_score
-from seo_util import job_url_path
 from skills_util import extract_skills_fast
 
 jobs_bp = Blueprint('jobs', __name__)
@@ -27,16 +31,16 @@ def _user_match_context(db, user_id):
     return skills, resume
 
 
-def _attach_match_scores(jobs, user_id, db):
+def _attach_match_scores(jobs, user_id, db, near_lat=None, near_lng=None):
+    base = [enrich_job(j, near_lat, near_lng) for j in jobs]
     if not user_id:
-        return [{**dict(j), 'url': job_url_path(j['id'], j['title'])} for j in jobs]
+        return base
     skills, resume = _user_match_context(db, user_id)
     match_text = resume or skills
     if not match_text:
-        return [{**dict(j), 'url': job_url_path(j['id'], j['title'])} for j in jobs]
+        return base
     scored = []
-    for job in jobs:
-        row = dict(job)
+    for row in base:
         score, matched, _ = keyword_score(row.get('skills', '') or '', match_text)
         if not score and skills:
             skill_list = [s.strip().lower() for s in skills.split(',') if s.strip()]
@@ -45,7 +49,7 @@ def _attach_match_scores(jobs, user_id, db):
             score = min(100, overlap * 25)
         row['score'] = score
         row['matched_skills'] = matched[:8]
-        row['url'] = job_url_path(row['id'], row.get('title', ''))
+        row['match_tier'] = match_tier_label(score)
         scored.append(row)
     return scored
 
@@ -120,20 +124,79 @@ def get_jobs():
         where.append('(title LIKE ? OR company LIKE ? OR description LIKE ? OR search_summary LIKE ?)')
         params.extend([f'%{search}%'] * 4)
 
+    visa = request.args.get('visa', '').lower()
+    if visa in ('1', 'true', 'yes'):
+        visa_clause = (
+            "(LOWER(description) LIKE '%visa%' OR LOWER(description) LIKE '%sponsorship%' "
+            "OR LOWER(skills) LIKE '%visa%' OR LOWER(search_summary) LIKE '%sponsorship%' "
+            "OR LOWER(selling_points) LIKE '%visa%' OR LOWER(selling_points) LIKE '%sponsorship%')"
+        )
+        where.append(visa_clause)
+
+    country = normalize_country(request.args.get('country'))
+    if country:
+        where.append('(UPPER(COALESCE(country, \'\')) = ? OR LOWER(location) LIKE ?)')
+        loc_pat = '%australia%' if country == 'AU' else f'%{country.lower()}%'
+        if country == 'SG':
+            loc_pat = '%singapore%'
+        params.extend([country, loc_pat])
+
+    region = (request.args.get('region') or '').strip().lower()
+    if region:
+        where.append('(LOWER(COALESCE(region, \'\')) = ? OR LOWER(location) LIKE ?)')
+        region_name = (REGIONS.get(region) or {}).get('name', region)
+        params.extend([region, f'%{region_name.lower()}%'])
+
     where_clause = ' AND '.join(where)
-    total = db.execute(f'SELECT COUNT(*) FROM jobs WHERE {where_clause}', params).fetchone()[0]
+
+    sort = request.args.get('sort', 'newest')
+    order = 'COALESCE(posted_at, created_at) DESC'
+    if sort == 'salary_high':
+        order = 'COALESCE(salary_max, salary_min, 0) DESC, COALESCE(posted_at, created_at) DESC'
+    elif sort == 'salary_low':
+        order = 'COALESCE(salary_min, salary_max, 999999999) ASC, COALESCE(posted_at, created_at) DESC'
+    elif sort == 'featured':
+        order = 'COALESCE(is_featured, 0) DESC, COALESCE(posted_at, created_at) DESC'
+
+    near = request.args.get('near', '').strip() or location
+    radius_km = request.args.get('radius_km', type=float)
+    near_lat, near_lng = geocode_location(near) if near else (None, None)
+    use_radius = near_lat is not None and radius_km and radius_km > 0
+
+    fetch_limit = 500 if use_radius else limit
+    fetch_offset = 0 if use_radius else offset
     jobs = db.execute(
-        f'SELECT * FROM jobs WHERE {where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?',
-        params + [limit, offset],
+        f'SELECT * FROM jobs WHERE {where_clause} ORDER BY {order} LIMIT ? OFFSET ?',
+        params + [fetch_limit, fetch_offset],
     ).fetchall()
-    job_list = _attach_match_scores(jobs, getattr(request, 'user_id', None), db)
+
+    if use_radius:
+        filtered = []
+        for job in jobs:
+            jlat = job['latitude']
+            jlng = job['longitude']
+            if jlat is None or jlng is None:
+                lat, lng = geocode_job_location(job['location'] or '')
+                jlat, jlng = lat, lng
+            if jlat is None:
+                continue
+            if haversine_km(near_lat, near_lng, jlat, jlng) <= radius_km:
+                filtered.append(job)
+        total = len(filtered)
+        jobs = filtered[offset:offset + limit]
+    else:
+        total = db.execute(f'SELECT COUNT(*) FROM jobs WHERE {where_clause}', params).fetchone()[0]
+
+    job_list = _attach_match_scores(jobs, getattr(request, 'user_id', None), db, near_lat, near_lng)
+    if use_radius:
+        job_list.sort(key=lambda j: j.get('distance_km') if j.get('distance_km') is not None else 99999)
     return jsonify({
         'jobs': job_list,
         'pagination': {
             'page': page,
             'limit': limit,
             'total': total,
-            'pages': (total + limit - 1) // limit,
+            'pages': (total + limit - 1) // limit if limit else 0,
         },
     })
 
@@ -145,17 +208,16 @@ def get_job(job_id):
     job = db.execute('SELECT * FROM jobs WHERE id = ?', (job_id,)).fetchone()
     if not job:
         return jsonify({'error': 'Not found'}), 404
-    row = dict(job)
-    row['url'] = job_url_path(row['id'], row.get('title', ''))
+    row = enrich_job(job)
     if getattr(request, 'user_id', None):
         scored = _attach_match_scores([job], request.user_id, db)
         if scored:
-            row.update({k: scored[0][k] for k in ('score', 'matched_skills') if k in scored[0]})
+            row.update({k: scored[0][k] for k in ('score', 'matched_skills', 'match_tier') if k in scored[0]})
     return jsonify(row)
 
 
 @jobs_bp.route('/api/jobs', methods=['POST'])
-@require_auth
+@require_employer
 def create_job():
     data = request.json or {}
     required = ['title', 'company', 'location', 'description']
@@ -164,14 +226,20 @@ def create_job():
         return jsonify({'error': f'Missing required fields: {", ".join(missing)}'}), 400
 
     db = get_db()
+    now = datetime.datetime.now().isoformat()
     expires_at = data.get('expires_at') or (datetime.datetime.now() + datetime.timedelta(days=30)).isoformat()
     employer_id = getattr(request, 'employer_id', None)
+    lat, lng = geocode_job_location(data.get('location', ''))
+    inferred_country, inferred_region = infer_country_region(data.get('location', ''))
+    country = normalize_country(data.get('country')) or inferred_country
+    region = (data.get('region') or inferred_region or '').strip().lower() or None
     db.execute(
         """INSERT INTO jobs (
-            title, company, location, description, salary, category, is_active, created_at,
+            title, company, location, description, salary, category, is_active, created_at, posted_at,
             work_type, work_arrangement, salary_min, salary_max, salary_currency,
-            search_summary, selling_points, video_url, expires_at, skills, employer_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            search_summary, selling_points, video_url, expires_at, skills, employer_id,
+            latitude, longitude, country, region
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data.get('title'),
             data.get('company'),
@@ -180,7 +248,8 @@ def create_job():
             data.get('salary', 'Competitive'),
             data.get('category', 'General'),
             1,
-            datetime.datetime.now().isoformat(),
+            now,
+            now,
             data.get('work_type', 'full_time'),
             data.get('work_arrangement', 'remote'),
             data.get('salary_min'),
@@ -192,6 +261,10 @@ def create_job():
             expires_at,
             data.get('skills', ''),
             employer_id,
+            lat,
+            lng,
+            country,
+            region,
         ),
     )
     db.commit()
@@ -207,7 +280,7 @@ def create_job():
 
 
 @jobs_bp.route('/api/jobs/<int:job_id>', methods=['PATCH'])
-@require_auth
+@require_employer
 def update_job(job_id):
     data = request.json or {}
     if not data:
@@ -216,6 +289,7 @@ def update_job(job_id):
         'title', 'description', 'location', 'salary', 'salary_min', 'salary_max',
         'salary_currency', 'category', 'work_type', 'work_arrangement',
         'is_active', 'expires_at', 'skills', 'selling_points', 'video_url',
+        'country', 'region',
     ]
     updates = {key: value for key, value in data.items() if key in allowed}
     if not updates:
@@ -225,8 +299,24 @@ def update_job(job_id):
     existing = db.execute('SELECT id, employer_id FROM jobs WHERE id = ?', (job_id,)).fetchone()
     if not existing:
         return jsonify({'error': 'Job not found'}), 404
-    if existing['employer_id'] and existing['employer_id'] != request.employer_id and request.user_role != 'admin':
+    if not employer_can_access_job(db, request.user_id, request.user_role, dict(existing)):
         return jsonify({'error': 'Not authorized to update this job'}), 403
+
+    if 'location' in updates:
+        lat, lng = geocode_job_location(updates['location'])
+        updates['latitude'] = lat
+        updates['longitude'] = lng
+        if 'country' not in updates or 'region' not in updates:
+            inferred_country, inferred_region = infer_country_region(updates['location'])
+            if 'country' not in updates and inferred_country:
+                updates['country'] = inferred_country
+            if 'region' not in updates and inferred_region:
+                updates['region'] = inferred_region
+
+    if 'country' in updates:
+        updates['country'] = normalize_country(updates['country'])
+    if 'region' in updates and updates['region']:
+        updates['region'] = str(updates['region']).strip().lower()
 
     set_clause = ', '.join(f'{key} = ?' for key in updates)
     db.execute(f'UPDATE jobs SET {set_clause} WHERE id = ?', list(updates.values()) + [job_id])
@@ -236,13 +326,13 @@ def update_job(job_id):
 
 
 @jobs_bp.route('/api/jobs/<int:job_id>', methods=['DELETE'])
-@require_auth
+@require_employer
 def delete_job(job_id):
     db = get_db()
     existing = db.execute('SELECT id, employer_id FROM jobs WHERE id = ?', (job_id,)).fetchone()
     if not existing:
         return jsonify({'error': 'Job not found'}), 404
-    if existing['employer_id'] and existing['employer_id'] != request.employer_id and request.user_role != 'admin':
+    if not employer_can_access_job(db, request.user_id, request.user_role, dict(existing)):
         return jsonify({'error': 'Not authorized to delete this job'}), 403
     db.execute('UPDATE jobs SET is_active = 0 WHERE id = ?', (job_id,))
     db.commit()
@@ -250,6 +340,7 @@ def delete_job(job_id):
 
 
 @jobs_bp.route('/api/jobs/<int:job_id>/view', methods=['PATCH'])
+@limiter.limit('30 per minute')
 def track_job_view(job_id):
     db = get_db()
     db.execute('UPDATE jobs SET view_count = view_count + 1 WHERE id = ?', (job_id,))
@@ -388,3 +479,8 @@ def predict_salary():
     if 'lead' in title_lower:
         base += 30000
     return jsonify({'success': True, 'predicted': base, 'range': {'min': base * 0.85, 'max': base * 1.15}})
+
+
+@jobs_bp.route('/api/regions', methods=['GET'])
+def list_regions():
+    return jsonify({'success': True, 'regions': REGIONS})

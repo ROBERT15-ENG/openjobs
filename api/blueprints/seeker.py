@@ -179,7 +179,8 @@ def get_user_profile():
     db = get_db()
     user = db.execute(
         """
-        SELECT id, name, email, role, skills, phone, preferred_location, experience, created_at
+        SELECT id, name, email, role, skills, phone, preferred_location, experience, resume_text,
+               salutation, address, country, county, dob, nationality, visa_status, kyc_status, created_at
         FROM users WHERE id = ?
         """,
         (request.user_id,),
@@ -193,7 +194,10 @@ def get_user_profile():
 @require_auth
 def update_user_profile():
     data = request.json or {}
-    allowed = ['name', 'skills', 'phone', 'preferred_location', 'experience', 'company']
+    allowed = [
+        'name', 'skills', 'phone', 'preferred_location', 'experience', 'company', 'resume_text',
+        'salutation', 'address', 'country', 'county', 'dob', 'nationality', 'visa_status',
+    ]
     updates = {key: value for key, value in data.items() if key in allowed}
     if not updates:
         return jsonify({'error': f'No valid fields. Allowed: {allowed}'}), 400
@@ -207,12 +211,61 @@ def update_user_profile():
     db.commit()
     user = db.execute(
         """
-        SELECT id, name, email, role, skills, phone, preferred_location, experience, created_at
+        SELECT id, name, email, role, skills, phone, preferred_location, experience, resume_text,
+               salutation, address, country, county, dob, nationality, visa_status, kyc_status, created_at
         FROM users WHERE id = ?
         """,
         (request.user_id,),
     ).fetchone()
     return jsonify({'success': True, 'user': dict(user)})
+
+
+@seeker_bp.route('/api/kyc/status', methods=['GET'])
+@require_auth
+def kyc_status():
+    db = get_db()
+    user = db.execute(
+        """
+        SELECT kyc_status, kyc_doc_type, kyc_doc_number, dob, nationality, country, county,
+               salutation, phone, email, address, visa_status, name
+        FROM users WHERE id = ?
+        """,
+        (request.user_id,),
+    ).fetchone()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    row = dict(user)
+    return jsonify({
+        'success': True,
+        'kyc_status': row.get('kyc_status') or 'none',
+        'profile': row,
+    })
+
+
+@seeker_bp.route('/api/kyc/profile', methods=['PATCH'])
+@require_auth
+def update_kyc_profile():
+    """Update KYC personal fields (ekip parity)."""
+    data = request.json or {}
+    allowed = [
+        'name', 'salutation', 'phone', 'address', 'country', 'county',
+        'dob', 'nationality', 'visa_status', 'kyc_doc_type', 'kyc_doc_number',
+    ]
+    updates = {key: value for key, value in data.items() if key in allowed}
+    if not updates:
+        return jsonify({'error': f'No valid fields. Allowed: {allowed}'}), 400
+
+    if any(updates.get(k) for k in ('dob', 'nationality', 'country', 'address')):
+        updates.setdefault('kyc_status', 'submitted')
+
+    db = get_db()
+    set_clause = ', '.join(f'{key} = ?' for key in updates)
+    db.execute(
+        f'UPDATE users SET {set_clause} WHERE id = ?',
+        list(updates.values()) + [request.user_id],
+    )
+    db.commit()
+    return kyc_status()
 
 
 @seeker_bp.route('/api/job_alerts', methods=['GET'])

@@ -27,15 +27,20 @@ def _seed_db(db_path: str) -> None:
             'INSERT INTO users (name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
             (name, email, generate_password_hash('pass123'), role, now),
         )
+    seeker_id = conn.execute("SELECT id FROM users WHERE email='seeker@test.com'").fetchone()[0]
+    conn.execute(
+        'UPDATE users SET skills = ?, resume_text = ? WHERE id = ?',
+        ('Python, Flask', 'Python developer with Flask API experience.', seeker_id),
+    )
     employer_id = conn.execute("SELECT id FROM users WHERE email='employer@test.com'").fetchone()[0]
     conn.execute(
         """INSERT INTO jobs (
-            title, company, location, description, salary, category, is_active, created_at,
-            work_type, work_arrangement, employer_id, posted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            title, company, location, description, salary, category, is_active, created_at, posted_at,
+            work_type, work_arrangement, employer_id, latitude, longitude, country, region
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            'Backend Engineer', 'Acme', 'Remote', 'Python role', '100k', 'Development', 1, now,
-            'full_time', 'remote', employer_id, now,
+            'Backend Engineer', 'Acme', 'Sydney, NSW', 'Python role with visa sponsorship available for eligible candidates', '100k', 'Development', 1, now, now,
+            'full_time', 'remote', employer_id, -33.8688, 151.2093, 'AU', 'au-syd',
         ),
     )
     conn.commit()

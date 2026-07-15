@@ -124,6 +124,7 @@
     <div class="nav-item" onclick="switchTab('jobs')"><span class="icon">📋</span> All Jobs</div>
     <div class="nav-item" onclick="switchTab('applications')"><span class="icon">📥</span> Applications</div>
     <div class="nav-item" onclick="switchTab('users')"><span class="icon">👥</span> Users</div>
+    <div class="nav-item" onclick="switchTab('reports')"><span class="icon">🚩</span> Reports</div>
     <div class="nav-item" onclick="switchTab('analytics')"><span class="icon">📈</span> Analytics</div>
     <div class="nav-item" onclick="switchTab('settings')"><span class="icon">⚙️</span> Settings</div>
   </aside>
@@ -239,11 +240,14 @@
     <div class="tab-content" id="tab-applications">
       <h2 class="page-title">All Applications</h2>
       <p class="page-sub">Track and manage all job applications on the platform.</p>
+      <div style="margin-bottom:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="bulkRejectSelected()">Bulk reject selected</button>
+      </div>
       <div class="card">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Applicant</th><th>Email</th><th>Job ID</th><th>Applied</th><th>Status</th><th>Notes</th><th>Actions</th></tr></thead>
-            <tbody id="appsTable"><tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading...</td></tr></tbody>
+            <thead><tr><th><input type="checkbox" id="selectAllApps" onchange="toggleAllApps(this.checked)"></th><th>Applicant</th><th>Email</th><th>Job ID</th><th>Applied</th><th>Status</th><th>Notes</th><th>Actions</th></tr></thead>
+            <tbody id="appsTable"><tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -258,6 +262,20 @@
           <table>
             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Skills</th><th>Joined</th><th>Actions</th></tr></thead>
             <tbody id="usersTable"><tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── REPORTS ── -->
+    <div class="tab-content" id="tab-reports">
+      <h2 class="page-title">Job Reports</h2>
+      <p class="page-sub">Review flagged job listings from users.</p>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Job</th><th>Reason</th><th>Reporter</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="reportsTable"><tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -337,7 +355,7 @@
       <div class="card">
         <div class="card-title">🗄 Database</div>
         <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:1rem">
-          <button class="btn btn-ghost" onclick="alert('Backup feature coming soon')">📦 Export Data</button>
+          <button class="btn btn-ghost" onclick="exportApplications()">📦 Export Applications (CSV)</button>
           <button class="btn btn-ghost" onclick="alert('Restore feature coming soon')">♻️ Import Data</button>
           <button class="btn btn-danger" onclick="if(confirm('Clear all applications? This cannot be undone.')) alert('Feature coming soon')">🗑 Clear Applications</button>
         </div>
@@ -396,9 +414,10 @@
     const tabEl = document.getElementById('tab-' + name);
     if (tabEl) tabEl.classList.add('active');
     const navItems = document.querySelectorAll('.nav-item');
-    const names = ['overview','jobs','applications','users','analytics','settings'];
+    const names = ['overview','jobs','applications','users','reports','analytics','settings'];
     const idx = names.indexOf(name);
     if (idx >= 0 && navItems[idx]) navItems[idx].classList.add('active');
+    if (name === 'reports') loadReports();
     window.scrollTo({top: 0, behavior: 'smooth'});
   }
 
@@ -640,7 +659,7 @@
   function renderAppsTable(apps) {
     const tbody = document.getElementById('appsTable');
     if (!apps.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">No applications yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted)">No applications yet</td></tr>';
       return;
     }
     tbody.innerHTML = apps.map(a => {
@@ -648,6 +667,7 @@
       const cls = statusMap[a.status] || 'badge-pending';
       const label = (a.status || 'pending').charAt(0).toUpperCase() + (a.status || 'pending').slice(1);
       return `<tr>
+        <td><input type="checkbox" class="app-select" value="${a.id}"></td>
         <td><div class="title-cell">${escHtml(a.applicant_name || a.seeker_name || '—')}</div></td>
         <td>${escHtml(a.applicant_email || a.seeker_email || '—')}</td>
         <td>${escHtml(String(a.job_id))}</td>
@@ -660,6 +680,58 @@
         </td>
       </tr>`;
     }).join('');
+  }
+
+  function toggleAllApps(checked) {
+    document.querySelectorAll('.app-select').forEach(cb => { cb.checked = checked; });
+  }
+
+  async function bulkRejectSelected() {
+    const ids = Array.from(document.querySelectorAll('.app-select:checked')).map(cb => parseInt(cb.value, 10));
+    if (!ids.length) { alert('Select applications first'); return; }
+    await fetch('/api/admin/applications/bulk', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ ids, status: 'rejected' }),
+    });
+    loadApplications();
+  }
+
+  function loadReports() {
+    fetch('/api/admin/reports?status=open', { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : { reports: [] })
+      .then(data => {
+        const tbody = document.getElementById('reportsTable');
+        const reports = data.reports || [];
+        if (!reports.length) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">No open reports</td></tr>';
+          return;
+        }
+        tbody.innerHTML = reports.map(r => `<tr>
+          <td>${escHtml(r.job_title || '')} · ${escHtml(r.job_company || '')}</td>
+          <td>${escHtml(r.reason)}</td>
+          <td>${escHtml(r.reporter_email || 'anonymous')}</td>
+          <td>${escHtml(r.status)}</td>
+          <td>
+            <button class="btn-sm" onclick="resolveReport(${r.id}, false)">Dismiss</button>
+            <button class="btn-sm danger" onclick="resolveReport(${r.id}, true)">Resolve + hide job</button>
+          </td>
+        </tr>`).join('');
+      });
+  }
+
+  async function resolveReport(id, deactivate) {
+    await fetch('/api/admin/reports/' + id, {
+      method: 'PATCH', headers: authHeaders(),
+      body: JSON.stringify({ status: 'resolved', deactivate_job: deactivate }),
+    });
+    loadReports();
+  }
+
+  async function deleteUser(id) {
+    if (!confirm('Delete this user permanently?')) return;
+    const res = await fetch('/api/admin/users/' + id, { method: 'DELETE', headers: authHeaders() });
+    if (res.ok) loadUsers();
+    else alert((await res.json().catch(() => ({}))).error || 'Delete failed');
   }
 
   async function updateAppStatus(id, status) {
@@ -697,7 +769,7 @@
         <td class="muted">${timeSince(u.created_at)}</td>
         <td>
           <button class="btn-sm" onclick="alert('Edit coming soon')">✏️</button>
-          ${u.role !== 'admin' ? '<button class="btn-sm danger" onclick="alert(\'Delete coming soon\')">🗑</button>' : ''}
+          ${u.role !== 'admin' ? '<button class="btn-sm danger" onclick="deleteUser(' + u.id + ')">🗑</button>' : ''}
         </td>
       </tr>`;
     }).join('');
@@ -727,6 +799,26 @@
     if (days < 30) return days + 'd ago';
     return Math.floor(days/30) + 'mo ago';
   }
+  async function exportApplications() {
+    const token = localStorage.getItem('token');
+    if (!token) { alert('Please sign in as admin.'); return; }
+    try {
+      const res = await fetch('/api/admin/export/applications', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (!res.ok) { alert('Export failed.'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'openjobs-applications.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Could not export applications.');
+    }
+  }
+
   function escHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

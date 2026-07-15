@@ -1,128 +1,130 @@
 #!/usr/bin/env python3
 """
-JobSeek Telegram Bot
+OpenJobs Telegram Bot
 Commands: /search, /remote, /visa, /top, /help
 """
-import requests
-import json
 import os
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import re
 
-API_BASE = os.environ.get("JOBSEEK_API", "http://localhost:5700")
+import requests
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
+
+API_BASE = os.environ.get('JOBSEEK_API', 'http://localhost:5700')
+
+
+def _fetch_jobs(**params) -> list:
+    resp = requests.get(f'{API_BASE}/api/jobs', params={**params, 'limit': 5}, timeout=10)
+    data = resp.json()
+    if isinstance(data, dict):
+        return data.get('jobs') or []
+    return []
+
+
+def _escape_md(text: str) -> str:
+    return re.sub(r'([_*`\[])', r'\\\1', str(text or ''))
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🔍 *JobSeek Bot*\n\n"
-        "Commands:\n"
-        "/search [query] - Search jobs\n"
-        "/remote - Remote jobs only\n"
-        "/visa - Visa sponsorship jobs\n"
-        "/top - Top rated jobs\n"
-        "/help - Help",
-        parse_mode="Markdown"
+        '🔍 *OpenJobs Bot*\n\n'
+        'Commands:\n'
+        '/search [query] - Search jobs\n'
+        '/remote - Remote jobs only\n'
+        '/visa - Visa sponsorship jobs\n'
+        '/top - Featured / newest jobs\n'
+        '/help - Help',
+        parse_mode='Markdown',
     )
+
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await start(update, context)
 
+
 async def search_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = " ".join(context.args) if context.args else ""
+    query = ' '.join(context.args) if context.args else ''
     try:
-        resp = requests.get(f"{API_BASE}/api/jobs", params={"q": query, "limit": 5}, timeout=10)
-        jobs = resp.json()
-        
+        jobs = _fetch_jobs(q=query)
         if not jobs:
-            await update.message.reply_text("No jobs found 🔍")
+            await update.message.reply_text('No jobs found 🔍')
             return
-        
-        msg = "*Search Results:*\n\n"
-        for j in jobs[:5]:
-            title = j.get("title", "N/A")
-            company = j.get("company", "N/A")
-            location = j.get("location", "N/A")
-            salary = j.get("salary", "N/A")
-            score = j.get("ai_score", 0)
-            msg += f"*{title}*\n🏢 {company}\n📍 {location}\n💰 {salary}\n⭐ {score}%\n\n"
-        
-        await update.message.reply_text(msg, parse_mode="Markdown")
-    except Exception as e:
-        await update.message.reply_text(f"Error: {str(e)}")
+        lines = ['*Search Results:*', '']
+        for job in jobs[:5]:
+            title = _escape_md(job.get('title', 'N/A'))
+            company = _escape_md(job.get('company', 'N/A'))
+            location = _escape_md(job.get('location', 'N/A'))
+            salary = _escape_md(job.get('salary', 'N/A'))
+            score = job.get('score') or job.get('ai_score') or 0
+            lines.append(f'*{title}*\n🏢 {company}\n📍 {location}\n💰 {salary}\n⭐ {score}%\n')
+        await update.message.reply_text('\n'.join(lines), parse_mode='Markdown')
+    except Exception as exc:
+        await update.message.reply_text(f'Error: {exc}')
+
 
 async def remote_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        resp = requests.get(f"{API_BASE}/api/jobs", params={"remote": "1", "limit": 5}, timeout=10)
-        jobs = resp.json()
-        
+        jobs = _fetch_jobs(work_arrangement='remote')
         if not jobs:
-            await update.message.reply_text("No remote jobs found 🏠")
+            await update.message.reply_text('No remote jobs found 🏠')
             return
-        
-        msg = "*Remote Jobs:*\n\n"
-        for j in jobs[:5]:
-            title = j.get("title", "N/A")
-            company = j.get("company", "N/A")
-            salary = j.get("salary", "N/A")
-            msg += f"*{title}*\n🏢 {company}\n💰 {salary}\n\n"
-        
-        await update.message.reply_text(msg, parse_mode="Markdown")
-    except Exception as e:
-        await update.message.reply_text(f"Error: {str(e)}")
+        lines = ['*Remote Jobs:*', '']
+        for job in jobs[:5]:
+            lines.append(f"*{_escape_md(job.get('title', 'N/A'))}*\n🏢 {_escape_md(job.get('company', 'N/A'))}\n")
+        await update.message.reply_text('\n'.join(lines), parse_mode='Markdown')
+    except Exception as exc:
+        await update.message.reply_text(f'Error: {exc}')
+
 
 async def visa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        resp = requests.get(f"{API_BASE}/api/jobs", params={"visa": "1", "limit": 5}, timeout=10)
-        jobs = resp.json()
-        
+        jobs = _fetch_jobs(visa='1')
         if not jobs:
-            await update.message.reply_text("No visa sponsorship jobs found 🌍")
+            await update.message.reply_text('No visa sponsorship jobs found 🌍')
             return
-        
-        msg = "*Visa Sponsorship Jobs:*\n\n"
-        for j in jobs[:5]:
-            title = j.get("title", "N/A")
-            company = j.get("company", "N/A")
-            location = j.get("location", "N/A")
-            msg += f"*{title}*\n🏢 {company}\n📍 {location}\n\n"
-        
-        await update.message.reply_text(msg, parse_mode="Markdown")
-    except Exception as e:
-        await update.message.reply_text(f"Error: {str(e)}")
+        lines = ['*Visa Sponsorship Jobs:*', '']
+        for job in jobs[:5]:
+            lines.append(
+                f"*{_escape_md(job.get('title', 'N/A'))}*\n"
+                f"🏢 {_escape_md(job.get('company', 'N/A'))}\n"
+                f"📍 {_escape_md(job.get('location', 'N/A'))}\n"
+            )
+        await update.message.reply_text('\n'.join(lines), parse_mode='Markdown')
+    except Exception as exc:
+        await update.message.reply_text(f'Error: {exc}')
+
 
 async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        resp = requests.get(f"{API_BASE}/api/jobs", params={"min_score": 80, "limit": 5}, timeout=10)
-        jobs = resp.json()
-        
+        jobs = _fetch_jobs(sort='featured')
         if not jobs:
-            await update.message.reply_text("No top jobs found ⭐")
+            await update.message.reply_text('No jobs found ⭐')
             return
-        
-        msg = "*Top Rated Jobs:*\n\n"
-        for j in jobs[:5]:
-            title = j.get("title", "N/A")
-            company = j.get("company", "N/A")
-            score = j.get("ai_score", 0)
-            msg += f"*{title}*\n🏢 {company}\n⭐ {score}%\n\n"
-        
-        await update.message.reply_text(msg, parse_mode="Markdown")
-    except Exception as e:
-        await update.message.reply_text(f"Error: {str(e)}")
+        lines = ['*Featured / New Jobs:*', '']
+        for job in jobs[:5]:
+            title = _escape_md(job.get('title', 'N/A'))
+            company = _escape_md(job.get('company', 'N/A'))
+            score = job.get('score') or 0
+            lines.append(f'*{title}*\n🏢 {company}\n⭐ {score}%\n')
+        await update.message.reply_text('\n'.join(lines), parse_mode='Markdown')
+    except Exception as exc:
+        await update.message.reply_text(f'Error: {exc}')
+
 
 def main():
     from bot_config import BOT_TOKEN as TELEGRAM_BOT_TOKEN
-    
+
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("search", search_cmd))
-    app.add_handler(CommandHandler("remote", remote_cmd))
-    app.add_handler(CommandHandler("visa", visa_cmd))
-    app.add_handler(CommandHandler("top", top_cmd))
-    
-    print("🤖 JobSeek Bot starting...")
+    app.add_handler(CommandHandler('start', start))
+    app.add_handler(CommandHandler('help', help_cmd))
+    app.add_handler(CommandHandler('search', search_cmd))
+    app.add_handler(CommandHandler('remote', remote_cmd))
+    app.add_handler(CommandHandler('visa', visa_cmd))
+    app.add_handler(CommandHandler('top', top_cmd))
+
+    print('🤖 OpenJobs Bot starting...')
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()

@@ -254,15 +254,17 @@
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
+        credentials: 'include',
         body: JSON.stringify({email, password})
       });
       const data = await res.json();
 
       if (res.ok && data.success) {
-        localStorage.setItem('token', data.token);
+        // Prefer httpOnly oj_session cookie; keep localStorage for legacy pages.
+        if (data.token) localStorage.setItem('token', data.token);
         if (document.getElementById('remember').checked) {
           sessionStorage.removeItem('token');
-        } else {
+        } else if (data.token) {
           sessionStorage.setItem('token', data.token);
         }
         const role = data.user?.role || 'user';
@@ -273,6 +275,10 @@
         }
         showAlert('success', 'Login successful! Redirecting...');
         setTimeout(() => window.location.href = redirectUrl, 600);
+      } else if (data.error === 'email_not_confirmed') {
+        showAlert('error', data.message || 'Please confirm your email before logging in.');
+        btn.disabled = false;
+        btn.textContent = 'Sign In →';
       } else {
         showAlert('error', data.error || 'Invalid email or password');
         btn.disabled = false;

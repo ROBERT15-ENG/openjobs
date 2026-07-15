@@ -296,10 +296,17 @@
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
+        credentials: 'include',
         body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        if (data.email_confirmed === false) {
+          showAlert('success', data.message || 'Check your email to confirm your account.');
+          btn.disabled = false;
+          btn.textContent = 'Create Account →';
+          return;
+        }
         if (data.token) localStorage.setItem('token', data.token);
         const dest = isEmployer ? '/employer' : '/user';
         showAlert('success', 'Account created! Redirecting to dashboard...');
