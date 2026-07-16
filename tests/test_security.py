@@ -60,6 +60,29 @@ def test_ai_endpoints_require_auth(client):
     })
     assert res.status_code == 401
 
+    for path in (
+        '/api/ai/ollama/chat',
+        '/api/ai/ollama/generate/cover-letter',
+        '/api/ai/ollama/interview-prep',
+    ):
+        assert client.post(path, json={}).status_code == 401
+
+    assert client.get('/api/ai/ollama/models').status_code == 401
+    # Status remains public (availability probe only)
+    assert client.get('/api/ai/ollama/status').status_code == 200
+
+
+def test_ai_rate_limit_is_per_user(client):
+    """Quotas follow the account, not the shared client IP."""
+    from extensions import ai_rate_limit_key
+    from flask import Flask
+
+    app = Flask(__name__)
+    with app.test_request_context('/'):
+        from flask import request as flask_request
+        flask_request.user_id = 42
+        assert ai_rate_limit_key() == 'ai:user:42'
+
 
 def test_security_headers_present(client):
     res = client.get('/api/health')
