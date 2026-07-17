@@ -1,11 +1,15 @@
-"""Ollama AI routes with keyword fallbacks when Ollama is unavailable locally."""
+"""Ollama AI routes with keyword fallbacks when Ollama is unavailable locally.
+
+All generative AI endpoints require login. Rate limits are keyed by user id
+(not IP) so quotas follow the account.
+"""
 
 import os
 
 import requests
 from ats_util import compute_ats_score
 from auth_utils import require_auth
-from extensions import limiter
+from extensions import ai_rate_limit_key, limiter
 from flask import Blueprint, jsonify, request
 
 ai_bp = Blueprint('ai', __name__)
@@ -60,15 +64,23 @@ def _fallback_interview_questions(job_title: str) -> str:
     ])
 
 
+def _ai_limit(limit: str):
+    """Per-user quota. Keep @require_auth above this so user_id is set first."""
+    return limiter.limit(limit, key_func=ai_rate_limit_key)
+
+
 @ai_bp.route('/api/ai/ollama/status', methods=['GET'])
 def ollama_status():
+    """Public availability probe — no generation, no auth required."""
     return jsonify({
         'available': OLLAMA_AVAILABLE,
-        'note': 'Ollama is optional — AI tools use keyword fallbacks when it is not running locally.',
+        'note': 'Ollama is optional — AI tools use keyword fallbacks when it is not running locally. Generative endpoints require login.',
+        'auth_required_for_generation': True,
     })
 
 
 @ai_bp.route('/api/ai/ollama/models', methods=['GET'])
+@require_auth
 def list_ollama_models():
     if not OLLAMA_AVAILABLE:
         return jsonify({'error': 'Ollama not running', 'models': []})
@@ -81,7 +93,7 @@ def list_ollama_models():
 
 @ai_bp.route('/api/ai/ollama/chat', methods=['POST'])
 @require_auth
-@limiter.limit('20 per hour')
+@_ai_limit('20 per hour')
 def ollama_chat():
     data = request.json or {}
     message = (data.get('message') or '').strip()
@@ -109,7 +121,7 @@ def ollama_chat():
 
 @ai_bp.route('/api/ai/ollama/score/resume', methods=['POST'])
 @require_auth
-@limiter.limit('30 per hour')
+@_ai_limit('30 per hour')
 def score_resume():
     data = request.json or {}
     job_desc = (data.get('job_description') or '').strip()
@@ -136,7 +148,7 @@ def score_resume():
 
 @ai_bp.route('/api/ai/ollama/generate/cover-letter', methods=['POST'])
 @require_auth
-@limiter.limit('20 per hour')
+@_ai_limit('20 per hour')
 def generate_cover_letter():
     data = request.json or {}
     job_title = (data.get('job_title') or '').strip()
@@ -164,7 +176,7 @@ def generate_cover_letter():
 
 @ai_bp.route('/api/ai/ollama/interview-prep', methods=['POST'])
 @require_auth
-@limiter.limit('20 per hour')
+@_ai_limit('20 per hour')
 def interview_prep():
     data = request.json or {}
     job_title = (data.get('job_title') or '').strip()
