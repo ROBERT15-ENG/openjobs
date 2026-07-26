@@ -777,6 +777,26 @@ ul {
 
 /* ── Service Areas ── */
 
+.suburb-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+  max-width: 720px;
+  margin-inline: auto;
+}
+
+.suburb-tags span {
+  padding: 0.4rem 0.9rem;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
 .areas-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -908,6 +928,22 @@ ul {
 
 .form-note.error {
   color: #c0392b;
+}
+
+#why-perth .features-row {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 960px) {
+  #why-perth .features-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  #why-perth .features-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── Footer ── */
