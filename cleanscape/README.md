@@ -34,6 +34,16 @@ Update contact details in `index.html` (phone, email, ABN) and adjust brand colo
 
 The quote form opens the user's email client via `mailto:` — connect a backend or form service (e.g. Formspree, Netlify Forms) for server-side submission if needed.
 
+## SEO
+
+- Optimised title, meta description, and geo tags for Perth/WA local search
+- JSON-LD structured data: LocalBusiness, CleaningService, WebSite, FAQPage, reviews, service catalog
+- FAQ section and service area content targeting commercial cleaning keywords
+- Internal linking with anchor IDs per service (`#office-cleaning`, `#industrial-cleaning`, etc.)
+- `robots.txt` and `sitemap.xml` configured for cleanscapesolutions.com.au
+
+After deploying, submit the sitemap in [Google Search Console](https://search.google.com/search-console).
+
 ## Deployment to cleanscapesolutions.com.au
 
 Static files only. Upload the contents of the `cleanscape/` folder to your web host's document root.

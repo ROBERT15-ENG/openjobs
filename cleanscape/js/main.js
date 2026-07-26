@@ -76,7 +76,7 @@
 
   /* Fade-in on scroll */
   const observerTargets = document.querySelectorAll(
-    '.service-card, .testimonial, .feature, .industry-tag, .about-card'
+    '.service-card, .testimonial, .feature, .industry-tag, .about-card, .faq-item, .area-card'
   );
 
   if ('IntersectionObserver' in window) {
