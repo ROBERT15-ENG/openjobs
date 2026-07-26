@@ -489,6 +489,246 @@ ul {
   line-height: 1.65;
 }
 
+.service-card p {
+  font-size: 0.925rem;
+  color: var(--color-text-muted);
+  line-height: 1.65;
+}
+
+.service-link {
+  display: inline-block;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.service-link:hover {
+  color: var(--color-primary-light);
+}
+
+.services-cta {
+  text-align: center;
+  margin-top: 2.5rem;
+}
+
+.service-card--link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.service-card--link:hover {
+  color: inherit;
+}
+
+.service-card--link h3 {
+  font-size: 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.service-card--link p {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.services-grid--compact {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 960px) {
+  .services-grid--compact {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .services-grid--compact {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Service landing pages ── */
+
+.breadcrumb {
+  padding: calc(var(--header-height) + 1rem) 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.breadcrumb a {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.breadcrumb span[aria-current="page"] {
+  color: var(--color-text);
+}
+
+.page-hero {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: #fff;
+  padding: 3rem 0;
+}
+
+.page-hero h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  font-weight: 400;
+  line-height: 1.15;
+  margin-bottom: 1rem;
+}
+
+.page-hero .hero-eyebrow {
+  margin-bottom: 0.75rem;
+}
+
+.page-hero-lead {
+  font-size: 1.1rem;
+  opacity: 0.92;
+  max-width: 600px;
+  margin-bottom: 1.5rem;
+  line-height: 1.65;
+}
+
+.page-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 3rem;
+  align-items: start;
+}
+
+.prose h2 {
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  font-weight: 400;
+  margin: 2rem 0 1rem;
+  color: var(--color-primary-dark);
+}
+
+.prose h2:first-child {
+  margin-top: 0;
+}
+
+.prose p {
+  color: var(--color-text-muted);
+  line-height: 1.75;
+  margin-bottom: 1rem;
+}
+
+.prose ul {
+  margin: 0 0 1.25rem 1.25rem;
+  list-style: disc;
+}
+
+.prose li {
+  color: var(--color-text-muted);
+  line-height: 1.7;
+  margin-bottom: 0.4rem;
+}
+
+.page-sidebar {
+  position: sticky;
+  top: calc(var(--header-height) + 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sidebar-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.sidebar-card h3 {
+  font-size: 1.05rem;
+  margin-bottom: 0.5rem;
+  color: var(--color-primary-dark);
+}
+
+.sidebar-card p {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.sidebar-phone {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-primary) !important;
+  margin-bottom: 1rem;
+}
+
+.sidebar-links {
+  list-style: none;
+}
+
+.sidebar-links li {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sidebar-links li:last-child {
+  border-bottom: none;
+}
+
+.sidebar-links a {
+  display: block;
+  padding: 0.5rem 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.sidebar-trust ul {
+  list-style: none;
+}
+
+.sidebar-trust li {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  padding: 0.3rem 0;
+}
+
+.faq-heading {
+  font-family: var(--font-serif);
+  font-size: 1.75rem;
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.cta-banner {
+  background: var(--color-primary-dark);
+  color: #fff;
+  text-align: center;
+  padding: 4rem 0;
+}
+
+.cta-banner-inner h2 {
+  font-family: var(--font-serif);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 400;
+  margin-bottom: 0.75rem;
+}
+
+.cta-banner-inner p {
+  opacity: 0.85;
+  margin-bottom: 1.5rem;
+}
+
+.cta-banner .btn-primary {
+  background: #fff;
+  color: var(--color-primary-dark);
+  border-color: #fff;
+}
+
+.cta-banner .btn-primary:hover {
+  background: var(--color-accent-light);
+  color: var(--color-primary-dark);
+}
+
 /* ── Industries ── */
 
 .industries-grid {
@@ -1032,9 +1272,14 @@ ul {
   }
 
   .about-grid,
-  .contact-grid {
+  .contact-grid,
+  .page-layout {
     grid-template-columns: 1fr;
     gap: 2.5rem;
+  }
+
+  .page-sidebar {
+    position: static;
   }
 
   .footer-grid {

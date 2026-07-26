@@ -34,6 +34,32 @@ Update contact details in `index.html` (phone, email, ABN) and adjust brand colo
 
 The quote form opens the user's email client via `mailto:` — connect a backend or form service (e.g. Formspree, Netlify Forms) for server-side submission if needed.
 
+## SEO & ranking strategy
+
+This site is built for **top Google rankings** in Perth, WA:
+
+- **10 indexed pages** — homepage + 9 service landing pages, each targeting specific keywords
+- **Unique content** per page with Perth suburbs, FAQs, and structured data
+- **Internal linking** — every page cross-links to related services
+- **Schema markup** — LocalBusiness, Service, FAQPage, BreadcrumbList on every page
+- **Sitemap** — submit `https://cleanscapesolutions.com.au/sitemap.xml` to Google Search Console
+
+### Service pages
+
+| Page | Target keyword |
+|------|----------------|
+| `commercial-cleaning-perth.html` | commercial cleaning Perth |
+| `office-cleaning-perth.html` | office cleaning Perth |
+| `industrial-cleaning-perth.html` | industrial cleaning Perth |
+| `end-of-lease-cleaning-perth.html` | end of lease cleaning Perth |
+| `residential-cleaning-perth.html` | house cleaning Perth |
+| `strata-cleaning-perth.html` | strata cleaning Perth |
+| `builders-clean-perth.html` | builders clean Perth |
+| `medical-cleaning-perth.html` | medical centre cleaning Perth |
+| `school-cleaning-perth.html` | school cleaning Perth |
+
+Regenerate service pages after editing content: `python3 generate_pages.py`
+
 ## SEO
 
 - Optimised title, meta description, and geo tags for Perth/WA local search
