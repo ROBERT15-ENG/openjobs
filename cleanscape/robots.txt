@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://cleanscapesolutions.com.au/sitemap.xml
