@@ -1,10 +1,11 @@
 /* Cleanscape Solutions — Design System */
 
 :root {
-  --color-primary: #0d6e6e;
-  --color-primary-dark: #084f4f;
-  --color-primary-light: #14a3a3;
-  --color-accent: #3cb878;
+  --color-primary: #0d5c5c;
+  --color-primary-dark: #084545;
+  --color-primary-light: #148585;
+  --color-accent: #4cd964;
+  --color-accent-dark: #3cb878;
   --color-accent-light: #e8f8ef;
   --color-surface: #ffffff;
   --color-surface-alt: #f4f8f7;
@@ -119,7 +120,7 @@ ul {
 .logo {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.75rem;
   color: var(--color-text);
 }
 
@@ -127,37 +128,43 @@ ul {
   color: var(--color-text);
 }
 
-.logo-mark {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-  color: #fff;
-  font-weight: 700;
-  font-size: 0.85rem;
-  border-radius: var(--radius-md);
-  letter-spacing: -0.02em;
+.logo-img {
+  height: 48px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.logo-img--full {
+  height: 120px;
+  width: auto;
 }
 
 .logo-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.15;
+  line-height: 1.1;
 }
 
 .logo-text strong {
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+  color: var(--color-primary);
 }
 
 .logo-text span {
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-accent);
+}
+
+.logo-tagline {
+  font-size: 0.65rem;
+  font-weight: 300;
+  color: var(--color-primary);
+  letter-spacing: 0.04em;
+  margin-top: 0.1rem;
 }
 
 .site-nav ul {
@@ -796,15 +803,16 @@ ul {
 }
 
 .footer-brand .logo {
+  display: inline-flex;
   margin-bottom: 1rem;
 }
 
-.footer-brand .logo-text strong {
-  color: #fff;
-}
-
-.footer-brand .logo-text span {
-  color: rgba(255, 255, 255, 0.5);
+.footer-logo-wrap {
+  display: inline-block;
+  background: #fff;
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
 }
 
 .footer-brand p {
@@ -879,6 +887,10 @@ ul {
 }
 
 @media (max-width: 720px) {
+  .logo-tagline {
+    display: none;
+  }
+
   .nav-toggle {
     display: flex;
   }
