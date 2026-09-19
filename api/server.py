@@ -4,37 +4,48 @@ from dotenv import load_dotenv
 import os
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), '..', 'templates')
 load_dotenv()
-import sqlite3, os, json, datetime, base64
+import sqlite3, os, json, datetime, html, secrets, threading
 from functools import wraps
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, redirect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 import jwt  # PyJWT — real HMAC-signed tokens
 import re
 
 # Smart semantic matcher — keyword-first, Ollama only for borderline cases
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from semantic_matcher import rank_jobs_for_resume, keyword_score
+from semantic_matcher import rank_jobs_for_resume
+from db_schema import init_db
 
 # SEO infrastructure
-from seo_utils import make_job_slug, parse_job_slug, job_canonical_url, should_noindex
-from seo_utils import job_listing_jsonld, breadcrumbs_jsonld, canonical_url, NOINDEX_ROUTES
+from seo_utils import parse_job_slug, job_canonical_url, should_noindex
+from seo_utils import job_listing_jsonld, breadcrumbs_jsonld
 from robots_txt import get_robots_txt
 from sitemap_generator import get_sitemap_index, get_sitemap_static, get_sitemap_jobs
-import seo_middleware as sem
 
-from email_notifier import send_email, send_welcome_email, send_application_confirm
+from email_notifier import send_email
+import email_notifier
+
+IS_PRODUCTION = os.environ.get('FLASK_ENV') == 'production'
 
 # ── JWT Configuration ───────────────────────────────────────────────────────
 JWT_SECRET = os.environ.get('JWT_SECRET') or os.environ.get('SECRET_KEY')
 if not JWT_SECRET:
+    if IS_PRODUCTION:
+        raise RuntimeError("JWT_SECRET (or SECRET_KEY) must be set when FLASK_ENV=production")
     import warnings
     warnings.warn("JWT_SECRET not set — using insecure default for development only. Set JWT_SECRET in .env")
     JWT_SECRET = 'dev_secret_do_not_use_in_production'
 
 ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5700').split(',')
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID') or None
+
+# Roles a client may pick for itself at registration. 'admin' is only granted
+# out-of-band (python api/db_schema.py --admin EMAIL).
+SELF_SERVICE_ROLES = {'user', 'employer'}
 
 # ── Rate Limiter (Redis when available, memory fallback) ──────────────────
 REDIS_URL = os.environ.get('REDIS_URL')
@@ -47,7 +58,10 @@ limiter = Limiter(
 )
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max request size
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB max request size (KYC docs allow 10 MB)
+# Trust X-Forwarded-* from the hosting proxy (Railway/Render/nginx) so request.is_secure,
+# remote address (rate limiting) and URL generation are correct behind TLS termination.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # ── CORS — locked to specific origins ──────────────────────────────────────
 try:
@@ -69,8 +83,10 @@ APP_URL = os.environ.get('APP_URL', 'http://localhost:5700')
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
 
 DB_PATH = os.environ.get('DATABASE_URL', os.path.join(os.path.dirname(__file__), '..', 'jobs.db'))
+init_db(DB_PATH)  # create missing tables/columns on a fresh or older database
 
 def get_db():
+    """Request-scoped connection. Do NOT call .close() on it — teardown does that."""
     if 'db' not in g:
         g.db = sqlite3.connect(DB_PATH)
         g.db.row_factory = sqlite3.Row
@@ -100,7 +116,6 @@ BLOCKED_TOKENS = set()  # in-memory fallback, reset on restart
 def _block_token(token):
     """Add a token to the blocklist."""
     if _USING_REDIS_BLOCKLIST:
-        import time
         # Keep blocked tokens for 7 days (max token age)
         _redis_client.setex(f"blocked:{token}", 7 * 24 * 3600, "1")
     else:
@@ -114,13 +129,14 @@ def _is_token_blocked(token):
 
 def _extract_skills_fast(text: str):
     """Fast keyword-based skill extraction against skills_taxonomy.
-    Uses direct sqlite3 — no Flask context required.
+    Uses its own sqlite3 connection — no Flask context required (safe from threads).
     """
     try:
-        db_path = os.path.join(os.path.dirname(__file__), '..', 'jobs.db')
-        db = sqlite3.connect(db_path)
-        rows = db.execute("SELECT name, aliases FROM skills_taxonomy").fetchall()
-        db.close()
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            rows = conn.execute("SELECT name, aliases FROM skills_taxonomy").fetchall()
+        finally:
+            conn.close()
         text_lower = text.lower()
         matched = []
         for name, aliases in rows:
@@ -181,93 +197,130 @@ def require_auth(f):
         return f(*args, **kwargs)
     return decorated
 
-def require_role(role):
-    """Decorator to require a specific role."""
+def require_role(*roles):
+    """Decorator to require one of the given roles. Must be applied inside @require_auth."""
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
-            if getattr(request, 'user_role', None) != role:
-                return jsonify({'error': f'Requires {role} role'}), 403
+            if getattr(request, 'user_role', None) not in roles:
+                return jsonify({'error': f"Requires {' or '.join(roles)} role"}), 403
             return f(*args, **kwargs)
         return decorated
     return decorator
+
+def _is_admin():
+    return getattr(request, 'user_role', None) == 'admin'
 
 # ============ AUTH ============
 def hash_password(password):
     return generate_password_hash(password)
 
 def verify_password(password, pw_hash):
+    if not pw_hash:  # e.g. Google-only accounts have no password
+        return False
     return check_password_hash(pw_hash, password)
+
+def _validate_password(password: str):
+    """Return an error message if the password is too weak, else None."""
+    if len(password) < 8:
+        return 'Password must be at least 8 characters'
+    if not re.search(r'[A-Z]', password):
+        return 'Password must contain at least 1 uppercase letter'
+    if not re.search(r'[a-z]', password):
+        return 'Password must contain at least 1 lowercase letter'
+    if not re.search(r'\d', password):
+        return 'Password must contain at least 1 number'
+    return None
+
+def _user_payload(user):
+    return {
+        'id': user['id'],
+        'name': user['name'],
+        'email': user['email'],
+        'role': user['role'],
+        'employer_id': user['id'] if user['role'] == 'employer' else None,
+    }
+
+def _start_email_confirmation(db, user_id, email, name):
+    """Create a confirmation token and email it.
+
+    When SMTP is not configured (local dev / staging) nobody could ever confirm,
+    so the account is auto-confirmed and the link is logged instead.
+    Returns True if the account is already usable (confirmed).
+    """
+    if not email_notifier.is_configured():
+        db.execute("UPDATE users SET email_confirmed = 1 WHERE id = ?", (user_id,))
+        db.commit()
+        print(f"[auth] SMTP not configured — auto-confirmed {email}")
+        return True
+    confirm_token = secrets.token_urlsafe(32)
+    confirm_expires = (datetime.datetime.now() + datetime.timedelta(hours=24)).isoformat()
+    db.execute("UPDATE users SET confirm_token = ?, confirm_expires = ? WHERE id = ?",
+               (confirm_token, confirm_expires, user_id))
+    db.commit()
+    confirm_link = f"{APP_URL}/api/auth/confirm-email?token={confirm_token}"
+    _send_confirmation_email(email, name, confirm_link)
+    return False
+
+def _register_user(name, email, password, role, company=None):
+    """Shared registration for seekers and employers. Returns (response, status)."""
+    if not name or not email or not password:
+        return jsonify({'error': 'Missing required fields'}), 400
+    if '@' not in email or '.' not in email:
+        return jsonify({'error': 'Invalid email format'}), 400
+    pw_error = _validate_password(password)
+    if pw_error:
+        return jsonify({'error': pw_error}), 400
+    if role not in SELF_SERVICE_ROLES:
+        return jsonify({'error': 'Invalid role'}), 400
+
+    db = get_db()
+    if db.execute("SELECT id FROM users WHERE LOWER(email) = ?", (email,)).fetchone():
+        return jsonify({'error': 'Email already registered'}), 400
+
+    cur = db.execute(
+        "INSERT INTO users (name, email, password_hash, role, company, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (name, email, hash_password(password), role, company, datetime.datetime.now().isoformat()))
+    db.commit()
+    user_id = cur.lastrowid
+
+    confirmed = _start_email_confirmation(db, user_id, email, name)
+    user = {'id': user_id, 'name': name, 'email': email, 'role': role}
+    body = {
+        'success': True,
+        'email_confirmed': confirmed,
+        'user': _user_payload(user),
+        'message': 'Registered!' if confirmed else 'Registered! Check your email to confirm your account.',
+    }
+    if confirmed:
+        body['token'] = _create_token(user_id, email, role, user_id if role == 'employer' else None)
+    return jsonify(body), 201
 
 @app.route('/api/auth/register', methods=['POST'])
 @limiter.limit('5 per hour', exempt_when=lambda: False)
 def register():
     data = request.json or {}
-    name = data.get('name', '').strip()
-    email = data.get('email', '').strip()
-    password = data.get('password', '')
-    role = data.get('role', 'user')  # Can be 'user' or 'employer'
-    
-    # Validate
-    if not name or not email or not password:
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    if '@' not in email or '.' not in email:
-        return jsonify({'error': 'Invalid email format'}), 400
-    # Password complexity requirements
-    if len(password) < 8:
-        return jsonify({'error': 'Password must be at least 8 characters'}), 400
-    if not re.search(r'[A-Z]', password):
-        return jsonify({'error': 'Password must contain at least 1 uppercase letter'}), 400
-    if not re.search(r'[a-z]', password):
-        return jsonify({'error': 'Password must contain at least 1 lowercase letter'}), 400
-    if not re.search(r'\d', password):
-        return jsonify({'error': 'Password must contain at least 1 number'}), 400
-    db = get_db()
-    existing = db.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
-    if existing:
-        return jsonify({'error': 'Email already registered'}), 400
-    
-    db.execute("INSERT INTO users (name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
-               (name, email, hash_password(password), role, datetime.datetime.now().isoformat()))
-    db.commit()
-    user_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-    db.close()
-
-    # Generate email confirmation token
-    confirm_token = secrets.token_urlsafe(32)
-    confirm_expires = (datetime.datetime.now() + datetime.timedelta(hours=24)).isoformat()
-    db2 = get_db()
-    db2.execute("UPDATE users SET confirm_token = ?, confirm_expires = ? WHERE id = ?",
-                 (confirm_token, confirm_expires, user_id))
-    db2.commit()
-    db2.close()
-
-    # Send confirmation email
-    confirm_link = f"{APP_URL}/api/auth/confirm-email?token={confirm_token}"
-    _send_confirmation_email(email, name, confirm_link)
-
-    return jsonify({
-        'success': True,
-        'message': 'Registered! Check your email to confirm your account.',
-        'email_confirmed': False
-    }), 201
+    return _register_user(
+        name=data.get('name', '').strip(),
+        email=data.get('email', '').strip().lower(),
+        password=data.get('password', ''),
+        role=data.get('role', 'user'),
+    )
 
 @app.route('/api/auth/login', methods=['POST'])
 @limiter.limit('10 per minute', exempt_when=lambda: False)
 def login():
     data = request.json or {}
-    email = data.get('email', '')
+    email = (data.get('email') or '').strip().lower()
     password = data.get('password', '')
-    
+
     db = get_db()
-    user = db.execute("SELECT id, name, email, password_hash, role, email_confirmed FROM users WHERE email = ?", (email,)).fetchone()
+    user = db.execute("SELECT id, name, email, password_hash, role, email_confirmed FROM users WHERE LOWER(email) = ?", (email,)).fetchone()
 
     if not user or not verify_password(password, user['password_hash']):
         return jsonify({'error': 'Invalid credentials'}), 401
 
-    if not user.get('email_confirmed'):
-        db.close()
+    if not user['email_confirmed']:
         return jsonify({
             'error': 'email_not_confirmed',
             'message': 'Please confirm your email before logging in. Check your inbox or spam folder.'
@@ -275,19 +328,7 @@ def login():
 
     token = _create_token(user['id'], user['email'], user['role'],
                            user['id'] if user['role'] == 'employer' else None)
-    return jsonify({
-        'success': True,
-        'token': token,
-        'user': {
-            'id': user['id'],
-            'name': user['name'],
-            'email': user['email'],
-            'role': user['role'],
-            'employer_id': user['id'] if user['role'] == 'employer' else None
-        }
-})
-
-secrets = __import__('secrets')
+    return jsonify({'success': True, 'token': token, 'user': _user_payload(user)})
 
 @app.route('/api/auth/google', methods=['POST'])
 @limiter.limit('10 per minute')
@@ -302,65 +343,63 @@ def google_auth():
     if not google_token:
         return jsonify({'error': 'Google token required'}), 400
 
+    if IS_PRODUCTION and not GOOGLE_CLIENT_ID:
+        return jsonify({'error': 'Google Sign-In is not configured (GOOGLE_CLIENT_ID missing)'}), 503
+
     try:
         from google.oauth2 import id_token as gid_token
         from google.auth.transport import requests as gauth
-        # audience=None skips aud check — set GOOGLE_CLIENT_ID env var to enforce it
-        id_info = gid_token.verify_oauth2_token(google_token, gauth.Request())
+        # Without an audience any Google-issued ID token (for any app) would be accepted.
+        id_info = gid_token.verify_oauth2_token(google_token, gauth.Request(), audience=GOOGLE_CLIENT_ID)
+    except ImportError:
+        return jsonify({'error': 'Google Sign-In is not available on this server'}), 503
     except Exception as e:
-        return jsonify({'error': 'Invalid Google token', 'detail': str(e)}), 401
+        print(f'[auth/google] token verification failed: {e}')
+        return jsonify({'error': 'Invalid Google token'}), 401
 
     google_id = id_info.get('sub')
-    email = id_info.get('email')
+    email = (id_info.get('email') or '').lower()
     name = id_info.get('name', '')
-    if not email:
-        return jsonify({'error': 'Email not available from Google account'}), 400
+    if not email or not id_info.get('email_verified', True):
+        return jsonify({'error': 'A verified email is required from the Google account'}), 400
 
     db = get_db()
     user = db.execute(
-        'SELECT id, name, email, role FROM users WHERE google_id = ? OR (email = ? AND google_id IS NOT NULL)',
+        'SELECT id, name, email, role, google_id FROM users WHERE google_id = ? OR LOWER(email) = ?',
         (google_id, email)
     ).fetchone()
 
+    if user and not user['google_id']:
+        # Password account with the same address: do not silently link identities.
+        return jsonify({'error': 'Email already registered with a password. Please sign in with email instead.'}), 409
+
     if not user:
-        # First-time: create account — Google users are pre-confirmed
-        try:
-            cur = db.execute(
-                'INSERT INTO users (name, email, google_id, email_confirmed, role, plan, created_at) '
-                'VALUES (?, ?, ?, 1, "user", "free", CURRENT_TIMESTAMP)',
-                (name, email, google_id)
-            )
-            db.commit()
-            uid = cur.lastrowid
-        except Exception as e:
-            db.close()
-            if 'UNIQUE' in str(e):
-                return jsonify({'error': 'Email already registered with a password. Please sign in with email instead.'}), 409
-            return jsonify({'error': 'Account creation failed'}), 500
+        # First-time: create account — Google has verified the email
+        cur = db.execute(
+            'INSERT INTO users (name, email, google_id, email_confirmed, role, plan, created_at) '
+            "VALUES (?, ?, ?, 1, 'user', 'free', CURRENT_TIMESTAMP)",
+            (name, email, google_id)
+        )
+        db.commit()
+        uid = cur.lastrowid
+        role = 'user'
     else:
         uid = user['id']
+        role = user['role']
         if name and name != user['name']:
             db.execute('UPDATE users SET name = ? WHERE id = ?', (name, uid))
             db.commit()
 
-    our_token = _create_token(uid, email, 'user', None)
-    db.close()
+    our_token = _create_token(uid, email, role, uid if role == 'employer' else None)
     return jsonify({
         'success': True,
         'token': our_token,
-        'user': {
-            'id': uid,
-            'name': name,
-            'email': email,
-            'role': 'user',
-            'employer_id': None
-        }
+        'user': _user_payload({'id': uid, 'name': name, 'email': email, 'role': role}),
     })
 
 
 def _send_confirmation_email(to_email, user_name, confirm_link):
     """Send email confirmation link."""
-    import html
     safe_name = html.escape(user_name or to_email.split('@')[0])
     confirm_link_escaped = html.escape(confirm_link)
     html_body = f"""
@@ -390,29 +429,27 @@ def confirm_email():
         (token, datetime.datetime.now().isoformat())
     ).fetchone()
     if not user:
-        db.close()
         return jsonify({'error': 'Invalid or expired confirmation token'}), 400
     if user['email_confirmed']:
-        db.close()
         return jsonify({'success': True, 'message': 'Email already confirmed'}), 200
     db.execute("UPDATE users SET email_confirmed = 1, confirm_token = NULL, confirm_expires = NULL WHERE id = ?",
                (user['id'],))
     db.commit()
-    db.close()
     return jsonify({'success': True, 'message': 'Email confirmed! You can now log in.'}), 200
 
 
 @app.route('/api/auth/forgot-password', methods=['POST'])
+@limiter.limit('5 per hour')
 def forgot_password():
     """Send a password reset email to the user."""
     data = request.json or {}
-    email = data.get('email', '').strip()
+    email = (data.get('email') or '').strip().lower()
 
     if not email or '@' not in email:
         return jsonify({'error': 'Valid email is required'}), 400
 
     db = get_db()
-    user = db.execute("SELECT id, name FROM users WHERE email = ?", (email,)).fetchone()
+    user = db.execute("SELECT id, name FROM users WHERE LOWER(email) = ?", (email,)).fetchone()
 
     # Always return success to prevent email enumeration
     if not user:
@@ -429,8 +466,8 @@ def forgot_password():
     # Build reset link
     reset_link = f"{APP_URL}/reset-password.html?token={token}"
 
-    user_name = user['name'] or email.split('@')[0]
-    html = f"""
+    user_name = html.escape(user['name'] or email.split('@')[0])
+    html_body = f"""
     <html>
     <body style="font-family: Inter, Arial, sans-serif; background: #0a0a0f; color: #e0e0e0; padding: 32px;">
       <div style="max-width: 480px; margin: 0 auto;">
@@ -453,9 +490,12 @@ def forgot_password():
     </body>
     </html>"""
 
-    result = send_email(email, '🔑 Reset your OpenJobs password', html)
+    result = send_email(email, '🔑 Reset your OpenJobs password', html_body)
     if not result.get('success'):
-        return jsonify({'error': 'Failed to send email. SMTP may not be configured.'}), 500
+        print(f"[auth] password reset email failed for {email}: {result.get('error')}")
+        if not email_notifier.is_configured():
+            print(f"[auth] SMTP not configured — reset link: {reset_link}")
+        # Same response as success to avoid leaking whether the account exists.
 
     return jsonify({'message': 'If that email exists, a reset link has been sent.'}), 200
 
@@ -469,15 +509,9 @@ def reset_password():
 
     if not token or not password:
         return jsonify({'error': 'Token and new password are required'}), 400
-    # Password complexity requirements (same as registration)
-    if len(password) < 8:
-        return jsonify({'error': 'Password must be at least 8 characters'}), 400
-    if not re.search(r'[A-Z]', password):
-        return jsonify({'error': 'Password must contain at least 1 uppercase letter'}), 400
-    if not re.search(r'[a-z]', password):
-        return jsonify({'error': 'Password must contain at least 1 lowercase letter'}), 400
-    if not re.search(r'\d', password):
-        return jsonify({'error': 'Password must contain at least 1 number'}), 400
+    pw_error = _validate_password(password)
+    if pw_error:
+        return jsonify({'error': pw_error}), 400
     db = get_db()
     user = db.execute(
         "SELECT id FROM users WHERE reset_token = ? AND reset_expires > ?",
@@ -503,28 +537,16 @@ def logout():
 
 
 @app.route('/api/auth/me', methods=['GET'])
+@require_auth
 def me():
-    auth = request.headers.get('Authorization', '')
-    if not auth.startswith('Bearer '):
-        return jsonify({'error': 'Unauthorized'}), 401
-    try:
-        token = auth.split(' ', 1)[1]
-        if _is_token_blocked(token):
-            return jsonify({'error': 'Token revoked'}), 401
-        payload = _decode_token(token)
-        if not payload:
-            return jsonify({'error': 'Invalid token'}), 401
-        db = get_db()
-        user = db.execute("SELECT id, name, email, role, skills, phone, company, preferred_location, created_at FROM users WHERE id = ?",
-                          (int(payload['user_id']),)).fetchone()
-        db.close()
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        user_dict = dict(user)
-        user_dict['employer_id'] = user_dict['id'] if user_dict['role'] == 'employer' else None
-        return jsonify({'user': user_dict})
-    except Exception as e:
-        return jsonify({'error': 'Invalid token'}), 401
+    db = get_db()
+    user = db.execute("SELECT id, name, email, role, skills, phone, company, preferred_location, created_at FROM users WHERE id = ?",
+                      (request.user_id,)).fetchone()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    user_dict = dict(user)
+    user_dict['employer_id'] = user_dict['id'] if user_dict['role'] == 'employer' else None
+    return jsonify({'user': user_dict})
 
 
 
@@ -624,10 +646,8 @@ def upload_resume():
         (filename, text[:50000], request.user_id)
     )
     db.commit()
-    db.close()
 
     # ── Extract KYC fields from resume text ─────────────────────────────────
-    import re
     dob_patterns = [
         r'(?:DOB|Date\s*of\s*Birth|Born)[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
         r'Born[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
@@ -665,44 +685,36 @@ def upload_resume():
         if m: extracted_kyc['address'] = m.group(1).strip(); break
 
     # Save extracted KYC hints (user reviews and confirms)
-    if extracted_kyc:
-        db_kyc = sqlite3.connect(db_path)
-        for k, v in extracted_kyc.items():
-            col = k if k in ('dob','nationality','country','county','address') else None
-            if col:
-                db_kyc.execute(f'UPDATE users SET {col} = ? WHERE id = ?', (v, request.user_id))
-        db_kyc.commit()
-        db_kyc.close()
+    KYC_COLS = ('dob', 'nationality', 'country', 'county', 'address')
+    for col, v in extracted_kyc.items():
+        if col in KYC_COLS:
+            db.execute(f'UPDATE users SET {col} = ? WHERE id = ?', (v, request.user_id))
 
     # ── Extract skills immediately using keyword matching ───────────────────────
-    db_path = os.path.join(os.path.dirname(__file__), '..', 'jobs.db')
     extracted_skills = _extract_skills_fast(text)
     if extracted_skills:
-        db2 = sqlite3.connect(db_path)
-        db2.execute('UPDATE users SET skills = ? WHERE id = ?',
-                    (','.join(extracted_skills), request.user_id))
-        db2.commit()
-        db2.close()
+        db.execute('UPDATE users SET skills = ? WHERE id = ?',
+                   (','.join(extracted_skills), request.user_id))
+    db.commit()
 
     # ── Kick off Ollama parse in background (non-blocking) ────────────────────
-    text_captured = text  # capture to avoid closure issues
+    # The thread outlives the request, so capture plain values (no `request`/`g`).
+    text_captured, uid_captured = text, request.user_id
     def _parse_async():
         try:
-            import sys, os
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
             from ai_matcher import parse_resume
             parsed = parse_resume(text_captured)
             if parsed and parsed.get('skills'):
-                db3 = sqlite3.connect(db_path)
-                db3.execute('UPDATE users SET skills = ? WHERE id = ?',
-                            (','.join(parsed['skills'][:20]), request.user_id))
-                db3.commit()
-                db3.close()
+                conn = sqlite3.connect(DB_PATH)
+                try:
+                    conn.execute('UPDATE users SET skills = ? WHERE id = ?',
+                                 (','.join(parsed['skills'][:20]), uid_captured))
+                    conn.commit()
+                finally:
+                    conn.close()
         except Exception as _e:
             print(f'[resume/parse] background parse: {_e}')
-    import threading
-    t = threading.Thread(target=_parse_async, daemon=True)
-    t.start()
+    threading.Thread(target=_parse_async, daemon=True).start()
 
     return jsonify({
         'success': True,
@@ -716,30 +728,15 @@ def upload_resume():
 
 
 @app.route('/api/resume/parse', methods=['POST'])
+@require_auth
 def parse_resume_ai():
     """Parse stored resume text with Ollama AI. Call this after upload if desired."""
-    auth = request.headers.get('Authorization', '')
-    if not auth.startswith('Bearer '):
-        return jsonify({'error': 'Unauthorized'}), 401
-    try:
-        token = auth.split(' ', 1)[1]
-        if _is_token_blocked(token):
-            return jsonify({'error': 'Token revoked'}), 401
-        payload = _decode_token(token)
-        if not payload:
-            return jsonify({'error': 'Invalid token'}), 401
-        user_id = int(payload['user_id'])
-    except Exception:
-        return jsonify({'error': 'Invalid token'}), 401
-
     data = request.json or {}
     resume_text = data.get('resume_text', '')
     if not resume_text:
         return jsonify({'error': 'resume_text required'}), 400
 
     try:
-        import sys, os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
         from ai_matcher import parse_resume
         parsed = parse_resume(resume_text)
         return jsonify({'success': True, 'parsed': parsed})
@@ -758,9 +755,14 @@ _BLOCKED_UTM = {'utm_source','utm_medium','utm_campaign','utm_term','utm_content
 
 @app.before_request
 def _seo_normalize_url():
-    """Enforce canonical URL form: no trailing slash, lowercase, no UTM params."""
+    """Enforce canonical URL form: no trailing slash, lowercase, no UTM params.
+    API routes are exempt: they are never crawled (robots.txt) and lower-casing
+    would break e.g. POST /api/companies/<Name>/rate (a 301 turns POST into GET).
+    """
     import urllib.parse
     path = request.path
+    if path.startswith('/api/'):
+        return None
     # 1. Strip trailing slash (except root)
     if path != '/' and _STRIP_TRAILING_RE.search(path):
         qs = ('?' + request.query_string.decode()) if request.query_string else ''
@@ -783,119 +785,30 @@ def _redirect_raw(target, code):
     resp.headers['Location'] = target
     return resp
 
-# ============ JOBS ============
-
 @app.before_request
 def _force_https():
-    """Redirect HTTP → HTTPS in production."""
-    if os.environ.get('FLASK_ENV') == 'production' and request.url.startswith('http://'):
-        return '', 301
+    """Redirect HTTP → HTTPS in production (scheme comes from X-Forwarded-Proto via ProxyFix)."""
+    if IS_PRODUCTION and not request.is_secure:
+        return redirect(request.url.replace('http://', 'https://', 1), code=301)
 
 
+# ============ JOBS ============
 
-def _check_password_complexity(password: str):
-    """Returns (ok, message)."""
-    if len(password) < 8:
-        return False, "Min 8 characters"
-    import re
-    if not re.search(r"[A-Z]", password):
-        return False, "Need at least one uppercase letter"
-    if not re.search(r"\d", password):
-        return False, "Need at least one number"
-    if not re.search(r"[!@#$%^&*()_+\-=\[\]{};:'\".,<>?/\\|`~]", password):
-        return False, "Need at least one symbol (!@#$%^&* etc)"
-    return True, "OK"
-
-def _block_token(token):
-    """Add a token to the blocklist."""
-    if _USING_REDIS_BLOCKLIST:
-        import time
-        # Keep blocked tokens for 7 days (max token age)
-        _redis_client.setex(f"blocked:{token}", 7 * 24 * 3600, "1")
-    else:
-        BLOCKED_TOKENS.add(token)  # in-memory fallback, reset on restart
-
-def _is_token_blocked(token):
-    """Check if a token is in the blocklist."""
-    if _USING_REDIS_BLOCKLIST:
-        return bool(_redis_client.exists(f"blocked:{token}"))
-    return token in BLOCKED_TOKENS
-
-def _extract_skills_fast(text: str):
-    """Fast keyword-based skill extraction against skills_taxonomy.
-    Uses direct sqlite3 — no Flask context required.
-    """
-    try:
-        db_path = os.path.join(os.path.dirname(__file__), '..', 'jobs.db')
-        db = sqlite3.connect(db_path)
-        rows = db.execute("SELECT name, aliases FROM skills_taxonomy").fetchall()
-        db.close()
-        text_lower = text.lower()
-        matched = []
-        for name, aliases in rows:
-            if name.lower() in text_lower:
-                matched.append(name)
-            elif aliases:
-                for alias in aliases.split(','):
-                    if alias.strip().lower() in text_lower:
-                        matched.append(name)
-                        break
-        return list(dict.fromkeys(matched))
-    except Exception as e:
-        print(f'[_extract_skills_fast] {e}')
-        return []
+def _fmt_salary(salary_min, salary_max, currency='AUD'):
+    """Human-readable salary range, e.g. 'AUD 80,000 – 120,000'. Empty string if unknown."""
+    currency = currency or 'AUD'
+    if salary_min and salary_max:
+        if salary_min == salary_max:
+            return f"{currency} {salary_min:,.0f}"
+        return f"{currency} {salary_min:,.0f} – {salary_max:,.0f}"
+    if salary_min:
+        return f"{currency} {salary_min:,.0f}+"
+    if salary_max:
+        return f"Up to {currency} {salary_max:,.0f}"
+    return ''
 
 
-
-def _create_token(user_id, email, role, employer_id=None):
-    """Create a real HMAC-signed JWT token."""
-    payload = {
-        'user_id': user_id,
-        'email': email,
-        'role': role,
-        'employer_id': employer_id or user_id,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7),
-        'iat': datetime.datetime.utcnow(),
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
-
-
-def _decode_token(token):
-    """Decode and verify a JWT token. Returns payload or None."""
-    try:
-        return jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
-    except jwt.ExpiredSignatureError:
-        return None  # 'Token expired'
-    except jwt.InvalidTokenError:
-        return None  # 'Invalid token'
-
-
-def require_auth(f):
-    """Decorator to protect routes with JWT token."""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth = request.headers.get('Authorization', '')
-        if not auth.startswith('Bearer '):
-            return jsonify({'error': 'Missing or invalid Authorization header'}), 401
-        token = auth.split(' ', 1)[1]
-        if _is_token_blocked(token):
-            return jsonify({'error': 'Token has been revoked'}), 401
-        payload = _decode_token(token)
-        if not payload:
-            return jsonify({'error': 'Invalid or expired token'}), 401
-        request.user_id    = int(payload.get('user_id', 0))
-        request.user_role  = payload.get('role', 'user')
-        request.user_email = payload.get('email', '')
-        request.employer_id = payload.get('employer_id') or payload.get('user_id')
-        return f(*args, **kwargs)
-    return decorated
-
-
-secrets = __import__('secrets')
-
-@app.route('/api/auth/google', methods=['POST'])
-@limiter.limit('10 per minute')
-
+@app.route('/api/jobs', methods=['GET'])
 def get_jobs():
     db = get_db()
     
@@ -1005,6 +918,7 @@ def get_job(job_id):
 
 @app.route('/api/jobs', methods=['POST'])
 @require_auth
+@require_role('employer', 'admin')
 def create_job():
     data = request.json or {}
     
@@ -1078,14 +992,10 @@ def feature_job(job_id):
     data = request.json or {}
     featured = 1 if data.get('featured') in (True, 'true', '1', 1) else 0
     db = get_db()
-    job = db.execute("SELECT employer_id FROM jobs WHERE id = ?", (job_id,)).fetchone()
-    if not job:
+    if not _owns_job(db, job_id):
         return jsonify({'error': 'Not found'}), 404
-    if job['employer_id'] != request.user_id:
-        return jsonify({'error': 'Forbidden'}), 403
     db.execute("UPDATE jobs SET is_featured = ? WHERE id = ?", (featured, job_id))
     db.commit()
-    db.close()
     return jsonify({'success': True, 'is_featured': bool(featured)})
 
 
@@ -1104,17 +1014,11 @@ def update_job(job_id):
     set_clause = ', '.join(f'{k} = ?' for k in updates)
     values = list(updates.values()) + [job_id]
     db = get_db()
-    existing = db.execute('SELECT id, employer_id FROM jobs WHERE id = ?', (job_id,)).fetchone()
-    if not existing:
-        db.close()
-        return jsonify({'error': 'Job not found'}), 404
-    if existing['employer_id'] and existing['employer_id'] != request.employer_id:
-        db.close()
-        return jsonify({'error': 'Not authorized to update this job'}), 403
+    if not _owns_job(db, job_id):
+        return jsonify({'error': 'Job not found or not authorized'}), 404
     db.execute(f'UPDATE jobs SET {set_clause} WHERE id = ?', values)
     db.commit()
     updated = db.execute('SELECT * FROM jobs WHERE id = ?', (job_id,)).fetchone()
-    db.close()
     return jsonify({'success': True, 'job': dict(updated)})
 
 
@@ -1122,16 +1026,10 @@ def update_job(job_id):
 @require_auth
 def delete_job(job_id):
     db = get_db()
-    existing = db.execute('SELECT id, employer_id FROM jobs WHERE id = ?', (job_id,)).fetchone()
-    if not existing:
-        db.close()
-        return jsonify({'error': 'Job not found'}), 404
-    if existing['employer_id'] and existing['employer_id'] != request.employer_id:
-        db.close()
-        return jsonify({'error': 'Not authorized to delete this job'}), 403
+    if not _owns_job(db, job_id):
+        return jsonify({'error': 'Job not found or not authorized'}), 404
     db.execute('UPDATE jobs SET is_active = 0 WHERE id = ?', (job_id,))
     db.commit()
-    db.close()
     return jsonify({'success': True, 'message': 'Job removed'})
 
 
@@ -1157,7 +1055,6 @@ def rate_company(company_name):
     db.execute("UPDATE jobs SET company_rating = ? WHERE LOWER(company) = LOWER(?)",
                (round(avg, 1), company_name))
     db.commit()
-    db.close()
     return jsonify({'success': True, 'message': msg, 'new_avg': round(avg, 1)})
 
 
@@ -1168,7 +1065,6 @@ def track_job_view(job_id):
     db.execute("UPDATE jobs SET view_count = view_count + 1 WHERE id = ?", (job_id,))
     db.commit()
     job = db.execute("SELECT view_count FROM jobs WHERE id = ?", (job_id,)).fetchone()
-    db.close()
     return jsonify({'success': True, 'view_count': job['view_count'] if job else 0})
 
 
@@ -1188,41 +1084,53 @@ def get_skills():
 
 
 @app.route('/api/user/profile', methods=['PATCH'])
+@require_auth
 def update_user_profile():
-    auth = request.headers.get('Authorization', '')
-    if not auth.startswith('Bearer '):
-        return jsonify({'error': 'Unauthorized'}), 401
-    try:
-        token = auth.split(' ', 1)[1]
-        if _is_token_blocked(token):
-            return jsonify({'error': 'Token revoked'}), 401
-        payload = _decode_token(token)
-        if not payload:
-            return jsonify({'error': 'Invalid token'}), 401
-        user_id = int(payload['user_id'])
-    except Exception:
-        return jsonify({'error': 'Invalid token'}), 401
     data = request.json or {}
     ALLOWED = ['name', 'skills', 'phone', 'preferred_location', 'experience', 'company']
     updates = {k: v for k, v in data.items() if k in ALLOWED}
     if not updates:
         return jsonify({'error': f'No valid fields. Allowed: {ALLOWED}'}), 400
     set_clause = ', '.join(f'{k} = ?' for k in updates)
-    values = list(updates.values()) + [user_id]
+    values = list(updates.values()) + [request.user_id]
     db = get_db()
     db.execute(f'UPDATE users SET {set_clause} WHERE id = ?', values)
     db.commit()
     user = db.execute('SELECT id, name, email, role, skills, phone, preferred_location, experience, created_at FROM users WHERE id = ?',
-                     (user_id,)).fetchone()
-    db.close()
+                     (request.user_id,)).fetchone()
     return jsonify({'success': True, 'user': dict(user)})
 
 
 # ============ APPLICATIONS ============
+def _application_access(db, app_id):
+    """Return (application_row, is_applicant, is_job_owner) for the current user, or (None, False, False)."""
+    row = db.execute(
+        "SELECT a.*, j.employer_id FROM applications a JOIN jobs j ON j.id = a.job_id WHERE a.id = ?",
+        (app_id,)).fetchone()
+    if not row:
+        return None, False, False
+    is_applicant = row['user_id'] == request.user_id
+    is_owner = row['employer_id'] is not None and row['employer_id'] == request.employer_id
+    return row, is_applicant, is_owner
+
 @app.route('/api/applications', methods=['GET'])
+@require_auth
 def get_applications():
+    """Admin: every application. Employer: applications to their jobs. Seeker: their own."""
     db = get_db()
-    apps = db.execute("SELECT * FROM applications ORDER BY applied_at DESC").fetchall()
+    base = """SELECT a.*, j.title AS job_title, j.company, j.location,
+                     u.name AS applicant_name, u.email AS applicant_email
+              FROM applications a
+              JOIN jobs j ON j.id = a.job_id
+              LEFT JOIN users u ON u.id = a.user_id"""
+    if _is_admin():
+        apps = db.execute(base + " ORDER BY a.applied_at DESC").fetchall()
+    elif request.user_role == 'employer':
+        apps = db.execute(base + " WHERE j.employer_id = ? ORDER BY a.applied_at DESC",
+                          (request.employer_id,)).fetchall()
+    else:
+        apps = db.execute(base + " WHERE a.user_id = ? ORDER BY a.applied_at DESC",
+                          (request.user_id,)).fetchall()
     return jsonify([dict(a) for a in apps])
 
 @app.route('/api/applications', methods=['POST'])
@@ -1232,10 +1140,10 @@ def submit_application():
     Delegates to quick_apply logic but accepts job_id in body.
     """
     data = request.json or {}
-    job_id = data.get('job_id')
-    if not job_id:
+    try:
+        job_id = int(data.get('job_id'))
+    except (TypeError, ValueError):
         return jsonify({'error': 'job_id required'}), 400
-    # Reuse quick_apply by calling it directly
     return quick_apply(job_id)
 
 # ── ONE-CLICK APPLY ──────────────────────────────────────────────────────────
@@ -1245,31 +1153,29 @@ def quick_apply(job_id):
     db = get_db()
     user = db.execute("SELECT name, email, resume_text, kyc_status, cv_link FROM users WHERE id = ?",
                       (request.user_id,)).fetchone()
-    job = db.execute("SELECT title, company FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    job = db.execute("SELECT title, company FROM jobs WHERE id = ? AND is_active = 1", (job_id,)).fetchone()
 
     if not user or not job:
-        db.close()
         return jsonify({'error': 'Not found'}), 404
 
     # Gate: no duplicate applications
     existing = db.execute("SELECT id FROM applications WHERE job_id = ? AND user_id = ?",
                           (job_id, request.user_id)).fetchone()
     if existing:
-        db.close()
         return jsonify({'error': 'Already applied'}), 409
 
     cover = "Hi, I'm " + str(user['name']) + ". I'm interested in the " + str(job['title']) + " role at " + str(job['company']) + "."
-    db.execute("INSERT INTO applications (job_id, user_id, status, applied_at, cover_note) VALUES (?, ?, 'pending', ?, ?)",
-               (job_id, request.user_id, datetime.datetime.now().isoformat(), cover))
+    db.execute("INSERT INTO applications (job_id, user_id, status, applied_at, cover_letter, resume_text, cv_link) "
+               "VALUES (?, ?, 'pending', ?, ?, ?, ?)",
+               (job_id, request.user_id, datetime.datetime.now().isoformat(), cover,
+                user['resume_text'], user['cv_link']))
     db.execute("UPDATE jobs SET application_count = application_count + 1 WHERE id = ?", (job_id,))
     db.commit()
 
-    # Get employer info before closing db
     employer = db.execute(
         "SELECT u.name, u.email FROM users u JOIN jobs j ON j.employer_id = u.id WHERE j.id = ?",
         (job_id,)
     ).fetchone()
-    db.close()
 
     # Send confirmation to seeker
     try:
@@ -1299,68 +1205,17 @@ def quick_apply(job_id):
     })
 
 
-@require_auth
-@limiter.limit('30 per hour', exempt_when=lambda: False)
-def apply_job():
-    data = request.json
-    db = get_db()
-    job_id  = data.get('job_id')
-    user_id = request.user_id  # always from JWT — no fallback, no override
-    notes   = data.get('notes', '')
-    resume_text = data.get('resume_text', '')
-
-    # Fetch job + employer details for emails
-    job = db.execute("SELECT title, company, employer_id FROM jobs WHERE id = ?", (job_id,)).fetchone()
-    applicant = db.execute("SELECT name, email FROM users WHERE id = ?", (user_id,)).fetchone()
-    employer = None
-    if job and job['employer_id']:
-        employer = db.execute("SELECT name, email FROM users WHERE id = ?", (job['employer_id'],)).fetchone()
-
-    db.execute("INSERT INTO applications (job_id, user_id, status, applied_at, resume_text) VALUES (?, ?, ?, ?, ?)",
-               (job_id, user_id, 'pending', datetime.datetime.now().isoformat(), resume_text[:50000]))
-    db.commit()
-    app_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-
-    # Send confirmation to applicant
-    try:
-        from email_notifier import send_application_confirm
-        if applicant and applicant['email']:
-            send_application_confirm(
-                applicant['email'],
-                job['title'] if job else 'the role',
-                job['company'] if job else 'the company'
-            )
-    except Exception as e:
-        print(f"[apply_job] applicant email error: {e}")
-
-    # Notify employer
-    try:
-        if employer and employer['email'] and os.environ.get('SMTP_HOST'):
-            FROM_EMAIL = os.environ.get('FROM_EMAIL', 'noreply@openjobs.com.au')
-            subject = f"New Application: {job['title'] if job else 'a job'}"
-            body = (f"You have a new applicant for {job['title']} at {job['company']}. "
-                    f"Log in to your OpenJobs dashboard to review their application.")
-            msg = "Subject: " + subject + "\n\n" + body
-            with smtplib.SMTP(os.environ['SMTP_HOST'], int(os.environ.get('SMTP_PORT', 587))) as s:
-                s.starttls()
-                s.login(os.environ['SMTP_USER'], os.environ['SMTP_PASS'])
-                s.sendmail(FROM_EMAIL, employer['email'], msg)
-    except Exception as e:
-        print(f"[apply_job] employer email error: {e}")
-
-    db.close()
-    return jsonify({'success': True, 'message': 'Applied', 'application_id': app_id}), 201
-
-# ============ SALARY ============
 # ============ KANBAN PIPELINE ============
+def _owns_job(db, job_id):
+    job = db.execute("SELECT employer_id FROM jobs WHERE id=?", (job_id,)).fetchone()
+    return bool(job) and (job['employer_id'] == request.employer_id or _is_admin())
+
 @app.route('/api/kanban/<int:job_id>', methods=['GET'])
 @require_auth
 def get_kanban(job_id):
     "Return kanban board data for one job — all applications grouped by status."
     db = get_db()
-    # Verify ownership
-    job = db.execute("SELECT employer_id FROM jobs WHERE id=?", (job_id,)).fetchone()
-    if not job or job['employer_id'] != request.employer_id:
+    if not _owns_job(db, job_id):
         return jsonify({'error': 'Not found'}), 404
 
     apps = db.execute("""
@@ -1371,7 +1226,6 @@ def get_kanban(job_id):
         WHERE a.job_id = ?
         ORDER BY a.applied_at DESC
     """, (job_id,)).fetchall()
-    db.close()
 
     stages = ['applied', 'screening', 'interview', 'offer', 'hired', 'rejected']
     board = {s: [] for s in stages}
@@ -1387,11 +1241,10 @@ def get_kanban(job_id):
 def move_kanban_card(job_id):
     "Move an application to a new stage."
     db = get_db()
-    job = db.execute("SELECT employer_id FROM jobs WHERE id=?", (job_id,)).fetchone()
-    if not job or job['employer_id'] != request.employer_id:
+    if not _owns_job(db, job_id):
         return jsonify({'error': 'Not found'}), 404
 
-    data = request.json
+    data = request.json or {}
     app_id = data.get('application_id')
     new_status = data.get('stage')
     valid = ['applied', 'screening', 'interview', 'offer', 'hired', 'rejected']
@@ -1424,14 +1277,13 @@ def move_kanban_card(job_id):
                 print(f"[kanban] rejection email error: {e}")
 
     db.commit()
-    db.close()
     return jsonify({'success': True, 'status': new_status})
 
 
 @app.route('/api/salary/predict', methods=['POST'])
 def predict_salary():
-    data = request.json
-    title = data.get('title', '')
+    data = request.json or {}
+    title = data.get('title', '') or ''
     location = data.get('location', '')
     
     base = 80000
@@ -1471,8 +1323,25 @@ def get_pricing():
     })
 
 
+def _stripe_form_encode(obj, prefix=''):
+    """Flatten nested dict/list into Stripe's bracket form encoding.
+    {'line_items': [{'price_data': {'currency': 'aud'}}]} → {'line_items[0][price_data][currency]': 'aud'}
+    (requests' default encoding of nested structures is not understood by Stripe.)
+    """
+    flat = {}
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            flat.update(_stripe_form_encode(v, f'{prefix}[{k}]' if prefix else str(k)))
+    elif isinstance(obj, (list, tuple)):
+        for i, v in enumerate(obj):
+            flat.update(_stripe_form_encode(v, f'{prefix}[{i}]'))
+    elif obj is not None:
+        flat[prefix] = obj
+    return flat
+
 @app.route('/api/payment/checkout', methods=['POST'])
 @require_auth
+@require_role('employer', 'admin')
 def create_checkout():
     "Create Stripe checkout session for a job posting."
     if not os.environ.get('STRIPE_SECRET_KEY'):
@@ -1482,6 +1351,8 @@ def create_checkout():
     job_id = data.get('job_id')
     plan   = data.get('plan', 'standard')
     prices = {'standard': 9900, 'premium': 19900}  # AUD cents
+    if plan not in prices:
+        return jsonify({'error': f'Unknown plan {plan!r}'}), 400
 
     try:
         import requests
@@ -1507,7 +1378,7 @@ def create_checkout():
         resp = requests.post(
             'https://api.stripe.com/v1/checkout/sessions',
             auth=(os.environ['STRIPE_SECRET_KEY'], ''),
-            data=session_data,
+            data=_stripe_form_encode(session_data),
             timeout=15
         )
         if resp.status_code == 200:
@@ -1519,38 +1390,55 @@ def create_checkout():
 
 # ============ OLLAMA AI ============
 import requests
-try:
-    r = requests.get(f'{OLLAMA_URL}/api/tags', timeout=2)
-    OLLAMA_AVAILABLE = r.status_code == 200
-except:
-    OLLAMA_AVAILABLE = False
+import time as _time
+
+OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'gemma3:4b')
+_ollama_probe = {'at': 0.0, 'ok': False}
+
+def _ollama_available(max_age=30):
+    """Probe Ollama, caching the result for `max_age` seconds so a late-starting
+    Ollama is picked up without restarting the server."""
+    now = _time.monotonic()
+    if now - _ollama_probe['at'] > max_age:
+        try:
+            _ollama_probe['ok'] = requests.get(f'{OLLAMA_URL}/api/tags', timeout=2).status_code == 200
+        except Exception:
+            _ollama_probe['ok'] = False
+        _ollama_probe['at'] = now
+    return _ollama_probe['ok']
 
 @app.route('/api/ai/ollama/status', methods=['GET'])
 def ollama_status():
-    return jsonify({'available': OLLAMA_AVAILABLE, 'url': OLLAMA_URL})
+    return jsonify({'available': _ollama_available(), 'url': OLLAMA_URL})
 
 @app.route('/api/ai/ollama/models', methods=['GET'])
 def list_ollama_models():
-    if not OLLAMA_AVAILABLE:
-        return jsonify({'error': 'Ollama not running', 'models': []})
+    if not _ollama_available():
+        return jsonify({'error': 'Ollama not running', 'models': []}), 503
     try:
-        import requests
         resp = requests.get(f'{OLLAMA_URL}/api/tags', timeout=5)
         return jsonify({'success': True, 'models': [m['name'] for m in resp.json().get('models', [])]})
     except Exception as e:
-        return jsonify({'error': str(e)})
+        return jsonify({'error': str(e)}), 502
 
 @app.route('/api/ai/ollama/chat', methods=['POST'])
+@limiter.limit('20 per minute')  # anonymous (ai.html) — keep the LLM proxy from being abused
 def ollama_chat():
-    if not OLLAMA_AVAILABLE:
-        return jsonify({'error': 'Ollama not running'}), 500
-    data = request.json
+    if not _ollama_available():
+        return jsonify({'error': 'Ollama not running'}), 503
+    data = request.json or {}
+    message = (data.get('message') or '').strip()
+    if not message:
+        return jsonify({'error': 'message required'}), 400
     try:
-        import requests
-        resp = requests.post(f'{OLLAMA_URL}/api/chat', json={'model': data.get('model', 'llama3.2'), 'messages': [{'role': 'user', 'content': data.get('message')}], 'stream': False}, timeout=30)
+        resp = requests.post(f'{OLLAMA_URL}/api/chat',
+                             json={'model': data.get('model', OLLAMA_MODEL),
+                                   'messages': [{'role': 'user', 'content': message[:4000]}],
+                                   'stream': False},
+                             timeout=60)
         return jsonify({'success': True, 'response': resp.json()['message']['content']})
     except Exception as e:
-        return jsonify({'error': str(e)})
+        return jsonify({'error': str(e)}), 502
 
 # ============ WHITE-LABEL ============
 @app.route('/api/whitelabel/config', methods=['GET'])
@@ -1572,20 +1460,26 @@ def list_ml_models():
 def list_regions():
     return jsonify({'success': True, 'regions': {'au-syd': {'name': 'Sydney', 'status': 'active'}, 'sg': {'name': 'Singapore', 'status': 'active'}}})
 
-# ============ CRM ============
+# ============ CRM (internal — admin only) ============
 @app.route('/api/crm/companies', methods=['GET'])
+@require_auth
+@require_role('admin')
 def get_crm_companies():
     db = get_db()
     companies = db.execute("SELECT * FROM crm_companies ORDER BY created_at DESC").fetchall()
     return jsonify({'success': True, 'companies': [dict(c) for c in companies]})
 
 @app.route('/api/crm/contacts', methods=['GET'])
+@require_auth
+@require_role('admin')
 def get_crm_contacts():
     db = get_db()
     contacts = db.execute("SELECT * FROM crm_contacts ORDER BY created_at DESC").fetchall()
     return jsonify({'success': True, 'contacts': [dict(c) for c in contacts]})
 
 @app.route('/api/crm/pipeline', methods=['GET'])
+@require_auth
+@require_role('admin')
 def get_crm_pipeline():
     db = get_db()
     deals = db.execute("SELECT * FROM crm_pipeline ORDER BY created_at DESC").fetchall()
@@ -1593,12 +1487,14 @@ def get_crm_pipeline():
 
 # ============ ADMIN ============
 @app.route('/api/admin/stats', methods=['GET'])
+@require_auth
+@require_role('admin')
 def admin_stats():
     db = get_db()
 
     total_jobs      = db.execute("SELECT COUNT(*) FROM jobs WHERE is_active=1").fetchone()[0]
     total_apps      = db.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
-    total_seekers   = db.execute("SELECT COUNT(*) FROM users WHERE role='seeker'").fetchone()[0]
+    total_seekers   = db.execute("SELECT COUNT(*) FROM users WHERE role='user'").fetchone()[0]
     total_employers = db.execute("SELECT COUNT(*) FROM users WHERE role='employer'").fetchone()[0]
 
     app_rows = db.execute("SELECT status, COUNT(*) as cnt FROM applications GROUP BY status").fetchall()
@@ -1692,7 +1588,7 @@ def job_page():
     """Serve job detail page — reads file, injects dynamic SEO values, returns raw HTML."""
     from flask import make_response
     from jinja2 import Template
-    job_id = request.args.get('id')
+    job_id = request.args.get('id', type=int)
     slug   = request.args.get('slug', '')
     if slug:
         _, resolved_id = parse_job_slug(slug)
@@ -1702,9 +1598,8 @@ def job_page():
         return _serve_job_html(None, canonical='', jsonld='', bc_jsonld='', noindex='', status=400)
     db = get_db()
     row = db.execute(
-        'SELECT * FROM jobs WHERE id=? AND is_active=1', (int(job_id),)
+        'SELECT * FROM jobs WHERE id=? AND is_active=1', (job_id,)
     ).fetchone()
-    db.close()
     if not row:
         return _serve_job_html(None, canonical='', jsonld='', bc_jsonld='', noindex='', status=404)
     job = dict(row)
@@ -1724,12 +1619,15 @@ def _serve_job_html(job, canonical, jsonld, bc_jsonld, noindex, status=200):
     from jinja2 import Template
     path = os.path.join(TEMPLATES_DIR, 'job.html')
     try:
-        html = open(path).read()
+        with open(path, encoding='utf-8') as f:
+            source = f.read()
     except Exception:
         return 'Template not found', 404
-    t = Template(html)
+    from markupsafe import Markup
+    # autoescape so job fields can never inject HTML; the JSON-LD/meta snippets are trusted markup
+    t = Template(source, autoescape=True)
     rendered = t.render(job=job or {}, canonical=canonical,
-                        jsonld=jsonld, bc_jsonld=bc_jsonld, noindex=noindex)
+                        jsonld=Markup(jsonld), bc_jsonld=Markup(bc_jsonld), noindex=Markup(noindex))
     resp = make_response(rendered, status)
     resp.content_type = 'text/html; charset=utf-8'
     return resp
@@ -1779,49 +1677,25 @@ def terms_page():
     return open(os.path.join(TEMPLATES_DIR, 'terms.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'terms.html')) else jsonify({'terms':True})
 
 # ============ CAD API ============
-import ezdxf
+# NOTE: the former POST /api/cad/read endpoint accepted an arbitrary server file
+# path with no authentication (local file read). It was unused by the UI and has
+# been removed; re-add it only with auth + an upload-directory allow-list.
 
 @app.route('/api/cad/info', methods=['GET'])
 def cad_info():
     """Get CAD library info"""
+    try:
+        import ezdxf
+        version = ezdxf.__version__
+    except ImportError:
+        version = None
     return jsonify({
         'library': 'ezdxf',
-        'version': ezdxf.__version__,
+        'version': version,
+        'available': version is not None,
         'capabilities': ['read_dxf', 'write_dxf', 'export_pdf', 'export_svg'],
         'note': 'AutoCAD COM connection requires Windows'
     })
-
-@app.route('/api/cad/read', methods=['POST'])
-def read_cad():
-    """Read DXF file and extract entities"""
-    data = request.json
-    filepath = data.get('filepath')
-    
-    if not filepath:
-        return jsonify({'error': 'filepath required'}), 400
-    
-    try:
-        doc = ezdxf.readfile(filepath)
-        msp = doc.modelspace()
-        
-        entities = []
-        for ent in msp:
-            entities.append({
-                'type': ent.dxftype(),
-                'layer': ent.dxf.layer,
-                'color': ent.dxf.color if hasattr(ent.dxf, 'color') else None
-            })
-        
-        return jsonify({
-            'success': True,
-            'layers': list(doc.layers),
-            'entity_count': len(entities),
-            'entities': entities[:50]  # Limit to 50
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
 
 
 @app.route('/cad')
@@ -1850,21 +1724,18 @@ def search_all():
                       (f'%{query}%', f'%{query}%')).fetchall()
     companies = db.execute("SELECT id, name, industry FROM companies WHERE name LIKE ? OR industry LIKE ?",
                             (f'%{query}%', f'%{query}%')).fetchall()
-    db.close()
     
     return jsonify({'jobs': [dict(j) for j in jobs], 'companies': [dict(c) for c in companies], 'count': len(jobs) + len(companies)})
 
 @app.route('/api/recommendations', methods=['GET'])
+@require_auth
 def recommendations():
-    """Get job recommendations for a user based on skills + resume_text."""
-    user_id = request.args.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'user_id required'}), 400
+    """Get job recommendations for the current user based on skills + resume_text."""
+    user_id = request.user_id
 
     db = get_db()
     user = db.execute("SELECT skills, resume_text FROM users WHERE id = ?", (user_id,)).fetchone()
     if not user:
-        db.close()
         return jsonify({'error': 'User not found'}), 404
 
     # Use resume_text as fallback if skills column is empty
@@ -1887,9 +1758,8 @@ def recommendations():
         case_clause  = "0"
         params = {}
 
-    sql = f"SELECT *, {case_clause} as match_score FROM jobs WHERE {where_clause} ORDER BY match_score DESC, posted_at DESC LIMIT 20"
+    sql = f"SELECT *, {case_clause} as match_score FROM jobs WHERE {where_clause} ORDER BY match_score DESC, created_at DESC LIMIT 20"
     jobs = db.execute(sql, params).fetchall()
-    db.close()
 
     return jsonify({
         'recommendations': [dict(j) for j in jobs],
@@ -1911,16 +1781,16 @@ def trending_jobs():
         FROM jobs WHERE is_active = 1 
         GROUP BY location ORDER BY count DESC LIMIT 10
     """).fetchall()
-    db.close()
     return jsonify({'trending_categories': [dict(c) for c in categories], 'trending_locations': [dict(l) for l in locations]})
 
 
 # ============ USER DASHBOARD STATS ============
 @app.route('/api/dashboard/seeker', methods=['GET'])
+@require_auth
 def seeker_dashboard():
-    """Stats for job seeker dashboard"""
+    """Stats for the current job seeker's dashboard"""
     db = get_db()
-    user_id = request.args.get('user_id', 1, type=int)
+    user_id = request.user_id
     total_jobs = db.execute("SELECT COUNT(*) FROM jobs WHERE is_active = 1").fetchone()[0]
     total_applications = db.execute("SELECT COUNT(*) FROM applications WHERE user_id = ?", (user_id,)).fetchone()[0]
     pending_apps = db.execute("SELECT COUNT(*) FROM applications WHERE user_id = ? AND status = 'pending'", (user_id,)).fetchone()[0]
@@ -1946,7 +1816,7 @@ def seeker_dashboard():
     if skill_list:
         all_jobs = db.execute(
             "SELECT id, title, company, location, salary_min, salary_max, category, skills, description "
-            "FROM jobs WHERE is_active = 1 ORDER BY posted_at DESC LIMIT 50"
+            "FROM jobs WHERE is_active = 1 ORDER BY created_at DESC LIMIT 50"
         ).fetchall()
         if user_resume:
             # SMART STRATEGY: keyword-first, Ollama only for borderline matches
@@ -1968,12 +1838,11 @@ def seeker_dashboard():
     else:
         raw = db.execute(
             "SELECT id, title, company, location, salary_min, salary_max, category, skills "
-            "FROM jobs WHERE is_active = 1 ORDER BY posted_at DESC LIMIT 4"
+            "FROM jobs WHERE is_active = 1 ORDER BY created_at DESC LIMIT 4"
         ).fetchall()
         rec_jobs = [dict(j) for j in raw]
         for j in rec_jobs:
             j['match_score'] = 0
-    db.close()
     return jsonify({
         'stats': {
             'total_jobs': total_jobs,
@@ -1987,72 +1856,92 @@ def seeker_dashboard():
     })
 
 @app.route('/api/saved_jobs', methods=['GET'])
+@require_auth
 def get_saved_jobs():
     db = get_db()
-    user_id = request.args.get('user_id', 1, type=int)
     saved = db.execute("""
         SELECT j.*, sj.saved_at FROM jobs j
         JOIN saved_jobs sj ON j.id = sj.job_id
         WHERE sj.user_id = ? ORDER BY sj.saved_at DESC
-    """, (user_id,)).fetchall()
-    db.close()
+    """, (request.user_id,)).fetchall()
     return jsonify([dict(s) for s in saved])
 
+def _job_id_from_body():
+    data = request.json or {}
+    try:
+        return int(data.get('job_id'))
+    except (TypeError, ValueError):
+        return None
+
 @app.route('/api/saved_jobs', methods=['POST'])
+@require_auth
 def save_job():
-    data = request.json
+    job_id = _job_id_from_body()
+    if not job_id:
+        return jsonify({'error': 'job_id required'}), 400
     db = get_db()
+    if not db.execute("SELECT id FROM jobs WHERE id = ?", (job_id,)).fetchone():
+        return jsonify({'error': 'Job not found'}), 404
     db.execute("INSERT OR IGNORE INTO saved_jobs (user_id, job_id, saved_at) VALUES (?, ?, ?)",
-               (data.get('user_id', 1), data.get('job_id'), datetime.datetime.now().isoformat()))
+               (request.user_id, job_id, datetime.datetime.now().isoformat()))
     db.commit()
-    db.close()
     return jsonify({'success': True})
 
 @app.route('/api/saved_jobs', methods=['DELETE'])
+@require_auth
 def unsave_job():
-    data = request.json
+    job_id = _job_id_from_body()
+    if not job_id:
+        return jsonify({'error': 'job_id required'}), 400
     db = get_db()
-    db.execute("DELETE FROM saved_jobs WHERE user_id = ? AND job_id = ?",
-               (data.get('user_id', 1), data.get('job_id')))
+    db.execute("DELETE FROM saved_jobs WHERE user_id = ? AND job_id = ?", (request.user_id, job_id))
     db.commit()
-    db.close()
     return jsonify({'success': True})
 
+APPLICATION_STATUSES = ['pending', 'applied', 'reviewing', 'screening', 'interview',
+                        'offer', 'hired', 'rejected', 'withdrawn']
+
 @app.route('/api/applications/<int:app_id>', methods=['PATCH'])
+@require_auth
 def update_application(app_id):
-    auth = request.headers.get('Authorization', '')
-    if not auth.startswith('Bearer '):
-        return jsonify({'error': 'Unauthorized'}), 401
+    """Employers (job owner) and admins may set any status; the applicant may only withdraw."""
     data = request.json or {}
     new_status = data.get('status')
-    VALID_STATUSES = ['pending', 'reviewing', 'interview', 'offer', 'rejected', 'withdrawn']
-    if new_status and new_status not in VALID_STATUSES:
-        return jsonify({'error': f'Invalid status. Must be one of: {VALID_STATUSES}'}), 400
+    if new_status not in APPLICATION_STATUSES:
+        return jsonify({'error': f'Invalid status. Must be one of: {APPLICATION_STATUSES}'}), 400
     db = get_db()
-    app = db.execute('SELECT id FROM applications WHERE id = ?', (app_id,)).fetchone()
-    if not app:
-        db.close()
+    row, is_applicant, is_owner = _application_access(db, app_id)
+    if not row:
         return jsonify({'error': 'Application not found'}), 404
-    db.execute('UPDATE applications SET status = ? WHERE id = ?', (new_status, app_id))
+    if not (is_owner or _is_admin() or (is_applicant and new_status == 'withdrawn')):
+        return jsonify({'error': 'Not authorized to update this application'}), 403
+    db.execute('UPDATE applications SET status = ?, updated_at = ? WHERE id = ?',
+               (new_status, datetime.datetime.now().isoformat(), app_id))
     db.commit()
     updated = db.execute('SELECT * FROM applications WHERE id = ?', (app_id,)).fetchone()
-    db.close()
     return jsonify({'success': True, 'application': dict(updated)})
 
 @app.route('/api/applications/<int:app_id>', methods=['DELETE'])
+@require_auth
 def delete_application(app_id):
     db = get_db()
+    row, is_applicant, is_owner = _application_access(db, app_id)
+    if not row:
+        return jsonify({'error': 'Application not found'}), 404
+    if not (is_applicant or _is_admin()):
+        return jsonify({'error': 'Not authorized to delete this application'}), 403
     db.execute("DELETE FROM applications WHERE id = ?", (app_id,))
+    db.execute("UPDATE jobs SET application_count = MAX(application_count - 1, 0) WHERE id = ?", (row['job_id'],))
     db.commit()
-    db.close()
     return jsonify({'success': True})
 
 @app.route('/api/user/profile', methods=['GET'])
+@require_auth
 def get_user_profile():
-    user_id = request.args.get('user_id', 1, type=int)
     db = get_db()
-    user = db.execute("SELECT id, name, email, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
-    db.close()
+    user = db.execute(
+        "SELECT id, name, email, role, skills, phone, company, preferred_location, experience, created_at "
+        "FROM users WHERE id = ?", (request.user_id,)).fetchone()
     if not user:
         return jsonify({'error': 'User not found'}), 404
     return jsonify(dict(user))
@@ -2061,46 +1950,16 @@ def get_user_profile():
 # ── EMPLOYER AUTH & DASHBOARD ─────────────────────────────────────────────────
 
 @app.route('/api/auth/register-employer', methods=['POST'])
+@limiter.limit('5 per hour', exempt_when=lambda: False)
 def register_employer():
     data = request.json or {}
-    name     = data.get('name', '').strip()
-    email    = data.get('email', '').strip()
-    password = data.get('password', '')
-    company  = data.get('company', '').strip()
-    if not name or not email or not password:
-        return jsonify({'error': 'Name, email, and password are required'}), 400
-    if '@' not in email or '.' not in email:
-        return jsonify({'error': 'Invalid email'}), 400
-    # Password complexity requirements (same as registration)
-    if len(password) < 8:
-        return jsonify({'error': 'Password must be at least 8 characters'}), 400
-    if not re.search(r'[A-Z]', password):
-        return jsonify({'error': 'Password must contain at least 1 uppercase letter'}), 400
-    if not re.search(r'[a-z]', password):
-        return jsonify({'error': 'Password must contain at least 1 lowercase letter'}), 400
-    if not re.search(r'\d', password):
-        return jsonify({'error': 'Password must contain at least 1 number'}), 400
-    db = get_db()
-    if db.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone():
-        db.close()
-        return jsonify({'error': 'Email already registered'}), 400
-    db.execute(
-        "INSERT INTO users (name, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
-        (name, email, hash_password(password), 'employer', datetime.datetime.now().isoformat())
+    return _register_user(
+        name=data.get('name', '').strip(),
+        email=data.get('email', '').strip().lower(),
+        password=data.get('password', ''),
+        role='employer',
+        company=data.get('company', '').strip() or None,
     )
-    db.commit()
-    user_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-    db.close()
-    token_payload = {
-        'user_id': user_id, 'email': email, 'role': 'employer',
-        'employer_id': user_id,
-        'exp': str(datetime.datetime.now() + datetime.timedelta(days=7))
-    }
-    token = base64.b64encode(json.dumps(token_payload).encode()).decode().rstrip('=') + '=='
-    return jsonify({
-        'success': True, 'token': token,
-        'user': {'id': user_id, 'name': name, 'email': email, 'role': 'employer'}
-    }), 201
 
 
 @app.route('/api/employer/calendly', methods=['PUT'])
@@ -2113,7 +1972,6 @@ def set_calendly_link():
     db = get_db()
     db.execute("UPDATE users SET calendly_url = ? WHERE id = ?", (url, request.user_id))
     db.commit()
-    db.close()
     return jsonify({'success': True})
 
 
@@ -2152,7 +2010,6 @@ def employer_dashboard():
     total_views = db.execute(
         "SELECT COALESCE(SUM(view_count), 0) FROM jobs WHERE employer_id = ?", (emp_id,)
     ).fetchone()[0]
-    db.close()
     return jsonify({
         'stats': {
             'active_jobs': len(my_jobs),
@@ -2176,7 +2033,6 @@ def employer_applications():
         "SELECT id FROM jobs WHERE employer_id = ? AND is_active = 1", (emp_id,)
     ).fetchall()]
     if not job_ids:
-        db.close()
         return jsonify({'applications': []})
     ph = ','.join('?' * len(job_ids))
     qry = f"""SELECT a.*, j.title as job_title, j.company, u.name as applicant_name, u.email as applicant_email
@@ -2190,7 +2046,6 @@ def employer_applications():
         params.append(status)
     qry += " ORDER BY a.applied_at DESC"
     apps = db.execute(qry, params).fetchall()
-    db.close()
     return jsonify({'applications': [dict(a) for a in apps]})
 
 
@@ -2224,7 +2079,6 @@ def kyc_status():
                       (request.user_id,)).fetchone()
     docs = db.execute("SELECT doc_type, uploaded_at, status FROM kyc_documents WHERE user_id = ?",
                       (request.user_id,)).fetchall()
-    db.close()
     required = ['passport', 'national_id', 'drivers_license']
     uploaded = [dict(d) for d in docs]
     missing  = [r for r in required if r not in [d['doc_type'] for d in docs]]
@@ -2265,7 +2119,6 @@ def kyc_personal():
     db = get_db()
     db.execute(f'UPDATE users SET {cols} WHERE id = ?', vals)
     db.commit()
-    db.close()
     return jsonify({'success': True, 'updated': list(updates.keys())})
 
 
@@ -2319,16 +2172,14 @@ def kyc_upload_doc():
     if all(r in uploaded for r in required):
         db.execute("UPDATE users SET kyc_status = 'submitted' WHERE id = ?", (request.user_id,))
     db.commit()
-    db.close()
     return jsonify({'success': True, 'filename': filename, 'doc_type': doc_type}), 201
 
 
 @app.route('/api/kyc/admin/list', methods=['GET'])
 @require_auth
+@require_role('admin')
 def kyc_admin_list():
     """Admin endpoint: list all users with pending KYC for review."""
-    if request.user_role != 'admin':
-        return jsonify({'error': 'Admin access required'}), 403
     db = get_db()
     users = db.execute("""
         SELECT u.id, u.name, u.email, u.kyc_status, u.dob, u.nationality,
@@ -2340,16 +2191,14 @@ def kyc_admin_list():
         GROUP BY u.id
         ORDER BY u.created_at DESC
     """).fetchall()
-    db.close()
     return jsonify({'users': [dict(u) for u in users]})
 
 
 @app.route('/api/kyc/admin/verify/<int:user_id>', methods=['POST'])
 @require_auth
+@require_role('admin')
 def kyc_admin_verify(user_id):
     """Admin: approve or reject a user's KYC."""
-    if request.user_role != 'admin':
-        return jsonify({'error': 'Admin access required'}), 403
     data = request.json or {}
     action = data.get('action', '')  # 'verify' or 'reject'
     if action not in ('verify', 'reject'):
@@ -2359,7 +2208,6 @@ def kyc_admin_verify(user_id):
     db.execute("UPDATE users SET kyc_status = ? WHERE id = ?", (new_status, user_id))
     db.execute("UPDATE kyc_documents SET status = ? WHERE user_id = ?", (new_status, user_id))
     db.commit()
-    db.close()
     return jsonify({'success': True, 'kyc_status': new_status})
 
 

@@ -78,9 +78,9 @@ def job_listing_jsonld(job: dict, canonical: str) -> str:
             "name": job.get("company", ""),
             "value": str(job.get("id", ""))
         },
-        "datePosted": job.get("created_at", "")[:10],
+        "datePosted": (job.get("created_at") or "")[:10],
         "validThrough": job.get("expires_at", "")[:10] if job.get("expires_at") else None,
-        "employmentType": job.get("job_type", "FULL_TIME").upper(),
+        "employmentType": (job.get("work_type") or job.get("job_type") or "FULL_TIME").upper(),
         "hiringOrganization": {
             "@type": "Organization",
             "name": job.get("company", ""),
@@ -108,7 +108,14 @@ def job_listing_jsonld(job: dict, canonical: str) -> str:
     }
     # Remove None values before dumping
     schema = {k: v for k, v in schema.items() if v is not None}
-    return f'<script type="application/ld+json">{json.dumps(schema, ensure_ascii=False)}</script>'
+    return f'<script type="application/ld+json">{_jsonld_dumps(schema)}</script>'
+
+
+def _jsonld_dumps(obj) -> str:
+    """json.dumps that is safe to embed inside a <script> tag: a job description
+    containing '</script>' must not be able to terminate the block."""
+    import json
+    return json.dumps(obj, ensure_ascii=False).replace('</', '<\\/')
 
 
 def breadcrumbs_jsonld(items: list[dict]) -> str:
@@ -130,7 +137,7 @@ def breadcrumbs_jsonld(items: list[dict]) -> str:
             for i, item in enumerate(items)
         ]
     }
-    return f'<script type="application/ld+json">{json.dumps(schema, ensure_ascii=False)}</script>'
+    return f'<script type="application/ld+json">{_jsonld_dumps(schema)}</script>'
 
 
 # ─────────────────────────────────────────────────────────────────────────────

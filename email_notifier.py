@@ -129,7 +129,7 @@ def send_employer_new_application(to_email: str, employer_name: str, applicant_n
             <p>Hi <strong>{_safe(employer_name)}</strong>,</p>
             <p><strong>{_safe(applicant_name)}</strong> just applied for <strong>{_safe(job_title)}</strong> at <strong>{_safe(company)}</strong>.</p>
             <div style="margin:24px 0;">
-                <a href="{job_url}" style="background:#00d4ff;color:#000;padding:12px 24px;text-decoration:none;border-radius:8px;font-weight:bold;">Review Application</a>
+                <a href="{_safe(job_url)}" style="background:#00d4ff;color:#000;padding:12px 24px;text-decoration:none;border-radius:8px;font-weight:bold;">Review Application</a>
             </div>
             <p style="color:#888;font-size:13px;">Log in to your OpenJobs dashboard to view the full application, resume, and move them through the hiring pipeline.</p>
         </div>
@@ -150,7 +150,7 @@ def send_rejection_email(to_email: str, applicant_name: str, job_title: str, com
             <p>After careful review, we regret to inform you that <strong>your application is unlikely to proceed further at this stage</strong>. This decision is in no way a reflection of your abilities or potential — we simply had a high volume of qualified candidates.</p>
             <p>We encourage you to keep an eye on our careers page — new roles are posted regularly, and we'd love to hear from you again in the future.</p>
             <hr style="border-color:#333;margin:24px 0;">
-            <p style="color:#888;font-size:13px;">Best regards,<br>The {company} Team</p>
+            <p style="color:#888;font-size:13px;">Best regards,<br>The {_safe(company)} Team</p>
             <p style="color:#555;font-size:12px;margin-top:16px;">You're receiving this because you applied for a position on OpenJobs. <a href="{APP_URL}" style="color:#00d4ff;">View all open positions</a></p>
         </div>
     </body></html>
