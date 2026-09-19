@@ -34,7 +34,8 @@
 pip install -r requirements.txt
 cp .env.example .env
 python3 scripts/init_db.py
-cd api && python3 server.py
+cd api && python3 server.py          # dev server
+# production: gunicorn -c gunicorn.conf.py wsgi:app
 ```
 
 Optional: `ollama serve` on your PC for semantic AI features.
@@ -59,8 +60,10 @@ See [.env.example](./.env.example) and [PRODUCTION.md](./PRODUCTION.md).
 |----------|---------|
 | `SECRET_KEY` | JWT signing (required in production) |
 | `BASE_URL` | Public site URL for emails and SEO |
-| `CORS_ORIGINS` | Allowed API origins (after PR #7; see PRODUCTION.md) |
-| `SMTP_*` | Email delivery |
+| `CORS_ORIGINS` | Allowed API origins (see PRODUCTION.md) |
+| `DATABASE_PATH` / `UPLOAD_DIR` | Put both on a persistent volume in production |
+| `RATELIMIT_STORAGE_URI` | `redis://...` for shared limits across workers (default in-memory) |
+| `SMTP_*` | Email delivery (queued via `email_outbox`; drained by `scripts/send_outbox.py`) |
 | `OLLAMA_URL` | Local AI (optional) |
 | `STRIPE_*` | Payments (**deferred** — demo mode without keys) |
 
@@ -79,13 +82,16 @@ Full route list: blueprint modules under `api/blueprints/`.
 
 ---
 
-## Job alert cron
+## Background jobs (cron)
 
 ```bash
-python3 scripts/match_job_alerts.py --since-hours 24
+python3 scripts/match_job_alerts.py --since-hours 24   # hourly: job alert matching
+python3 scripts/send_outbox.py                          # every 1-5 min: deliver queued email
 ```
 
-Schedule hourly in production (see PRODUCTION.md).
+Emails are never sent inside a web request: handlers write to `email_outbox` and a
+background thread drains it opportunistically; the cron job is the durable backstop.
+See PRODUCTION.md.
 
 ---
 
@@ -100,13 +106,18 @@ Schedule hourly in production (see PRODUCTION.md).
 ## Project structure
 
 ```
+wsgi.py, gunicorn.conf.py, Procfile   # production entry point
 api/
-  app_factory.py, server.py
-  blueprints/     # auth, jobs, applications, seeker, employer, admin, ai, pages
+  app_factory.py, server.py (dev)
+  db.py            # sqlite connection (WAL, FK, busy_timeout)
+  validation.py    # request payload validation
+  timeutil.py      # UTC timestamps
+  blueprints/      # auth, jobs, applications, seeker, employer, admin, ai, pages, …
   semantic_matcher.py, job_alert_matcher.py
-templates/        # index, job, user, employer, admin, …
-scripts/          # init_db.py, match_job_alerts.py
-tests/            # pytest suite
+email_notifier.py  # outbox-backed email
+templates/         # index, job, user, employer, admin, …
+scripts/           # init_db.py, match_job_alerts.py, send_outbox.py
+tests/             # pytest suite
 ```
 
 ---

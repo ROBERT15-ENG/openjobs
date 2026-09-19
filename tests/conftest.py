@@ -52,9 +52,9 @@ def app(tmp_path, monkeypatch):
     db_path = tmp_path / 'test.db'
     _seed_db(str(db_path))
     monkeypatch.setenv('DATABASE_PATH', str(db_path))
-    monkeypatch.setenv('SECRET_KEY', 'test-secret-key')
+    monkeypatch.setenv('SECRET_KEY', 'test-secret-key-at-least-32-bytes-long!!')
     from app_factory import create_app
-    return create_app({'TESTING': True, 'SECRET_KEY': 'test-secret-key'})
+    return create_app({'TESTING': True, 'SECRET_KEY': 'test-secret-key-at-least-32-bytes-long!!'})
 
 
 @pytest.fixture

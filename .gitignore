@@ -61,3 +61,7 @@ memory/
 
 # Byte-compiled
 *.pyc
+
+# Coverage
+.coverage
+htmlcov/

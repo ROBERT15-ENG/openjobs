@@ -17,8 +17,13 @@ FLASK_ENV=production
 BASE_URL=https://yourdomain.com
 CORS_ORIGINS=https://yourdomain.com
 
-# Database (optional — defaults to jobs.db in project root)
+# Persistent storage — REQUIRED on PaaS (container disk is wiped on deploy).
+# Mount a volume and point both at it.
 DATABASE_PATH=/data/jobs.db
+UPLOAD_DIR=/data/uploads
+
+# Rate limiting — default memory:// is per-worker and resets on restart.
+# RATELIMIT_STORAGE_URI=redis://:password@host:6379/0   (pip install redis)
 
 # Admin bootstrap (when running init_db)
 ADMIN_PASSWORD=<strong-password>
@@ -43,28 +48,40 @@ FROM_EMAIL=jobs@yourdomain.com
 
 ```bash
 pip install -r requirements.txt
-python3 scripts/init_db.py          # first run only
-python3 scripts/match_job_alerts.py # cron: every hour
+ADMIN_PASSWORD=... python3 scripts/init_db.py   # first run only (refuses default password when FLASK_ENV=production)
 ```
 
-### Cron example (job alert emails)
+Schema upgrades are applied automatically at app start (`api/schema_migrate.py`, idempotent).
+
+### Cron
 
 ```cron
-0 * * * * cd /app && DATABASE_PATH=/data/jobs.db python3 scripts/match_job_alerts.py --since-hours 24
+*/2 * * * * cd /app && DATABASE_PATH=/data/jobs.db python3 scripts/send_outbox.py
+0 * * * *   cd /app && DATABASE_PATH=/data/jobs.db python3 scripts/match_job_alerts.py --since-hours 24
 ```
+
+Email is queued in the `email_outbox` table and drained opportunistically by the
+web process; `send_outbox.py` is the durable backstop (retries up to 5 times,
+then marks the row `failed`). Inspect with `GET /api/admin/email/outbox`, force
+delivery with `POST /api/admin/email/drain`.
 
 ## Run with Gunicorn
 
 ```bash
-cd api
-gunicorn -w 4 -b 0.0.0.0:5700 "server:app"
+gunicorn -c gunicorn.conf.py wsgi:app
 ```
 
-Or from project root:
+`gunicorn.conf.py` reads `PORT`, `WEB_CONCURRENCY` (default 2), `GUNICORN_THREADS`
+(default 4) and `GUNICORN_TIMEOUT`. The `Procfile` and `railway.*` files use the
+same command. `api/server.py` is the dev server only and refuses to start with
+`FLASK_ENV=production`.
 
-```bash
-gunicorn -w 4 -b 0.0.0.0:5700 --chdir api "server:app"
-```
+## SQLite notes
+
+Every connection enables WAL, `busy_timeout=5000` and `foreign_keys=ON`
+(`api/db.py`). WAL needs a local filesystem (not NFS). Back up with
+`sqlite3 /data/jobs.db ".backup /backups/jobs-$(date +%F).db"` so the WAL is
+included. Move to PostgreSQL when write volume or multi-host deployment demands it.
 
 ## Health check
 
@@ -80,15 +97,16 @@ Quick gates:
 
 - [ ] `SECRET_KEY` set and not default
 - [ ] `ADMIN_PASSWORD` changed from `admin123`
-- [ ] HTTPS enabled; `BASE_URL` matches public URL
-- [ ] SMTP configured and test email sent
+- [ ] `DATABASE_PATH` and `UPLOAD_DIR` on a persistent volume
+- [ ] HTTPS enabled; `BASE_URL` matches public URL (HSTS is sent when `FLASK_ENV=production`)
+- [ ] SMTP configured; `send_outbox.py` cron scheduled; test email delivered
 - [ ] Job alert cron scheduled
-- [ ] PR #7 merged before public launch
+- [ ] `RATELIMIT_STORAGE_URI` set to Redis if running more than one worker
 - [ ] Stripe keys added when payments go live
 - [ ] `pytest tests/ -q` passes in CI
 
 ## Notes
 
 - SQLite is fine for early production; migrate to PostgreSQL before high traffic.
-- PR #7 (security hardening) should be merged before public launch.
+- Logout is persisted (`revoked_tokens` table keyed by JWT `jti`), so it works across workers and restarts.
 - Payments are demo mode until `STRIPE_SECRET_KEY` is configured.

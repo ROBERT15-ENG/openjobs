@@ -71,19 +71,18 @@ python3 scripts/init_db.py    # first deploy only
 ```
 
 - [ ] Python **3.11+** on server
-- [ ] `uploads/` directory writable (résumé uploads)
-- [ ] `DATABASE_PATH` parent directory exists and is backed up
+- [ ] `UPLOAD_DIR` and `DATABASE_PATH` on a persistent, backed-up volume (container disk is ephemeral)
 - [ ] `init_db` run once; **not** re-run on every deploy (wipes data unless you know what you are doing)
 
 ### Process manager
 
 ```bash
-gunicorn -w 4 -b 0.0.0.0:5700 --chdir api "server:app"
+gunicorn -c gunicorn.conf.py wsgi:app
 ```
 
-- [ ] Gunicorn (or host equivalent) runs `api/server:app`
-- [ ] **Not** `flask run` / `debug=True` in production
-- [ ] Worker count appropriate for CPU (2–4 to start)
+- [ ] Gunicorn runs `wsgi:app` via `gunicorn.conf.py` (Procfile / railway.json already do)
+- [ ] **Not** `python3 api/server.py` / `flask run` in production
+- [ ] `WEB_CONCURRENCY` appropriate for CPU (2 to start); `RATELIMIT_STORAGE_URI` set if > 1 worker
 - [ ] Restart policy on crash (systemd, Docker restart, PaaS auto-restart)
 
 ### HTTPS & reverse proxy
@@ -93,13 +92,15 @@ gunicorn -w 4 -b 0.0.0.0:5700 --chdir api "server:app"
 - [ ] Proxy forwards `Host` and `X-Forwarded-Proto` (if behind nginx/Caddy)
 - [ ] `BASE_URL` matches what users see in the browser
 
-### Cron — job alert emails
+### Cron — email outbox + job alerts
 
 ```cron
-0 * * * * cd /app && DATABASE_PATH=/data/jobs.db python3 scripts/match_job_alerts.py --since-hours 24
+*/2 * * * * cd /app && DATABASE_PATH=/data/jobs.db python3 scripts/send_outbox.py
+0 * * * *   cd /app && DATABASE_PATH=/data/jobs.db python3 scripts/match_job_alerts.py --since-hours 24
 ```
 
-- [ ] Cron (or host scheduler) runs **hourly**
+- [ ] `send_outbox.py` runs every few minutes (durable email delivery)
+- [ ] `match_job_alerts.py` runs **hourly**
 - [ ] Same `DATABASE_PATH` as the web app
 - [ ] Dry-run once: `python3 scripts/match_job_alerts.py --dry-run`
 

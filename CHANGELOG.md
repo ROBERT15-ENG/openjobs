@@ -4,6 +4,51 @@ All notable changes to the OpenJobs platform are documented in this file.
 
 ---
 
+## v2.6.0 — Production hardening
+
+**Tests:** `pytest tests/ -q` (104 tests; `tests/test_hardening.py` covers each item below)
+
+### Runtime
+
+| Area | Summary |
+|------|---------|
+| Process model | `wsgi.py` + `gunicorn.conf.py` + `Procfile`; Railway start command now runs gunicorn (gthread). `api/server.py` is dev-only and refuses `FLASK_ENV=production` |
+| SQLite | Every connection (`api/db.py`) enables WAL, `busy_timeout=5000`, `foreign_keys=ON`. Background scripts use the same helper |
+| Storage | `UPLOAD_DIR` env var; `init_db.py` honours `DATABASE_PATH`; docs call out the persistent-volume requirement |
+| Logout | Tokens carry a `jti`; logout persists it in `revoked_tokens`, so revocation works across workers and restarts |
+| Rate limits | `RATELIMIT_STORAGE_URI` env var (warns in production when left on `memory://`) |
+| Ollama | Availability re-probed every `OLLAMA_PROBE_TTL` seconds instead of once at import |
+| Logging | `logging` everywhere (no `print`), JSON error responses for `/api/*` (404/405/500), HSTS + Permissions-Policy in production, no localhost CORS origins in production |
+
+### Correctness / security
+
+| Area | Summary |
+|------|---------|
+| Enumeration | `forgot-password` returns the same 200 whether or not the account exists |
+| Email case | Normalised to lower-case at every ingress; case-insensitive unique index; legacy rows lower-cased by `schema_migrate` (collisions preserved); duplicate register → 409 |
+| Tokens | Reset/confirm tokens stored as SHA-256 hashes |
+| Validation | `api/validation.py`; typed/coerced payloads for job create/update, apply, profile, KYC, job alerts, saved jobs, bulk endpoints. `PATCH /api/jobs` with `"salary_min": "banana"` is now a 400 instead of silently corrupting the row |
+| Pagination | `page`/`limit` clamped (`limit=-5` previously produced an unbounded query) |
+| Moderation | `jobs.moderation_status`; admin deactivation / report takedown sets `removed`, which employers cannot undo via `PATCH is_active`; admin `reactivate` action added |
+| Admin bulk | `delete` now actually deletes (with dependents); user delete cascades alerts/conversations/messages/reports and detaches employer jobs |
+| Payments | Checkout requires an employer who owns the job and a known plan; webhook sets `is_featured` for `premium` and respects moderation |
+| Time | All timestamps UTC ISO-8601 with `Z` (`api/timeutil.py`); no more `utcnow()` deprecation warnings |
+
+### Email
+
+| Area | Summary |
+|------|---------|
+| Outbox | `send_email` writes to `email_outbox` and drains in a background thread; `scripts/send_outbox.py` (cron) is the durable backstop with retries. Admin: `GET /api/admin/email/outbox`, `POST /api/admin/email/drain`. No SMTP round-trips inside request handlers |
+| Alerts | Per-alert commits in `job_alert_matcher` so the outbox writer never waits on the matcher's lock |
+
+### Search
+
+| Area | Summary |
+|------|---------|
+| Radius | Indexed bounding-box pre-filter (`idx_jobs_geo`) before haversine; candidate cap raised from 500 to 2000 |
+
+---
+
 ## Quick review — PR #8 (v2.5.0–2.5.1 product gaps)
 
 **Branch:** `cursor/product-gaps-6b92` → `main`  
