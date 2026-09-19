@@ -99,17 +99,20 @@ def close_db(e=None):
 
 # ============ AUTH MIDDLEWARE ============
 # ── Token Blocklist (Redis-backed, with in-memory fallback) ──────────────────
-try:
-    if REDIS_URL:
+_redis_client = None
+_USING_REDIS_BLOCKLIST = False
+if REDIS_URL:
+    try:
         import redis
         _redis_client = redis.from_url(REDIS_URL, decode_responses=True)
         _redis_client.ping()
         _USING_REDIS_BLOCKLIST = True
         print(f"[auth] Redis blocklist active: {REDIS_URL}")
-except Exception:
-    _redis_client = None
-    _USING_REDIS_BLOCKLIST = False
-    print("[auth] Redis unavailable — blocklist resets on restart (use Redis for persistence)")
+    except Exception as _redis_err:
+        _redis_client = None
+        print(f"[auth] Redis unavailable ({_redis_err}) — blocklist resets on restart")
+else:
+    print("[auth] REDIS_URL not set — token blocklist is in-memory and resets on restart")
 
 BLOCKED_TOKENS = set()  # in-memory fallback, reset on restart
 

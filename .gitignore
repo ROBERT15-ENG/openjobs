@@ -32,6 +32,7 @@ tmp/
 
 # Uploads
 uploads/
+kyc_uploads/
 *.pdf
 *.doc
 *.docx
