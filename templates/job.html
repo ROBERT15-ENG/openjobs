@@ -354,9 +354,8 @@
     } catch(e) {}
 
     // Details grid
-    const salary = formatSalary(job);
     document.getElementById('jobDetails').innerHTML = `
-      <div class="detail-item"><div class="detail-label">💰 Salary</div><div class="detail-value salary">${salary || 'Competitive'}</div></div>
+      <div class="detail-item"><div class="detail-label">💰 Salary</div><div class="detail-value salary">${escHtml(salary)}</div></div>
       <div class="detail-item"><div class="detail-label">📍 Location</div><div class="detail-value">${escHtml(job.location)}</div></div>
       <div class="detail-item"><div class="detail-label">💼 Work Type</div><div class="detail-value">${escHtml(formatWorkType(job.work_type))}</div></div>
       <div class="detail-item"><div class="detail-label">🕐 Posted</div><div class="detail-value">${timeSince(job.created_at)}</div></div>

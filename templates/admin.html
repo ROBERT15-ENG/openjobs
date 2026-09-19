@@ -351,7 +351,24 @@
   let allApps = [];
   let allUsers = [];
 
+  // Admin endpoints require a JWT with role=admin (issued by /login; promote a user with
+  // `python api/db_schema.py --admin EMAIL`).
+  function getToken() { return localStorage.getItem('token') || sessionStorage.getItem('token') || ''; }
+  function authHeaders(extra = {}) {
+    const t = getToken();
+    return t ? { 'Authorization': 'Bearer ' + t, ...extra } : extra;
+  }
+  async function authFetch(url, opts = {}) {
+    const res = await fetch(url, { ...opts, headers: authHeaders(opts.headers || {}) });
+    if (res.status === 401 || res.status === 403) {
+      window.location.href = '/login?next=' + encodeURIComponent('/admin');
+      throw new Error('unauthorized');
+    }
+    return res;
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    if (!getToken()) { window.location.href = '/login?next=' + encodeURIComponent('/admin'); return; }
     loadStats();
     loadJobs();
     loadApplications();
@@ -372,7 +389,7 @@
   }
 
   function loadStats() {
-    fetch('/api/admin/stats')
+    authFetch('/api/admin/stats')
       .then(r => r.json())
       .then(d => {
         const s = d.summary || {};
@@ -418,7 +435,7 @@
       .catch(() => {});
 
     // Fill analytics tab insights
-    fetch('/api/admin/stats')
+    authFetch('/api/admin/stats')
       .then(r => r.json())
       .then(d => {
         // Top employer
@@ -584,7 +601,7 @@
   async function deleteJob(id) {
     if (!confirm('Delete this job? This cannot be undone.')) return;
     try {
-      const res = await fetch('/api/jobs/' + id, { method: 'DELETE' });
+      const res = await authFetch('/api/jobs/' + id, { method: 'DELETE' });
       if (res.ok) {
         showAlert('jobAlert', 'success', 'Job deleted successfully.');
         loadJobs();
@@ -597,11 +614,11 @@
   }
 
   function loadApplications() {
-    fetch('/api/applications')
+    authFetch('/api/applications')
       .then(r => r.json())
       .then(apps => {
-        allApps = apps;
-        renderAppsTable(apps);
+        allApps = Array.isArray(apps) ? apps : [];
+        renderAppsTable(allApps);
       })
       .catch(() => renderAppsTable([]));
   }
@@ -617,9 +634,9 @@
       const cls = statusMap[a.status] || 'badge-pending';
       const label = (a.status || 'pending').charAt(0).toUpperCase() + (a.status || 'pending').slice(1);
       return `<tr>
-        <td><div class="title-cell">Tonny Tony</div></td>
-        <td>tonny@email.com</td>
-        <td>${escHtml(String(a.job_id))}</td>
+        <td><div class="title-cell">${escHtml(a.applicant_name || '—')}</div></td>
+        <td>${escHtml(a.applicant_email || '—')}</td>
+        <td>${escHtml(a.job_title || String(a.job_id))}</td>
         <td>${timeSince(a.applied_at)}</td>
         <td><span class="badge ${cls}">${label}</span></td>
         <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(a.notes || '—')}</td>
@@ -633,13 +650,13 @@
 
   async function updateAppStatus(id, status) {
     try {
-      await fetch('/api/applications/' + id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status}) });
+      await authFetch('/api/applications/' + id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status}) });
       loadApplications();
     } catch {}
   }
 
   function loadUsers() {
-    fetch('/api/user/profile?user_id=1')
+    authFetch('/api/user/profile')
       .then(r => r.json())
       .then(user => {
         if (user && !user.error) {

@@ -981,12 +981,29 @@
     return s ? `<div class="modal-meta-item" style="color:var(--primary);font-weight:600;">💰 ${s}</div>` : '';
   }
 
+  // Auth helpers — token is issued by /login and stored by login.html / register.html
+  function getAuthToken() { return localStorage.getItem('token') || sessionStorage.getItem('token') || ''; }
+  function authJsonHeaders() {
+    const h = {'Content-Type':'application/json'};
+    const t = getAuthToken();
+    if (t) h['Authorization'] = 'Bearer ' + t;
+    return h;
+  }
+  function requireLogin(action) {
+    if (getAuthToken()) return true;
+    if (confirm('Please sign in to ' + action + '. Go to the login page now?')) {
+      window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+    }
+    return false;
+  }
+
   function applyToJob() {
     if (!currentJob) return;
+    if (!requireLogin('apply for jobs')) return;
     fetch('/api/applications', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({job_id: currentJob.id, user_id: 1})
+      headers: authJsonHeaders(),
+      body: JSON.stringify({job_id: currentJob.id})
     }).then(r => r.json())
       .then(d => {
         if (d.success) {
@@ -1001,10 +1018,11 @@
 
   function saveJob() {
     if (!currentJob) return;
+    if (!requireLogin('save jobs')) return;
     fetch('/api/saved_jobs', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({job_id: currentJob.id, user_id: 1})
+      headers: authJsonHeaders(),
+      body: JSON.stringify({job_id: currentJob.id})
     }).then(r => r.json())
       .then(d => {
         if (d.success || d.message) {
@@ -1020,27 +1038,22 @@
   function saveJobToggle(id, btn, e) {
     if (e) e.stopPropagation();
     const isSaved = btn.textContent === '★';
+    if (!requireLogin('save jobs')) return;
     fetch('/api/saved_jobs', {
       method: isSaved ? 'DELETE' : 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({job_id: id, user_id: 1})
+      headers: authJsonHeaders(),
+      body: JSON.stringify({job_id: id})
     })
     .then(r => r.json())
     .then(d => {
       if (d.success || d.message || d.created) {
         btn.textContent = isSaved ? '☆' : '★';
         btn.style.color = isSaved ? '' : 'var(--primary)';
+      } else if (d.error) {
+        alert('⚠️ ' + d.error);
       }
     })
     .catch(() => {});
-  }.then(r => r.json()).then(d => {
-      if (d.success || d.error && d.error.includes('UNIQUE')) {
-        btn.textContent = isSaved ? '☆' : '★';
-        btn.style.color = isSaved ? '' : 'var(--warning)';
-      } else {
-        alert('Could not save job. Is the server running?');
-      }
-    }).catch(() => alert('Could not save job. Try again.'));
   }
 
   // ── SEARCH HELPERS ─────────────────────────────────────────────────
