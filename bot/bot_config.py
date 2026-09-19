@@ -1,3 +1,8 @@
-# Telegram Bot Token for @Alex_lionbot
-# Get one at: https://t.me/BotFather
-BOT_TOKEN = "8470564360:AAF1QHpOZHT0YMYe8lwYX8tn675w9Qj0yaQ"
+"""Telegram bot configuration.
+
+The token is read from the TELEGRAM_BOT_TOKEN environment variable (see .env.example).
+Never commit a real token to this file.
+"""
+import os
+
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
