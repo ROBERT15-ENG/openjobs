@@ -1,6 +1,6 @@
 """Application and kanban routes."""
 
-import datetime
+import logging
 import sqlite3
 
 from application_status import update_application_status
@@ -12,8 +12,18 @@ from extensions import limiter
 from flask import Blueprint, jsonify, request
 from org_util import employer_can_access_job, get_employer_job_ids
 from status import is_valid_kanban_stage, is_valid_status, kanban_stage_for, normalize_status
+from timeutil import utcnow_iso
+from validation import Int, Str, ValidationError, validate_payload
 
+log = logging.getLogger(__name__)
 applications_bp = Blueprint('applications', __name__)
+
+APPLY_FIELDS = {
+    'job_id': Int(min=1, required=True),
+    'resume_text': Str(max_len=50000),
+    'cover_letter': Str(max_len=10000),
+    'notes': Str(max_len=10000),
+}
 
 
 @applications_bp.route('/api/applications', methods=['GET'])
@@ -52,11 +62,13 @@ def get_applications():
 @require_auth
 @limiter.limit('30 per hour')
 def apply_job():
-    data = request.json or {}
+    try:
+        data = validate_payload(request.json, APPLY_FIELDS)
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
+    raw = request.json or {}
     db = get_db()
-    job_id = data.get('job_id')
-    if not job_id:
-        return jsonify({'error': 'job_id is required'}), 400
+    job_id = data['job_id']
 
     user = db.execute(
         'SELECT name, email, skills, resume_text, experience FROM users WHERE id = ?',
@@ -64,7 +76,7 @@ def apply_job():
     ).fetchone()
     resume_text = (data.get('resume_text') or '').strip()
     cover_letter = (data.get('cover_letter') or data.get('notes') or '').strip()
-    auto_cover = bool(data.get('auto_cover_letter'))
+    auto_cover = bool(raw.get('auto_cover_letter'))
 
     if not resume_text and user:
         resume_text = profile_resume_text(dict(user))
@@ -105,14 +117,14 @@ def apply_job():
         ats_score = 0
 
     try:
-        db.execute(
+        cur = db.execute(
             """INSERT INTO applications (job_id, user_id, status, applied_at, resume_text, cover_letter, ats_score)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 job_id,
                 request.user_id,
                 'applied',
-                datetime.datetime.now().isoformat(),
+                utcnow_iso(),
                 resume_text[:50000],
                 cover_letter[:10000],
                 ats_score,
@@ -120,8 +132,9 @@ def apply_job():
         )
         db.commit()
     except sqlite3.IntegrityError:
+        db.rollback()
         return jsonify({'error': 'You have already applied to this job'}), 409
-    app_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+    app_id = cur.lastrowid
 
     try:
         from email_notifier import send_application_confirm, send_employer_new_application
@@ -140,7 +153,7 @@ def apply_job():
                 ats_score,
             )
     except Exception as exc:
-        print(f'[apply_job] email error: {exc}')
+        log.warning('[apply_job] email error: %s', exc)
 
     return jsonify({
         'success': True,
@@ -250,10 +263,11 @@ def move_kanban_card(job_id):
         return jsonify({'error': 'Not found'}), 404
 
     data = request.json or {}
-    app_id = data.get('application_id')
+    try:
+        app_id = Int(min=1, required=True)('application_id', data.get('application_id'))
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
     new_status = normalize_status(data.get('stage'))
-    if not app_id:
-        return jsonify({'error': 'application_id is required'}), 400
     if not is_valid_kanban_stage(new_status):
         return jsonify({'error': f'Invalid stage. Must be one of: {list(KANBAN_STAGES)}'}), 400
 

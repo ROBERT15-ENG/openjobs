@@ -1,7 +1,8 @@
 """Job listing routes."""
 
-import datetime
 import json
+import logging
+import math
 
 from auth_utils import optional_auth, require_employer
 from db import get_db
@@ -14,8 +15,60 @@ from org_util import employer_can_access_job
 from regions_util import REGIONS, infer_country_region, normalize_country
 from semantic_matcher import keyword_score
 from skills_util import extract_skills_fast
+from timeutil import iso_after, today_iso, utcnow_iso
+from validation import Bool, Int, IsoDate, Str, StrList, Url, ValidationError, clamp_int, validate_payload
 
+log = logging.getLogger(__name__)
 jobs_bp = Blueprint('jobs', __name__)
+
+WORK_TYPES = ('full_time', 'part_time', 'contract', 'casual', 'internship', 'temporary')
+WORK_ARRANGEMENTS = ('remote', 'hybrid', 'onsite', 'on_site')
+MAX_PAGE_SIZE = 100
+RADIUS_CANDIDATE_LIMIT = 2000
+
+JOB_FIELDS = {
+    'title': Str(max_len=200, required=True),
+    'company': Str(max_len=160, required=True),
+    'location': Str(max_len=160, required=True),
+    'description': Str(max_len=20000, required=True),
+    'salary': Str(max_len=80),
+    'category': Str(max_len=80),
+    'work_type': Str(max_len=40, choices=WORK_TYPES, lower=True),
+    'work_arrangement': Str(max_len=40, choices=WORK_ARRANGEMENTS, lower=True),
+    'salary_min': Int(min=0, max=100_000_000),
+    'salary_max': Int(min=0, max=100_000_000),
+    'salary_currency': Str(max_len=8),
+    'search_summary': Str(max_len=300),
+    'selling_points': StrList(max_items=10, max_len=200),
+    'video_url': Url(),
+    'expires_at': IsoDate(),
+    'skills': Str(max_len=2000),
+    'country': Str(max_len=8),
+    'region': Str(max_len=40, lower=True),
+}
+JOB_UPDATE_FIELDS = {**{k: v for k, v in JOB_FIELDS.items()}, 'is_active': Bool()}
+for _name in ('title', 'company', 'location', 'description'):
+    JOB_UPDATE_FIELDS[_name] = Str(max_len=JOB_FIELDS[_name].max_len, min_len=1, nullable=False)
+
+
+def _normalise_salary(data: dict) -> None:
+    """Forms send 0 for "not specified"; store NULL so range filters ignore it."""
+    for key in ('salary_min', 'salary_max'):
+        if key in data and data[key] == 0:
+            data[key] = None
+
+
+def _check_salary_range(data: dict) -> None:
+    lo, hi = data.get('salary_min'), data.get('salary_max')
+    if lo is not None and hi is not None and lo > hi:
+        raise ValidationError('salary_min must be <= salary_max')
+
+
+def _bounding_box(lat: float, lng: float, radius_km: float):
+    """Lat/lng bounds that fully contain the radius circle (cheap SQL pre-filter)."""
+    dlat = radius_km / 111.0
+    dlng = radius_km / max(1e-6, 111.0 * math.cos(math.radians(lat)))
+    return lat - dlat, lat + dlat, lng - dlng, lng + dlng
 
 
 def _user_match_context(db, user_id):
@@ -59,7 +112,7 @@ def public_stats():
     db = get_db()
     total_jobs = db.execute('SELECT COUNT(*) FROM jobs WHERE is_active = 1').fetchone()[0]
     total_companies = db.execute('SELECT COUNT(DISTINCT company) FROM jobs WHERE is_active = 1').fetchone()[0]
-    today = datetime.datetime.now().date().isoformat()
+    today = today_iso()
     new_today = db.execute(
         "SELECT COUNT(*) FROM jobs WHERE is_active = 1 AND DATE(created_at) = ?",
         (today,),
@@ -75,8 +128,8 @@ def public_stats():
 @optional_auth
 def get_jobs():
     db = get_db()
-    page = request.args.get('page', 1, type=int)
-    limit = min(request.args.get('limit', 50, type=int), 100)
+    page = clamp_int(request.args.get('page', type=int), 1, 1, 100_000)
+    limit = clamp_int(request.args.get('limit', type=int), 50, 1, MAX_PAGE_SIZE)
     offset = (page - 1) * limit
 
     where = ['is_active = 1']
@@ -161,23 +214,24 @@ def get_jobs():
     near = request.args.get('near', '').strip() or location
     radius_km = request.args.get('radius_km', type=float)
     near_lat, near_lng = geocode_location(near) if near else (None, None)
-    use_radius = near_lat is not None and radius_km and radius_km > 0
-
-    fetch_limit = 500 if use_radius else limit
-    fetch_offset = 0 if use_radius else offset
-    jobs = db.execute(
-        f'SELECT * FROM jobs WHERE {where_clause} ORDER BY {order} LIMIT ? OFFSET ?',
-        params + [fetch_limit, fetch_offset],
-    ).fetchall()
+    use_radius = near_lat is not None and radius_km is not None and 0 < radius_km <= 20_000
 
     if use_radius:
+        # Indexed bounding-box pre-filter, then exact haversine in Python. Rows
+        # without coordinates are geocoded on the fly so legacy data still matches.
+        lat_lo, lat_hi, lng_lo, lng_hi = _bounding_box(near_lat, near_lng, radius_km)
+        geo_clause = (
+            '((latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?) OR latitude IS NULL)'
+        )
+        candidates = db.execute(
+            f'SELECT * FROM jobs WHERE {where_clause} AND {geo_clause} ORDER BY {order} LIMIT ?',
+            params + [lat_lo, lat_hi, lng_lo, lng_hi, RADIUS_CANDIDATE_LIMIT],
+        ).fetchall()
         filtered = []
-        for job in jobs:
-            jlat = job['latitude']
-            jlng = job['longitude']
+        for job in candidates:
+            jlat, jlng = job['latitude'], job['longitude']
             if jlat is None or jlng is None:
-                lat, lng = geocode_job_location(job['location'] or '')
-                jlat, jlng = lat, lng
+                jlat, jlng = geocode_job_location(job['location'] or '')
             if jlat is None:
                 continue
             if haversine_km(near_lat, near_lng, jlat, jlng) <= radius_km:
@@ -185,6 +239,10 @@ def get_jobs():
         total = len(filtered)
         jobs = filtered[offset:offset + limit]
     else:
+        jobs = db.execute(
+            f'SELECT * FROM jobs WHERE {where_clause} ORDER BY {order} LIMIT ? OFFSET ?',
+            params + [limit, offset],
+        ).fetchall()
         total = db.execute(f'SELECT COUNT(*) FROM jobs WHERE {where_clause}', params).fetchone()[0]
 
     job_list = _attach_match_scores(jobs, getattr(request, 'user_id', None), db, near_lat, near_lng)
@@ -219,21 +277,23 @@ def get_job(job_id):
 @jobs_bp.route('/api/jobs', methods=['POST'])
 @require_employer
 def create_job():
-    data = request.json or {}
-    required = ['title', 'company', 'location', 'description']
-    missing = [field for field in required if not data.get(field)]
-    if missing:
-        return jsonify({'error': f'Missing required fields: {", ".join(missing)}'}), 400
+    try:
+        data = validate_payload(request.json, JOB_FIELDS)
+        _normalise_salary(data)
+        _check_salary_range(data)
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
 
     db = get_db()
-    now = datetime.datetime.now().isoformat()
-    expires_at = data.get('expires_at') or (datetime.datetime.now() + datetime.timedelta(days=30)).isoformat()
+    now = utcnow_iso()
+    expires_at = data.get('expires_at') or iso_after(days=30)
     employer_id = getattr(request, 'employer_id', None)
-    lat, lng = geocode_job_location(data.get('location', ''))
-    inferred_country, inferred_region = infer_country_region(data.get('location', ''))
+    location = data['location']
+    lat, lng = geocode_job_location(location)
+    inferred_country, inferred_region = infer_country_region(location)
     country = normalize_country(data.get('country')) or inferred_country
-    region = (data.get('region') or inferred_region or '').strip().lower() or None
-    db.execute(
+    region = data.get('region') or inferred_region or None
+    cur = db.execute(
         """INSERT INTO jobs (
             title, company, location, description, salary, category, is_active, created_at, posted_at,
             work_type, work_arrangement, salary_min, salary_max, salary_currency,
@@ -241,25 +301,25 @@ def create_job():
             latitude, longitude, country, region
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            data.get('title'),
-            data.get('company'),
-            data.get('location'),
-            data.get('description'),
-            data.get('salary', 'Competitive'),
-            data.get('category', 'General'),
+            data['title'],
+            data['company'],
+            location,
+            data['description'],
+            data.get('salary') or 'Competitive',
+            data.get('category') or 'General',
             1,
             now,
             now,
-            data.get('work_type', 'full_time'),
-            data.get('work_arrangement', 'remote'),
+            data.get('work_type') or 'full_time',
+            data.get('work_arrangement') or 'remote',
             data.get('salary_min'),
             data.get('salary_max'),
-            data.get('salary_currency', 'AUD'),
-            data.get('search_summary', '')[:300],
-            json.dumps(data.get('selling_points', []))[:500],
-            data.get('video_url', ''),
+            data.get('salary_currency') or 'AUD',
+            data.get('search_summary') or '',
+            json.dumps(data.get('selling_points') or [])[:500],
+            data.get('video_url') or '',
             expires_at,
-            data.get('skills', ''),
+            data.get('skills') or '',
             employer_id,
             lat,
             lng,
@@ -268,13 +328,13 @@ def create_job():
         ),
     )
     db.commit()
-    job_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+    job_id = cur.lastrowid
 
     try:
         from job_alert_matcher import notify_alerts_for_job
         notify_alerts_for_job(job_id)
-    except Exception as exc:
-        print(f'[create_job] alert error: {exc}')
+    except Exception:
+        log.exception('[create_job] alert matching failed for job %s', job_id)
 
     return jsonify({'success': True, 'message': 'Job created', 'job_id': job_id}), 201
 
@@ -282,25 +342,41 @@ def create_job():
 @jobs_bp.route('/api/jobs/<int:job_id>', methods=['PATCH'])
 @require_employer
 def update_job(job_id):
-    data = request.json or {}
-    if not data:
+    if not request.json:
         return jsonify({'error': 'No update fields provided'}), 400
-    allowed = [
-        'title', 'description', 'location', 'salary', 'salary_min', 'salary_max',
-        'salary_currency', 'category', 'work_type', 'work_arrangement',
-        'is_active', 'expires_at', 'skills', 'selling_points', 'video_url',
-        'country', 'region',
-    ]
-    updates = {key: value for key, value in data.items() if key in allowed}
+    try:
+        updates = validate_payload(request.json, JOB_UPDATE_FIELDS, partial=True)
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
     if not updates:
         return jsonify({'error': 'No valid fields to update'}), 400
+    if 'selling_points' in updates:
+        updates['selling_points'] = json.dumps(updates['selling_points'] or [])[:500]
+    _normalise_salary(updates)
 
     db = get_db()
-    existing = db.execute('SELECT id, employer_id FROM jobs WHERE id = ?', (job_id,)).fetchone()
+    existing = db.execute(
+        'SELECT id, employer_id, salary_min, salary_max, moderation_status FROM jobs WHERE id = ?', (job_id,)
+    ).fetchone()
     if not existing:
         return jsonify({'error': 'Job not found'}), 404
     if not employer_can_access_job(db, request.user_id, request.user_role, dict(existing)):
         return jsonify({'error': 'Not authorized to update this job'}), 403
+
+    try:
+        _check_salary_range({
+            'salary_min': updates.get('salary_min', existing['salary_min']),
+            'salary_max': updates.get('salary_max', existing['salary_max']),
+        })
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    if (
+        updates.get('is_active') == 1
+        and existing['moderation_status'] == 'removed'
+        and request.user_role != 'admin'
+    ):
+        return jsonify({'error': 'This listing was removed by moderation and cannot be reactivated'}), 403
 
     if 'location' in updates:
         lat, lng = geocode_job_location(updates['location'])
@@ -315,8 +391,6 @@ def update_job(job_id):
 
     if 'country' in updates:
         updates['country'] = normalize_country(updates['country'])
-    if 'region' in updates and updates['region']:
-        updates['region'] = str(updates['region']).strip().lower()
 
     set_clause = ', '.join(f'{key} = ?' for key in updates)
     db.execute(f'UPDATE jobs SET {set_clause} WHERE id = ?', list(updates.values()) + [job_id])
@@ -343,10 +417,12 @@ def delete_job(job_id):
 @limiter.limit('30 per minute')
 def track_job_view(job_id):
     db = get_db()
-    db.execute('UPDATE jobs SET view_count = view_count + 1 WHERE id = ?', (job_id,))
+    cur = db.execute('UPDATE jobs SET view_count = view_count + 1 WHERE id = ? AND is_active = 1', (job_id,))
     db.commit()
+    if cur.rowcount == 0:
+        return jsonify({'error': 'Job not found'}), 404
     job = db.execute('SELECT view_count FROM jobs WHERE id = ?', (job_id,)).fetchone()
-    return jsonify({'success': True, 'view_count': job['view_count'] if job else 0})
+    return jsonify({'success': True, 'view_count': job['view_count']})
 
 
 @jobs_bp.route('/api/companies', methods=['GET'])
@@ -437,11 +513,12 @@ def search_all():
         return jsonify({'error': 'Query too short'}), 400
     db = get_db()
     jobs = db.execute(
-        'SELECT id, title, company, location FROM jobs WHERE is_active = 1 AND (title LIKE ? OR description LIKE ?)',
+        'SELECT id, title, company, location FROM jobs WHERE is_active = 1 AND (title LIKE ? OR description LIKE ?) '
+        'ORDER BY COALESCE(posted_at, created_at) DESC LIMIT 50',
         (f'%{query}%', f'%{query}%'),
     ).fetchall()
     companies = db.execute(
-        'SELECT id, name, industry FROM companies WHERE name LIKE ? OR industry LIKE ?',
+        'SELECT id, name, industry FROM companies WHERE name LIKE ? OR industry LIKE ? ORDER BY name LIMIT 50',
         (f'%{query}%', f'%{query}%'),
     ).fetchall()
     return jsonify({

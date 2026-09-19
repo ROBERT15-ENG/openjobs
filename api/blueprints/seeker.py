@@ -1,14 +1,45 @@
 """Seeker dashboard and profile routes."""
 
-import datetime
-
 from auth_utils import require_auth
 from db import get_db
 from flask import Blueprint, jsonify, request
 from semantic_matcher import rank_jobs_for_resume
 from skills_util import extract_skills_fast
+from timeutil import utcnow_iso
+from validation import Bool, Int, IsoDate, Str, ValidationError, validate_payload
 
 seeker_bp = Blueprint('seeker', __name__)
+
+PROFILE_FIELDS = {
+    'name': Str(max_len=120, min_len=1, nullable=False),
+    'skills': Str(max_len=2000),
+    'phone': Str(max_len=40),
+    'preferred_location': Str(max_len=160),
+    'experience': Str(max_len=10000),
+    'company': Str(max_len=160),
+    'resume_text': Str(max_len=50000),
+    'salutation': Str(max_len=20),
+    'address': Str(max_len=300),
+    'country': Str(max_len=80),
+    'county': Str(max_len=80),
+    'dob': IsoDate(max_len=10),
+    'nationality': Str(max_len=80),
+    'visa_status': Str(max_len=80),
+}
+KYC_FIELDS = {
+    **{k: PROFILE_FIELDS[k] for k in (
+        'name', 'salutation', 'phone', 'address', 'country', 'county', 'dob', 'nationality', 'visa_status',
+    )},
+    'kyc_doc_type': Str(max_len=40),
+    'kyc_doc_number': Str(max_len=64),
+}
+ALERT_FIELDS = {
+    'keyword': Str(max_len=200, min_len=1, nullable=False),
+    'location': Str(max_len=160),
+    'remote_only': Bool(),
+    'salary_min': Int(min=0, max=100_000_000),
+    'active': Bool(),
+}
 
 
 @seeker_bp.route('/api/dashboard/seeker', methods=['GET'])
@@ -151,10 +182,16 @@ def get_saved_jobs():
 @require_auth
 def save_job():
     data = request.json or {}
+    try:
+        job_id = Int(min=1, required=True)('job_id', data.get('job_id'))
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
     db = get_db()
+    if not db.execute('SELECT 1 FROM jobs WHERE id = ?', (job_id,)).fetchone():
+        return jsonify({'error': 'Job not found'}), 404
     db.execute(
         'INSERT OR IGNORE INTO saved_jobs (user_id, job_id, saved_at) VALUES (?, ?, ?)',
-        (request.user_id, data.get('job_id'), datetime.datetime.now().isoformat()),
+        (request.user_id, job_id, utcnow_iso()),
     )
     db.commit()
     return jsonify({'success': True})
@@ -193,14 +230,12 @@ def get_user_profile():
 @seeker_bp.route('/api/user/profile', methods=['PATCH'])
 @require_auth
 def update_user_profile():
-    data = request.json or {}
-    allowed = [
-        'name', 'skills', 'phone', 'preferred_location', 'experience', 'company', 'resume_text',
-        'salutation', 'address', 'country', 'county', 'dob', 'nationality', 'visa_status',
-    ]
-    updates = {key: value for key, value in data.items() if key in allowed}
+    try:
+        updates = validate_payload(request.json, PROFILE_FIELDS, partial=True)
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
     if not updates:
-        return jsonify({'error': f'No valid fields. Allowed: {allowed}'}), 400
+        return jsonify({'error': f'No valid fields. Allowed: {list(PROFILE_FIELDS)}'}), 400
 
     db = get_db()
     set_clause = ', '.join(f'{key} = ?' for key in updates)
@@ -246,14 +281,12 @@ def kyc_status():
 @require_auth
 def update_kyc_profile():
     """Update KYC personal fields (ekip parity)."""
-    data = request.json or {}
-    allowed = [
-        'name', 'salutation', 'phone', 'address', 'country', 'county',
-        'dob', 'nationality', 'visa_status', 'kyc_doc_type', 'kyc_doc_number',
-    ]
-    updates = {key: value for key, value in data.items() if key in allowed}
+    try:
+        updates = validate_payload(request.json, KYC_FIELDS, partial=True)
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
     if not updates:
-        return jsonify({'error': f'No valid fields. Allowed: {allowed}'}), 400
+        return jsonify({'error': f'No valid fields. Allowed: {list(KYC_FIELDS)}'}), 400
 
     if any(updates.get(k) for k in ('dob', 'nationality', 'country', 'address')):
         updates.setdefault('kyc_status', 'submitted')
@@ -285,26 +318,26 @@ def list_job_alerts():
 @seeker_bp.route('/api/job_alerts', methods=['POST'])
 @require_auth
 def create_job_alert():
-    data = request.json or {}
-    keyword = (data.get('keyword') or '').strip()
-    if not keyword:
-        return jsonify({'error': 'keyword is required'}), 400
+    try:
+        data = validate_payload(request.json, {**ALERT_FIELDS, 'keyword': Str(max_len=200, required=True)})
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
     db = get_db()
-    db.execute(
+    cur = db.execute(
         """
         INSERT INTO job_alerts (user_id, keyword, location, remote_only, salary_min, active)
         VALUES (?, ?, ?, ?, ?, 1)
         """,
         (
             request.user_id,
-            keyword,
-            (data.get('location') or '').strip() or None,
-            1 if data.get('remote_only') else 0,
+            data['keyword'],
+            data.get('location') or None,
+            data.get('remote_only') or 0,
             data.get('salary_min') or None,
         ),
     )
     db.commit()
-    alert_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+    alert_id = cur.lastrowid
     alert = db.execute('SELECT * FROM job_alerts WHERE id = ?', (alert_id,)).fetchone()
     return jsonify({'success': True, 'alert': dict(alert)}), 201
 
@@ -320,10 +353,10 @@ def update_job_alert(alert_id):
     ).fetchone()
     if not existing:
         return jsonify({'error': 'Alert not found'}), 404
-    allowed = ['keyword', 'location', 'remote_only', 'salary_min', 'active']
-    updates = {k: v for k, v in data.items() if k in allowed}
-    if 'remote_only' in updates:
-        updates['remote_only'] = 1 if updates['remote_only'] else 0
+    try:
+        updates = validate_payload(data, ALERT_FIELDS, partial=True)
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
     if not updates:
         return jsonify({'error': 'No valid fields to update'}), 400
     set_clause = ', '.join(f'{k} = ?' for k in updates)

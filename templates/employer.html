@@ -961,8 +961,8 @@ async function handlePostJob(e) {
       const res = await fetch('/api/jobs', {
         method: 'POST', headers: authHeaders(), body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error('Server error ' + res.status);
-      const created = await res.json();
+      const created = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(created.error || ('Server error ' + res.status));
       const jobId = created.job_id;
 
       if (plan === 'premium') {
@@ -987,7 +987,7 @@ async function handlePostJob(e) {
       document.getElementById('postError').style.display = 'none';
       document.getElementById('postJobForm').reset();
       setTimeout(() => { document.getElementById('postSuccess').style.display = 'none'; switchTab('listings'); loadOverview(); }, 1500);
-    } catch(e) { showErr('⚠️ Could not publish job. Is the server running?'); }
+    } catch(e) { showErr('⚠️ ' + (e && e.message ? e.message : 'Could not publish job. Is the server running?')); }
     btn.disabled = false; btn.textContent = '🚀 Publish Job →';
   }
 

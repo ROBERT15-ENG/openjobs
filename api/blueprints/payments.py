@@ -1,12 +1,18 @@
 """Payment and Stripe webhook routes."""
 
+import logging
 import os
 
 import requests
-from auth_utils import require_auth
+from auth_utils import require_employer
+from db import get_db
 from flask import Blueprint, current_app, jsonify, request
+from org_util import employer_can_access_job
 
+log = logging.getLogger(__name__)
 payments_bp = Blueprint('payments', __name__)
+
+PLAN_PRICES_CENTS = {'standard': 9900, 'premium': 19900}
 
 
 @payments_bp.route('/api/pricing', methods=['GET'])
@@ -37,7 +43,7 @@ def get_pricing():
 
 
 @payments_bp.route('/api/payment/checkout', methods=['POST'])
-@require_auth
+@require_employer
 def create_checkout():
     if not os.environ.get('STRIPE_SECRET_KEY'):
         return jsonify({
@@ -47,9 +53,18 @@ def create_checkout():
         }), 503
 
     data = request.json or {}
-    job_id = data.get('job_id')
-    plan = data.get('plan', 'standard')
-    prices = {'standard': 9900, 'premium': 19900}
+    plan = (data.get('plan') or 'standard').strip().lower()
+    if plan not in PLAN_PRICES_CENTS:
+        return jsonify({'error': f'plan must be one of: {sorted(PLAN_PRICES_CENTS)}'}), 400
+    try:
+        job_id = int(data.get('job_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'job_id is required'}), 400
+
+    db = get_db()
+    job = db.execute('SELECT id, employer_id FROM jobs WHERE id = ?', (job_id,)).fetchone()
+    if not job or not employer_can_access_job(db, request.user_id, request.user_role, dict(job)):
+        return jsonify({'error': 'Job not found'}), 404
     base_url = current_app.config['BASE_URL']
 
     session_data = {
@@ -58,7 +73,7 @@ def create_checkout():
             'price_data': {
                 'currency': 'aud',
                 'product_data': {'name': f'OpenJobs {plan.title()} Posting'},
-                'unit_amount': prices.get(plan, 9900),
+                'unit_amount': PLAN_PRICES_CENTS[plan],
             },
             'quantity': 1,
         }],
@@ -81,9 +96,11 @@ def create_checkout():
         if resp.status_code == 200:
             session = resp.json()
             return jsonify({'success': True, 'checkout_url': session['url'], 'session_id': session['id']})
+        log.warning('stripe checkout failed: %s %s', resp.status_code, resp.text[:300])
         return jsonify({'error': 'Stripe checkout failed'}), 502
-    except Exception:
-        return jsonify({'error': 'Payment service unavailable'}), 500
+    except requests.RequestException:
+        log.exception('stripe checkout request failed')
+        return jsonify({'error': 'Payment service unavailable'}), 502
 
 
 @payments_bp.route('/api/payment/webhook', methods=['POST'])
@@ -109,12 +126,20 @@ def stripe_webhook():
         metadata = session.get('metadata') or {}
         job_id = metadata.get('job_id')
         user_id = metadata.get('user_id')
+        plan = (metadata.get('plan') or 'standard').lower()
         if job_id and user_id:
-            from db import get_db
             db = get_db()
-            job = db.execute('SELECT employer_id FROM jobs WHERE id = ?', (int(job_id),)).fetchone()
-            if job and int(user_id) == job['employer_id']:
-                db.execute('UPDATE jobs SET is_active = 1 WHERE id = ?', (int(job_id),))
-                db.commit()
+            job = db.execute(
+                'SELECT id, employer_id, moderation_status FROM jobs WHERE id = ?', (int(job_id),)
+            ).fetchone()
+            if job and employer_can_access_job(db, int(user_id), 'employer', dict(job)):
+                if job['moderation_status'] == 'removed':
+                    log.warning('paid job %s is moderation-removed; not reactivating', job_id)
+                else:
+                    db.execute(
+                        'UPDATE jobs SET is_active = 1, is_featured = ? WHERE id = ?',
+                        (1 if plan == 'premium' else 0, int(job_id)),
+                    )
+                    db.commit()
 
     return jsonify({'received': True})

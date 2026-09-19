@@ -1,12 +1,13 @@
 """Employer dashboard routes."""
 
 from application_status import update_application_status
-from auth_utils import require_auth, require_employer
+from auth_utils import require_employer
 from constants import APPLICATION_STATUSES
 from db import get_db
 from flask import Blueprint, jsonify, request
 from org_util import get_employer_job_ids
-from status import normalize_status
+from status import is_valid_status, normalize_status
+from validation import ValidationError, int_list
 
 employer_bp = Blueprint('employer', __name__)
 
@@ -108,27 +109,26 @@ def employer_applications():
 
 
 @employer_bp.route('/api/employer/applications/bulk-status', methods=['POST'])
-@require_auth
+@require_employer
 def employer_bulk_status():
-    if request.user_role != 'employer':
-        return jsonify({'error': 'Employer access required'}), 403
     data = request.json or {}
-    ids = data.get('ids') or []
-    status = (data.get('status') or '').strip().lower()
-    if not ids:
-        return jsonify({'error': 'ids array is required'}), 400
-    if not status:
-        return jsonify({'error': 'status is required'}), 400
+    try:
+        ids = int_list(data.get('ids'), 'ids')
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
+    status = normalize_status(data.get('status'))
+    if not data.get('status') or not is_valid_status(status):
+        return jsonify({'error': f'status must be one of: {list(APPLICATION_STATUSES)}'}), 400
 
     db = get_db()
     job_ids = set(get_employer_job_ids(db, request.user_id))
     updated = 0
     for app_id in ids:
-        app_row = db.execute('SELECT job_id FROM applications WHERE id = ?', (int(app_id),)).fetchone()
-        if not app_row or app_row['job_id'] not in job_ids:
+        app_row = db.execute('SELECT job_id FROM applications WHERE id = ?', (app_id,)).fetchone()
+        if not app_row or (request.user_role != 'admin' and app_row['job_id'] not in job_ids):
             continue
         ok, _, _ = update_application_status(
-            db, int(app_id), status, send_email=True, actor_role='employer'
+            db, app_id, status, send_email=True, actor_role=request.user_role
         )
         if ok:
             updated += 1

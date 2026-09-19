@@ -1,11 +1,10 @@
 """Job report / flag routes."""
 
-import datetime
-
 from auth_utils import optional_auth, require_role
 from db import get_db
 from extensions import limiter
 from flask import Blueprint, jsonify, request
+from timeutil import utcnow_iso
 
 reports_bp = Blueprint('reports', __name__)
 
@@ -28,7 +27,7 @@ def report_job(job_id):
         return jsonify({'error': 'Job not found'}), 404
 
     reporter_id = getattr(request, 'user_id', None)
-    now = datetime.datetime.now().isoformat()
+    now = utcnow_iso()
     db.execute(
         """INSERT INTO job_reports (job_id, reporter_id, reason, details, status, created_at)
            VALUES (?, ?, ?, ?, 'open', ?)""",
@@ -72,12 +71,14 @@ def resolve_report(report_id):
     if not row:
         return jsonify({'error': 'Report not found'}), 404
 
-    now = datetime.datetime.now().isoformat()
+    now = utcnow_iso()
     db.execute(
         'UPDATE job_reports SET status = ?, resolved_at = ? WHERE id = ?',
         (new_status, now, report_id),
     )
     if data.get('deactivate_job'):
-        db.execute('UPDATE jobs SET is_active = 0 WHERE id = ?', (row['job_id'],))
+        db.execute(
+            "UPDATE jobs SET is_active = 0, moderation_status = 'removed' WHERE id = ?", (row['job_id'],)
+        )
     db.commit()
     return jsonify({'success': True, 'status': new_status})
