@@ -412,9 +412,14 @@
   });
 
   // ── LOAD DASHBOARD DATA ──
+  function authHeaders() {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
+  }
+
   async function loadDashboard() {
     try {
-      const res = await fetch('/api/dashboard/seeker?user_id=getCurrentUserId()');
+      const res = await fetch('/api/dashboard/seeker', { headers: authHeaders() });
       if (!res.ok) throw new Error('API unavailable');
       dashboardData = await res.json();
       renderDashboard(dashboardData);
@@ -441,7 +446,7 @@
   }
 
   function loadUserProfile() {
-    fetch('/api/user/profile?user_id=getCurrentUserId()')
+    fetch('/api/user/profile', { headers: authHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data && !data.error) {
@@ -582,7 +587,7 @@
 
   async function loadSavedJobs() {
     try {
-      const res = await fetch('/api/saved_jobs?user_id=' + getCurrentUserId());
+      const res = await fetch('/api/saved_jobs', { headers: authHeaders() });
       const jobs = await res.json();
       const el = document.getElementById('savedJobsList');
       if (!jobs.length) {

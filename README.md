@@ -84,7 +84,7 @@ cp .env.example .env
 ollama serve
 ollama pull gemma3:4b   # or your chosen model
 
-# 5. Run the server
+# 5. Run the server (creates jobs.db and all tables on first start)
 python api/server.py
 ```
 
@@ -92,21 +92,20 @@ Open `http://localhost:5700` in your browser.
 
 ---
 
-## 🔑 Test Accounts
+## 🔑 Accounts & Roles
 
-All passwords are `TestPass123` unless noted.
+The database starts empty. Register a seeker at `/register` and an employer at `/employer`.
+Passwords need 8+ characters with an uppercase letter, a lowercase letter and a number.
 
-### Seekers
-| Email | Password | Dashboard |
-|-------|----------|-----------|
-| `tonny@email.com` | `TestPass123` | `/user` — saved jobs, applications, profile |
-| `demo@openjobs.com` | `demo1234` | `/user` |
+- If SMTP is **not** configured, new accounts are auto-confirmed (the confirmation link is
+  printed to the server log). With SMTP configured, users must click the emailed link first.
+- The `admin` role cannot be self-assigned. Promote an existing account with:
 
-### Employers
-| Email | Password | Company | Dashboard |
-|-------|----------|---------|-----------|
-| `employer@openjobs.com` | `Employer123` | TechCorp HR (72 jobs) | `/employer` |
-| `sarah@techstartup.io` | `HireMe2026!` | TechStartup (2 jobs) | `/employer` |
+```bash
+python api/db_schema.py --admin you@example.com
+```
+
+Then sign in at `/login` and open `/admin`.
 
 ### Creating an Employer Account (UI)
 1. Go to `http://localhost:5700/employer`
@@ -164,15 +163,18 @@ TELEGRAM_BOT_TOKEN=123456:ABC...
 | `GET` | `/api/jobs` | Search/filter jobs |
 | `POST` | `/api/jobs` | Post job (auth required) |
 | `GET` | `/api/jobs/<id>` | Job detail |
-| `PATCH` | `/api/jobs/<id>` | Update job (owner only) |
-| `DELETE` | `/api/jobs/<id>` | Delete job (owner only) |
+| `PATCH` | `/api/jobs/<id>` | Update job (owner or admin) |
+| `DELETE` | `/api/jobs/<id>` | Soft-delete job (owner or admin) |
 | `PATCH` | `/api/jobs/<id>/view` | Increment view count |
 
 ### Applications & ATS
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/applications` | Apply to job |
-| `GET` | `/api/applications` | Seeker's applications |
+| `GET` | `/api/applications` | Own applications (seeker) / applicants to own jobs (employer) / all (admin) |
+| `PATCH` | `/api/applications/<id>` | Change status (job owner/admin; applicant may only `withdrawn`) |
+| `GET` | `/api/saved_jobs` | Saved jobs for the signed-in user (also `POST`/`DELETE` with `job_id`) |
+| `GET` | `/api/dashboard/seeker` | Seeker dashboard stats + recommendations |
 | `GET` | `/api/employer/applications` | Employer's applicants |
 | `GET` | `/api/kanban/<job_id>` | Pipeline stages |
 | `POST` | `/api/kanban/<job_id>/move` | Move candidate stage |
@@ -194,7 +196,9 @@ TELEGRAM_BOT_TOKEN=123456:ABC...
 
 ## 🗄️ Database
 
-SQLite at `jobs.db`. Key tables:
+SQLite at `jobs.db` (override with `DATABASE_URL`). The schema lives in `api/db_schema.py`
+and is applied automatically at startup: missing tables and columns are added, existing data
+is left untouched. Run it by hand with `python api/db_schema.py`. Key tables:
 
 **`users`** — job seekers and employers
 **`jobs`** — all job listings (soft delete: `is_active=0`)
@@ -234,6 +238,7 @@ Schema diagram: [OpenJobs_CodeSchematic.pdf](./OpenJobs_CodeSchematic.pdf)
 jobseek/
 ├── api/
 │   ├── server.py            # Flask app — all routes
+│   ├── db_schema.py         # Declarative schema + startup migration + --admin
 │   └── semantic_matcher.py  # AI matching engine
 ├── templates/               # HTML pages (served manually)
 │   ├── index.html           # Public job search
@@ -241,7 +246,8 @@ jobseek/
 │   ├── user.html            # Seeker dashboard
 │   └── employer.html        # Employer dashboard + ATS
 ├── bot/
-│   └── telegram_bot.py      # Telegram bot (7 commands)
+│   ├── telegram_bot.py      # Telegram bot (/search /remote /visa /top)
+│   └── bot_config.py        # Reads TELEGRAM_BOT_TOKEN from the environment
 ├── diagrams/
 │   └── architecture.html    # Interactive architecture diagram
 ├── public/                  # Static assets (logos, salary calc, etc.)
@@ -264,10 +270,13 @@ jobseek/
 curl http://localhost:5700/api/jobs?work_type=internship
 curl http://localhost:5700/api/pricing
 
-# Test employer auth
+# Register + log in an employer
+curl -X POST http://localhost:5700/api/auth/register-employer \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Jane","email":"jane@corp.com","password":"Passw0rd","company":"Corp"}'
 curl -X POST http://localhost:5700/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"employer@openjobs.com","password":"Employer123"}'
+  -d '{"email":"jane@corp.com","password":"Passw0rd"}'
 ```
 
 ---

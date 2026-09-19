@@ -261,16 +261,25 @@
       const data = await res.json();
 
       if (res.ok && data.success) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
         const role = data.user?.role || 'user';
         // If logging in as seeker but role is employer, redirect to employer
         let redirectUrl = '/user';
         if (selectedRole === 'employer' || role === 'employer') {
           redirectUrl = '/employer';
+          localStorage.setItem('oj_employer_tok', data.token);  // employer dashboard reads this key
         } else if (role === 'admin') {
           redirectUrl = '/admin';
         }
+        const next = new URLSearchParams(window.location.search).get('next');
+        if (next && next.startsWith('/') && !next.startsWith('//')) redirectUrl = next;
         showAlert('success', 'Login successful! Redirecting...');
         setTimeout(() => window.location.href = redirectUrl, 600);
+      } else if (data.error === 'email_not_confirmed') {
+        showAlert('error', data.message || 'Please confirm your email before logging in.');
+        btn.disabled = false;
+        btn.textContent = 'Sign In →';
       } else {
         showAlert('error', data.error || 'Invalid email or password');
         btn.disabled = false;
