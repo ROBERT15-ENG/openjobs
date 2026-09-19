@@ -1,9 +1,12 @@
 """Resume upload and text extraction."""
 
+import logging
 import os
 import re
 
 from config import UPLOAD_DIR
+
+log = logging.getLogger(__name__)
 
 ALLOWED_EXT = {'.pdf', '.doc', '.docx'}
 MAX_SIZE = 5 * 1024 * 1024
@@ -23,7 +26,7 @@ def extract_resume_text(filepath: str) -> str:
         with open(filepath, 'rb') as handle:
             return handle.read().decode('utf-8', errors='ignore')
     except Exception as exc:
-        print(f'Resume extract error: {exc}')
+        log.warning('Resume extract error: %s', exc)
         return ''
 
 

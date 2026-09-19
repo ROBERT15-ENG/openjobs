@@ -71,7 +71,7 @@ SKILL_ALIASES = {
     'cs': 'c#', 'csharp': 'c#',
     'golang': 'go',
     'r': 'r programming',
-    'tsql': 't-sql', 'tsql': 'transact-sql',
+    'tsql': 't-sql', 't-sql': 'transact-sql',
     'mongo': 'mongodb', 'mongo db': 'mongodb',
     'graphql': 'graphql',
     'rest api': 'rest', 'restful': 'rest',

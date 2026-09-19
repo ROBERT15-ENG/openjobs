@@ -1,6 +1,12 @@
 """Idempotent schema upgrades for existing SQLite databases."""
 
+import logging
+import sqlite3
+
 from regions_util import infer_country_region
+from timeutil import utcnow_iso
+
+log = logging.getLogger(__name__)
 
 USER_COLUMNS = {
     'organization_id': 'INTEGER',
@@ -30,6 +36,7 @@ JOB_COLUMNS = {
     'region': 'TEXT',
     'posted_at': 'TEXT',
     'view_count': 'INTEGER NOT NULL DEFAULT 0',
+    'moderation_status': "TEXT NOT NULL DEFAULT 'ok'",
 }
 
 TABLE_DDL = [
@@ -81,10 +88,29 @@ TABLE_DDL = [
         FOREIGN KEY (conversation_id) REFERENCES conversations(id),
         FOREIGN KEY (sender_id) REFERENCES users(id)
     )""",
+    """CREATE TABLE IF NOT EXISTS revoked_tokens (
+        jti TEXT PRIMARY KEY,
+        expires_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS email_outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        to_email TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        html_body TEXT NOT NULL,
+        text_body TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        sent_at TEXT
+    )""",
 ]
 
 INDEX_DDL = [
     'CREATE INDEX IF NOT EXISTS idx_jobs_active ON jobs(is_active)',
+    'CREATE INDEX IF NOT EXISTS idx_jobs_geo ON jobs(latitude, longitude)',
+    'CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens(expires_at)',
+    'CREATE INDEX IF NOT EXISTS idx_email_outbox_status ON email_outbox(status, id)',
     'CREATE INDEX IF NOT EXISTS idx_jobs_employer ON jobs(employer_id)',
     'CREATE INDEX IF NOT EXISTS idx_applications_user ON applications(user_id)',
     'CREATE INDEX IF NOT EXISTS idx_applications_job ON applications(job_id)',
@@ -105,6 +131,29 @@ def _table_exists(db, table: str) -> bool:
         (table,),
     ).fetchone()
     return row is not None
+
+
+def _normalise_emails(db) -> None:
+    """Lower-case stored emails and add a case-insensitive unique index.
+
+    Emails that would collide after lower-casing are left untouched (and the
+    index is skipped) so an upgrade never destroys data; the app still
+    normalises on login so both accounts remain reachable.
+    """
+    rows = db.execute(
+        "SELECT id, email FROM users WHERE email != lower(trim(email))"
+    ).fetchall()
+    for row in rows:
+        target = row['email'].strip().lower()
+        clash = db.execute(
+            'SELECT 1 FROM users WHERE lower(email) = ? AND id != ?', (target, row['id'])
+        ).fetchone()
+        if not clash:
+            db.execute('UPDATE users SET email = ? WHERE id = ?', (target, row['id']))
+    try:
+        db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_nocase ON users(lower(email))')
+    except sqlite3.IntegrityError:
+        log.warning('users has case-colliding emails; idx_users_email_nocase not created')
 
 
 def ensure_schema(db) -> None:
@@ -128,6 +177,8 @@ def ensure_schema(db) -> None:
 
     for ddl in INDEX_DDL:
         db.execute(ddl)
+
+    _normalise_emails(db)
 
     # Backfill posted_at from created_at
     job_cols = _existing_columns(db, 'jobs')
@@ -158,8 +209,7 @@ def ensure_schema(db) -> None:
             "SELECT id, company, name FROM users "
             "WHERE role = 'employer' AND (organization_id IS NULL OR organization_id = 0)"
         ).fetchall()
-        import datetime
-        now = datetime.datetime.now().isoformat()
+        now = utcnow_iso()
         for emp in employers:
             org_name = (emp['company'] or emp['name'] or f'Employer {emp["id"]}').strip()
             cur = db.execute(

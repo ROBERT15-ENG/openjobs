@@ -5,6 +5,8 @@ All generative AI endpoints require login. Rate limits are keyed by user id
 """
 
 import os
+import threading
+import time
 
 import requests
 from ats_util import compute_ats_score
@@ -16,15 +18,31 @@ ai_bp = Blueprint('ai', __name__)
 
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
 OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'llama3.2')
+OLLAMA_PROBE_TTL = int(os.environ.get('OLLAMA_PROBE_TTL', '60'))
 
-try:
-    OLLAMA_AVAILABLE = requests.get(f'{OLLAMA_URL}/api/tags', timeout=2).status_code == 200
-except Exception:
-    OLLAMA_AVAILABLE = False
+_probe_lock = threading.Lock()
+_probe_state = {'available': False, 'checked_at': 0.0}
+
+
+def ollama_available(force: bool = False) -> bool:
+    """Cached liveness probe; re-checked every OLLAMA_PROBE_TTL seconds so a
+    restart of Ollama (either direction) is picked up without redeploying."""
+    if os.environ.get('JOBSEEK_AI_ENABLED', 'true').lower() in ('0', 'false', 'no'):
+        return False
+    now = time.monotonic()
+    with _probe_lock:
+        if not force and now - _probe_state['checked_at'] < OLLAMA_PROBE_TTL:
+            return _probe_state['available']
+        try:
+            available = requests.get(f'{OLLAMA_URL}/api/tags', timeout=2).status_code == 200
+        except requests.RequestException:
+            available = False
+        _probe_state.update(available=available, checked_at=now)
+        return available
 
 
 def _ollama_generate(prompt: str, system: str = None, timeout: int = 45) -> str:
-    if not OLLAMA_AVAILABLE:
+    if not ollama_available():
         return ''
     payload = {
         'model': OLLAMA_MODEL,
@@ -73,7 +91,7 @@ def _ai_limit(limit: str):
 def ollama_status():
     """Public availability probe — no generation, no auth required."""
     return jsonify({
-        'available': OLLAMA_AVAILABLE,
+        'available': ollama_available(),
         'note': 'Ollama is optional — AI tools use keyword fallbacks when it is not running locally. Generative endpoints require login.',
         'auth_required_for_generation': True,
     })
@@ -82,7 +100,7 @@ def ollama_status():
 @ai_bp.route('/api/ai/ollama/models', methods=['GET'])
 @require_auth
 def list_ollama_models():
-    if not OLLAMA_AVAILABLE:
+    if not ollama_available():
         return jsonify({'error': 'Ollama not running', 'models': []})
     try:
         resp = requests.get(f'{OLLAMA_URL}/api/tags', timeout=5)
@@ -99,7 +117,7 @@ def ollama_chat():
     message = (data.get('message') or '').strip()
     if not message:
         return jsonify({'error': 'message is required'}), 400
-    if not OLLAMA_AVAILABLE:
+    if not ollama_available():
         return jsonify({
             'error': 'Ollama not running locally',
             'response': 'AI chat requires Ollama on your machine (ollama serve). Career tips: tailor your résumé to each role, quantify achievements, and research the company before applying.',
@@ -133,7 +151,7 @@ def score_resume():
     analysis = 'Keyword overlap between your résumé and the job description.'
     source = 'keyword'
 
-    if OLLAMA_AVAILABLE:
+    if ollama_available():
         prompt = (
             f'Job description:\n{job_desc[:1500]}\n\nRésumé:\n{resume[:1500]}\n\n'
             'In 2-3 sentences, explain fit strengths and gaps. Be concise.'
@@ -160,7 +178,7 @@ def generate_cover_letter():
     cover_letter = _fallback_cover_letter(job_title, company, resume)
     source = 'template'
 
-    if OLLAMA_AVAILABLE:
+    if ollama_available():
         prompt = (
             f'Write a professional cover letter for the {job_title} position at {company}. '
             f'Candidate background:\n{resume[:2000] or "Not provided"}\n'
@@ -186,7 +204,7 @@ def interview_prep():
     questions = _fallback_interview_questions(job_title)
     source = 'template'
 
-    if OLLAMA_AVAILABLE:
+    if ollama_available():
         prompt = f'List 8 interview questions for a {job_title} role. Number each question.'
         ai_text = _ollama_generate(prompt, system='You are an interview coach.')
         if ai_text:

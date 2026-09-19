@@ -1,6 +1,15 @@
-[deploy]
+[build]
 buildCommand = "pip install --no-cache-dir -r requirements.txt"
-startCommand = "cd api && python3 server.py"
 
-[deploy.metadata]
-# Prefer Railway startCommand above; Dockerfile snippet kept for reference only.
+[deploy]
+startCommand = "gunicorn -c gunicorn.conf.py wsgi:app"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# The container filesystem is ephemeral. Mount a volume (Railway: Service ->
+# Volumes) and point DATABASE_PATH / UPLOAD_DIR at it, e.g.
+#   DATABASE_PATH=/data/jobs.db
+#   UPLOAD_DIR=/data/uploads
+# Otherwise the SQLite database and every uploaded résumé are lost on deploy.

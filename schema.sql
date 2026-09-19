@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     country TEXT,
     region TEXT,
     posted_at TEXT,
+    moderation_status TEXT NOT NULL DEFAULT 'ok',
     created_at TEXT NOT NULL,
     FOREIGN KEY (employer_id) REFERENCES users(id)
 );
@@ -217,7 +218,29 @@ CREATE TABLE IF NOT EXISTS crm_pipeline (
     created_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+    jti TEXT PRIMARY KEY,
+    expires_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS email_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    to_email TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    html_body TEXT NOT NULL,
+    text_body TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    sent_at TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_nocase ON users(lower(email));
 CREATE INDEX IF NOT EXISTS idx_jobs_active ON jobs(is_active);
+CREATE INDEX IF NOT EXISTS idx_jobs_geo ON jobs(latitude, longitude);
+CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_email_outbox_status ON email_outbox(status, id);
 CREATE INDEX IF NOT EXISTS idx_jobs_employer ON jobs(employer_id);
 CREATE INDEX IF NOT EXISTS idx_applications_user ON applications(user_id);
 CREATE INDEX IF NOT EXISTS idx_applications_job ON applications(job_id);

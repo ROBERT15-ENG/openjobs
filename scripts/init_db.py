@@ -8,8 +8,14 @@ import sqlite3
 from werkzeug.security import generate_password_hash
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-DB_PATH = os.path.join(PROJECT_ROOT, 'jobs.db')
+DB_PATH = os.environ.get('DATABASE_PATH') or os.path.join(PROJECT_ROOT, 'jobs.db')
 SCHEMA_PATH = os.path.join(PROJECT_ROOT, 'schema.sql')
+DEFAULT_ADMIN_PASSWORD = 'admin123'
+
+
+def _utc_iso(delta: datetime.timedelta | None = None) -> str:
+    moment = datetime.datetime.now(datetime.timezone.utc) + (delta or datetime.timedelta())
+    return moment.isoformat().replace('+00:00', 'Z')
 
 
 def init_db(force: bool = False) -> None:
@@ -17,19 +23,23 @@ def init_db(force: bool = False) -> None:
         print(f'Database already exists at {DB_PATH} (use --force to recreate)')
         return
 
+    admin_password = os.environ.get('ADMIN_PASSWORD', DEFAULT_ADMIN_PASSWORD)
+    if admin_password == DEFAULT_ADMIN_PASSWORD:
+        if os.environ.get('FLASK_ENV') == 'production':
+            raise SystemExit('Refusing to seed the default admin password in production. Set ADMIN_PASSWORD.')
+        print('WARNING: Default admin password in use. Set ADMIN_PASSWORD before production deploy.')
+
     if force and os.path.exists(DB_PATH):
         os.remove(DB_PATH)
 
     with open(SCHEMA_PATH, 'r', encoding='utf-8') as f:
         schema = f.read()
 
+    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
     db = sqlite3.connect(DB_PATH)
     db.executescript(schema)
 
-    now = datetime.datetime.now().isoformat()
-    admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
-    if admin_password == 'admin123':
-        print('WARNING: Default admin password in use. Set ADMIN_PASSWORD before production deploy.')
+    now = _utc_iso()
 
     users = [
         ('Demo Seeker', 'demo@openjobs.com', generate_password_hash('TestPass123'), 'user'),
@@ -61,7 +71,7 @@ def init_db(force: bool = False) -> None:
             'Internship for junior developers',
             '[]',
             '',
-            (datetime.datetime.now() + datetime.timedelta(days=30)).isoformat(),
+            _utc_iso(datetime.timedelta(days=30)),
             'Python,JavaScript,Flask',
             employer_id,
             now,
@@ -83,7 +93,7 @@ def init_db(force: bool = False) -> None:
             'DevOps role with AWS and Kubernetes',
             '[]',
             '',
-            (datetime.datetime.now() + datetime.timedelta(days=30)).isoformat(),
+            _utc_iso(datetime.timedelta(days=30)),
             'AWS,Kubernetes,Docker,Python',
             employer_id,
             now,

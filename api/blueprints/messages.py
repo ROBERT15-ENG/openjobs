@@ -1,12 +1,11 @@
 """Employer–seeker messaging (application-scoped threads)."""
 
-import datetime
-
 from auth_utils import require_auth
 from db import get_db
 from extensions import limiter
 from flask import Blueprint, jsonify, request
 from org_util import employer_can_access_job, get_team_member_user_ids
+from timeutil import utcnow_iso
 
 messages_bp = Blueprint('messages', __name__)
 
@@ -48,7 +47,7 @@ def _get_or_create_conversation(db, application_id):
     if not app_row:
         return None
 
-    now = datetime.datetime.now().isoformat()
+    now = utcnow_iso()
     db.execute(
         """INSERT INTO conversations (application_id, job_id, employer_id, seeker_id, created_at)
            VALUES (?, ?, ?, ?, ?)""",
@@ -174,7 +173,7 @@ def post_message(conversation_id):
     if err:
         return jsonify({'error': err}), 404 if err == 'Not found' else 403
 
-    now = datetime.datetime.now().isoformat()
+    now = utcnow_iso()
     db.execute(
         'INSERT INTO messages (conversation_id, sender_id, body, created_at) VALUES (?, ?, ?, ?)',
         (conversation_id, request.user_id, body, now),

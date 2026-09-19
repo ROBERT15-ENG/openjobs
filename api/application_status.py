@@ -1,6 +1,10 @@
 """Shared application status update (PATCH + kanban + bulk)."""
 
-import datetime
+import logging
+
+from timeutil import utcnow_iso
+
+log = logging.getLogger(__name__)
 
 
 def update_application_status(db, app_id, new_status, *, send_email=True, actor_role=None):
@@ -28,7 +32,7 @@ def update_application_status(db, app_id, new_status, *, send_email=True, actor_
 
     db.execute(
         'UPDATE applications SET status = ?, updated_at = ? WHERE id = ?',
-        (new_status, datetime.datetime.now().isoformat(), app_id),
+        (new_status, utcnow_iso(), app_id),
     )
     db.commit()
     updated = db.execute('SELECT * FROM applications WHERE id = ?', (app_id,)).fetchone()
@@ -58,6 +62,6 @@ def update_application_status(db, app_id, new_status, *, send_email=True, actor_
                     new_status,
                 )
         except Exception as exc:
-            print(f'[application_status] email error: {exc}')
+            log.warning('[application_status] email error: %s', exc)
 
     return True, dict(updated), old_status

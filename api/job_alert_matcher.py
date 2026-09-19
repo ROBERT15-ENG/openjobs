@@ -1,11 +1,11 @@
 """Match saved job alerts to listings and send notification emails."""
 
-import datetime
 import os
 import sqlite3
 from typing import Dict, List, Optional
 
 from seo_util import job_url_path
+from timeutil import iso_before, utcnow_iso
 
 from email_notifier import send_job_alert
 
@@ -13,12 +13,9 @@ BASE_URL = os.environ.get('BASE_URL', 'http://localhost:5700')
 
 
 def _connect(db_path: Optional[str] = None) -> sqlite3.Connection:
-    path = db_path or os.environ.get('DATABASE_PATH') or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'jobs.db'
-    )
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    from db import connect
+
+    return connect(db_path)
 
 
 def _keyword_terms(keyword: str) -> List[str]:
@@ -120,7 +117,7 @@ def notify_alerts_for_job(job_id: int, db_path: Optional[str] = None) -> Dict:
 
         notified = 0
         emails_sent = 0
-        now = datetime.datetime.now().isoformat()
+        now = utcnow_iso()
         payload = _job_payload(job)
 
         for alert_row in alerts:
@@ -144,11 +141,13 @@ def notify_alerts_for_job(job_id: int, db_path: Optional[str] = None) -> Dict:
                 'INSERT INTO job_alert_sends (alert_id, job_id, sent_at) VALUES (?, ?, ?)',
                 (alert['id'], job_id, now),
             )
+            # Commit per alert: send_job_alert writes to the outbox on its own
+            # connection and must not wait on this one's write lock.
+            conn.commit()
             notified += 1
             if result.get('success'):
                 emails_sent += 1
 
-        conn.commit()
         return {'job_id': job_id, 'alerts_notified': notified, 'emails_sent': emails_sent}
     finally:
         conn.close()
@@ -161,9 +160,7 @@ def run_job_alert_matching(
 ) -> Dict:
     """Scan recent jobs against all active alerts (for cron / admin trigger)."""
     conn = _connect(db_path)
-    since = None
-    if since_hours > 0:
-        since = (datetime.datetime.now() - datetime.timedelta(hours=since_hours)).isoformat()
+    since = iso_before(hours=since_hours) if since_hours > 0 else None
 
     try:
         alerts = conn.execute(
@@ -184,7 +181,7 @@ def run_job_alert_matching(
             'jobs_matched': 0,
         }
 
-        now = datetime.datetime.now().isoformat()
+        now = utcnow_iso()
         for alert_row in alerts:
             alert = dict(alert_row)
             matches = find_new_matches_for_alert(conn, alert, since=since)
@@ -208,12 +205,11 @@ def run_job_alert_matching(
                     'INSERT OR IGNORE INTO job_alert_sends (alert_id, job_id, sent_at) VALUES (?, ?, ?)',
                     (alert['id'], job['id'], now),
                 )
+            conn.commit()
             summary['notifications'] += 1
             if result.get('success'):
                 summary['emails_sent'] += 1
 
-        if not dry_run:
-            conn.commit()
         return summary
     finally:
         conn.close()

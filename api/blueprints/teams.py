@@ -1,11 +1,10 @@
 """Employer team account management."""
 
-import datetime
-
 from auth_utils import require_auth
 from db import get_db
 from flask import Blueprint, jsonify, request
 from org_util import get_user_organization_id
+from timeutil import utcnow_iso
 
 teams_bp = Blueprint('teams', __name__)
 
@@ -91,7 +90,7 @@ def add_team_member():
     if existing:
         return jsonify({'error': 'User is already on your team'}), 409
 
-    now = datetime.datetime.now().isoformat()
+    now = utcnow_iso()
     db.execute('UPDATE users SET organization_id = ?, company = (SELECT name FROM organizations WHERE id = ?) WHERE id = ?',
                (org_id, org_id, invitee['id']))
     db.execute(

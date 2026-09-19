@@ -1,12 +1,12 @@
 """HTML page routes."""
 
-import datetime
 import os
 
 from config import TEMPLATES_DIR
 from db import get_db
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request
 from seo_util import job_posting_json_ld, job_url_path, slugify
+from timeutil import utcnow_iso
 
 pages_bp = Blueprint('pages', __name__)
 
@@ -176,4 +176,4 @@ def cookies_page():
 
 @pages_bp.route('/api/health', methods=['GET'])
 def health_check():
-    return jsonify({'status': 'healthy', 'timestamp': datetime.datetime.now().isoformat()})
+    return jsonify({'status': 'healthy', 'timestamp': utcnow_iso()})

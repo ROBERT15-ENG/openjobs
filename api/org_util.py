@@ -1,6 +1,6 @@
 """Employer organization / team access helpers."""
 
-import datetime
+from timeutil import utcnow_iso
 
 
 def get_user_organization_id(db, user_id):
@@ -11,7 +11,7 @@ def get_user_organization_id(db, user_id):
 
 
 def create_organization_for_employer(db, company_name, owner_user_id):
-    now = datetime.datetime.now().isoformat()
+    now = utcnow_iso()
     db.execute(
         'INSERT INTO organizations (name, created_at) VALUES (?, ?)',
         (company_name, now),

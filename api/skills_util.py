@@ -1,15 +1,19 @@
 """Skill extraction utilities."""
 
-import sqlite3
+import logging
 
-from db import get_db_path
+from db import connect
+
+log = logging.getLogger(__name__)
 
 
 def extract_skills_fast(text: str) -> list[str]:
     try:
-        db = sqlite3.connect(get_db_path())
-        rows = db.execute('SELECT name, aliases FROM skills_taxonomy').fetchall()
-        db.close()
+        db = connect()
+        try:
+            rows = db.execute('SELECT name, aliases FROM skills_taxonomy').fetchall()
+        finally:
+            db.close()
         text_lower = text.lower()
         matched = []
         for name, aliases in rows:
@@ -22,5 +26,5 @@ def extract_skills_fast(text: str) -> list[str]:
                         break
         return list(dict.fromkeys(matched))
     except Exception as exc:
-        print(f'[extract_skills_fast] {exc}')
+        log.warning('[extract_skills_fast] %s', exc)
         return []

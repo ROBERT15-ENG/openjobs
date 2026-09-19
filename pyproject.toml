@@ -9,7 +9,7 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 "api/app_factory.py" = ["E402"]
 "tests/test_matcher.py" = ["E402"]
-"api/semantic_matcher.py" = ["F601", "F841", "I001"]
+"api/semantic_matcher.py" = ["F841", "I001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

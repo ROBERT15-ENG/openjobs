@@ -1,5 +1,7 @@
 """Shared Flask extensions."""
 
+import os
+
 from flask import request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -22,10 +24,10 @@ def ai_rate_limit_key():
     return f'ai:ip:{get_remote_address()}'
 
 
+# memory:// is per-process. Set RATELIMIT_STORAGE_URI=redis://... in production
+# so limits are shared across gunicorn workers and survive restarts.
 limiter = Limiter(
     key_func=rate_limit_key,
     default_limits=['500 per day', '100 per hour', '20 per minute'],
-    storage_uri='memory://',
+    storage_uri=os.environ.get('RATELIMIT_STORAGE_URI', 'memory://'),
 )
-
-BLOCKED_TOKENS: set[str] = set()
