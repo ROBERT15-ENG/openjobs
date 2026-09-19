@@ -1,14 +1,17 @@
 """Admin analytics routes."""
 
 import csv
-import datetime
 import io
 
 from application_status import update_application_status
 from auth_utils import require_role
-from constants import SEEKER_ROLES
+from constants import APPLICATION_STATUSES, SEEKER_ROLES
 from db import get_db
+from deletion import delete_job_cascade, delete_user_cascade
 from flask import Blueprint, Response, jsonify, request
+from status import is_valid_status, normalize_status
+from timeutil import iso_before
+from validation import ValidationError, int_list
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -28,7 +31,7 @@ def admin_stats():
     app_rows = db.execute('SELECT status, COUNT(*) as cnt FROM applications GROUP BY status').fetchall()
     apps_by_status = {row['status']: row['cnt'] for row in app_rows}
 
-    thirty_days_ago = (datetime.datetime.now() - datetime.timedelta(days=30)).isoformat()
+    thirty_days_ago = iso_before(days=30)
     apps_over_time = db.execute(
         'SELECT DATE(applied_at) as day, COUNT(*) as cnt FROM applications WHERE applied_at >= ? GROUP BY day ORDER BY day',
         (thirty_days_ago,),
@@ -150,23 +153,62 @@ def run_job_alerts():
     return jsonify({'success': True, **result})
 
 
+@admin_bp.route('/api/admin/email/outbox', methods=['GET'])
+@require_role('admin')
+def email_outbox_status():
+    db = get_db()
+    rows = db.execute('SELECT status, COUNT(*) as cnt FROM email_outbox GROUP BY status').fetchall()
+    failed = db.execute(
+        'SELECT id, to_email, subject, attempts, last_error, created_at FROM email_outbox '
+        "WHERE status = 'failed' ORDER BY id DESC LIMIT 20"
+    ).fetchall()
+    return jsonify({
+        'counts': {row['status']: row['cnt'] for row in rows},
+        'recent_failures': [dict(row) for row in failed],
+    })
+
+
+@admin_bp.route('/api/admin/email/drain', methods=['POST'])
+@require_role('admin')
+def email_outbox_drain():
+    """Deliver pending outbox mail now (same as scripts/send_outbox.py)."""
+    from email_notifier import drain_outbox, is_configured
+
+    if not is_configured():
+        return jsonify({'error': 'SMTP not configured'}), 503
+    data = request.json or {}
+    limit = max(1, min(500, int(data.get('limit', 100))))
+    return jsonify({'success': True, **drain_outbox(limit=limit)})
+
+
 @admin_bp.route('/api/admin/jobs/bulk', methods=['POST'])
 @require_role('admin')
 def bulk_jobs():
     data = request.json or {}
-    ids = data.get('ids') or []
+    try:
+        ids = int_list(data.get('ids'), 'ids')
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
     action = (data.get('action') or '').strip().lower()
-    if not ids or not isinstance(ids, list):
-        return jsonify({'error': 'ids array is required'}), 400
-    if action not in ('deactivate', 'delete'):
-        return jsonify({'error': 'action must be deactivate or delete'}), 400
+    if action not in ('deactivate', 'delete', 'reactivate'):
+        return jsonify({'error': 'action must be deactivate, reactivate, or delete'}), 400
 
     db = get_db()
     placeholders = ','.join('?' * len(ids))
     if action == 'deactivate':
-        db.execute(f'UPDATE jobs SET is_active = 0 WHERE id IN ({placeholders})', ids)
+        # Moderation lock: employers cannot re-enable via PATCH until an admin reactivates.
+        db.execute(
+            f"UPDATE jobs SET is_active = 0, moderation_status = 'removed' WHERE id IN ({placeholders})",
+            ids,
+        )
+    elif action == 'reactivate':
+        db.execute(
+            f"UPDATE jobs SET is_active = 1, moderation_status = 'ok' WHERE id IN ({placeholders})",
+            ids,
+        )
     else:
-        db.execute(f'UPDATE jobs SET is_active = 0 WHERE id IN ({placeholders})', ids)
+        for job_id in ids:
+            delete_job_cascade(db, job_id)
     db.commit()
     return jsonify({'success': True, 'updated': len(ids), 'action': action})
 
@@ -175,18 +217,19 @@ def bulk_jobs():
 @require_role('admin')
 def bulk_applications():
     data = request.json or {}
-    ids = data.get('ids') or []
-    status = (data.get('status') or '').strip().lower()
-    if not ids:
-        return jsonify({'error': 'ids array is required'}), 400
-    if not status:
-        return jsonify({'error': 'status is required'}), 400
+    try:
+        ids = int_list(data.get('ids'), 'ids')
+    except ValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
+    status = normalize_status(data.get('status'))
+    if not data.get('status') or not is_valid_status(status):
+        return jsonify({'error': f'status must be one of: {list(APPLICATION_STATUSES)}'}), 400
 
     db = get_db()
     updated = 0
     for app_id in ids:
         ok, _, _ = update_application_status(
-            db, int(app_id), status, send_email=True, actor_role='admin'
+            db, app_id, status, send_email=True, actor_role='admin'
         )
         if ok:
             updated += 1
@@ -202,9 +245,6 @@ def delete_user(user_id):
         return jsonify({'error': 'User not found'}), 404
     if user['role'] == 'admin':
         return jsonify({'error': 'Cannot delete admin accounts'}), 403
-    db.execute('DELETE FROM organization_members WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM saved_jobs WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM applications WHERE user_id = ?', (user_id,))
-    db.execute('DELETE FROM users WHERE id = ?', (user_id,))
+    delete_user_cascade(db, user_id)
     db.commit()
     return jsonify({'success': True})

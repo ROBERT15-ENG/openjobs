@@ -1,45 +1,167 @@
-"""Email notification system for OpenJobs"""
+"""Email notification system for OpenJobs.
+
+Delivery model
+--------------
+``send_email`` does not talk to SMTP inside the request. It writes a row to the
+``email_outbox`` table and kicks a best-effort background drain. The durable
+backstop is ``scripts/send_outbox.py`` (cron) or ``POST /api/admin/email/drain``.
+This keeps request latency independent of the mail provider and means a
+provider outage never loses mail — rows stay ``pending`` and are retried.
+
+Set ``EMAIL_DELIVERY=sync`` to send inline (handy for one-off scripts).
+"""
 import html
+import logging
 import os
 import smtplib
+import threading
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+log = logging.getLogger(__name__)
 
 # SMTP Config - set via environment variables
 SMTP_HOST = os.environ.get('SMTP_HOST', '')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
 SMTP_USER = os.environ.get('SMTP_USER', '')
 SMTP_PASS = os.environ.get('SMTP_PASS', '')
+SMTP_TIMEOUT = int(os.environ.get('SMTP_TIMEOUT', '15'))
 FROM_NAME = os.environ.get('FROM_NAME', 'OpenJobs')
 FROM_EMAIL = os.environ.get('FROM_EMAIL', 'noreply@openjobs.com.au')
 BASE_URL = os.environ.get('BASE_URL', 'http://localhost:5700')
+EMAIL_DELIVERY = os.environ.get('EMAIL_DELIVERY', 'outbox').lower()
+MAX_ATTEMPTS = int(os.environ.get('EMAIL_MAX_ATTEMPTS', '5'))
+
+_drain_lock = threading.Lock()
+
 
 def is_configured():
     """Check if SMTP is configured"""
     return bool(SMTP_HOST and SMTP_USER and SMTP_PASS)
 
-def send_email(to_email: str, subject: str, html_body: str, text_body: str = None) -> dict:
-    """Send an email"""
+
+def deliver_email(to_email: str, subject: str, html_body: str, text_body: str = None) -> dict:
+    """Synchronously hand one message to SMTP."""
     if not is_configured():
         return {"success": False, "error": "SMTP not configured"}
-    
+
     try:
         msg = MIMEMultipart('alternative')
         msg['From'] = f"{FROM_NAME} <{FROM_EMAIL}>"
         msg['To'] = to_email
         msg['Subject'] = subject
-        
+
         msg.attach(MIMEText(text_body or html_body, 'plain'))
         msg.attach(MIMEText(html_body, 'html'))
-        
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
             server.starttls()
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(FROM_EMAIL, to_email, msg.as_string())
-        
+
         return {"success": True}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def _connect(db_path=None):
+    from db import connect  # api/ is on sys.path for every caller
+
+    return connect(db_path)
+
+
+def enqueue_email(to_email: str, subject: str, html_body: str, text_body: str = None,
+                  db_path: str = None) -> dict:
+    from timeutil import utcnow_iso
+
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute(
+            """INSERT INTO email_outbox (to_email, subject, html_body, text_body, status, created_at)
+               VALUES (?, ?, ?, ?, 'pending', ?)""",
+            (to_email, subject, html_body, text_body, utcnow_iso()),
+        )
+        conn.commit()
+        return {"success": True, "queued": True, "id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+def drain_outbox(limit: int = 50, db_path: str = None, deliver=None) -> dict:
+    """Send pending outbox rows. Safe to run from several processes at once:
+    each row is claimed with a conditional UPDATE before delivery."""
+    from timeutil import utcnow_iso
+
+    deliver = deliver or deliver_email
+    summary = {"sent": 0, "failed": 0, "skipped": 0}
+    conn = _connect(db_path)
+    try:
+        rows = conn.execute(
+            """SELECT id, to_email, subject, html_body, text_body FROM email_outbox
+               WHERE status = 'pending' AND attempts < ? ORDER BY id LIMIT ?""",
+            (MAX_ATTEMPTS, limit),
+        ).fetchall()
+        for row in rows:
+            claimed = conn.execute(
+                "UPDATE email_outbox SET status = 'sending', attempts = attempts + 1 "
+                "WHERE id = ? AND status = 'pending'",
+                (row['id'],),
+            ).rowcount
+            conn.commit()
+            if claimed != 1:
+                summary["skipped"] += 1
+                continue
+            result = deliver(row['to_email'], row['subject'], row['html_body'], row['text_body'])
+            if result.get("success"):
+                conn.execute(
+                    "UPDATE email_outbox SET status = 'sent', sent_at = ?, last_error = NULL WHERE id = ?",
+                    (utcnow_iso(), row['id']),
+                )
+                summary["sent"] += 1
+            else:
+                attempts = conn.execute(
+                    'SELECT attempts FROM email_outbox WHERE id = ?', (row['id'],)
+                ).fetchone()['attempts']
+                final = attempts >= MAX_ATTEMPTS
+                conn.execute(
+                    "UPDATE email_outbox SET status = ?, last_error = ? WHERE id = ?",
+                    ('failed' if final else 'pending', str(result.get("error"))[:1000], row['id']),
+                )
+                summary["failed"] += 1
+            conn.commit()
+    finally:
+        conn.close()
+    return summary
+
+
+def _drain_in_background(db_path=None):
+    if not _drain_lock.acquire(blocking=False):
+        return
+
+    def _run():
+        try:
+            drain_outbox(db_path=db_path)
+        except Exception:
+            log.exception('outbox drain failed')
+        finally:
+            _drain_lock.release()
+
+    threading.Thread(target=_run, name='email-outbox-drain', daemon=True).start()
+
+
+def send_email(to_email: str, subject: str, html_body: str, text_body: str = None) -> dict:
+    """Queue an email for delivery (or send inline when EMAIL_DELIVERY=sync)."""
+    if not is_configured():
+        return {"success": False, "error": "SMTP not configured"}
+    if EMAIL_DELIVERY == 'sync':
+        return deliver_email(to_email, subject, html_body, text_body)
+    try:
+        result = enqueue_email(to_email, subject, html_body, text_body)
+    except Exception as exc:
+        log.exception('outbox enqueue failed; falling back to inline send')
+        return deliver_email(to_email, subject, html_body, text_body) | {"enqueue_error": str(exc)}
+    _drain_in_background()
+    return result
 
 def send_job_alert(to_email: str, user_name: str, jobs: list, keywords: str) -> dict:
     """Send job alert email"""
