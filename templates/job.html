@@ -194,7 +194,12 @@
     </div>
 
     <!-- RIGHT: APPLY -->
-    <div class="apply-card">
+    <div class="apply-card" id="apply">
+      <div class="card" id="alreadyApplied" style="display:none">
+        <div class="apply-title">✅ Application sent</div>
+        <p style="color:var(--text-muted);font-size:0.9rem;margin:0.5rem 0 1rem" id="alreadyAppliedText">You have already applied to this job.</p>
+        <a href="/user" class="btn-apply" style="display:block;text-align:center;text-decoration:none">Track it in your dashboard →</a>
+      </div>
       <div class="card" id="guestApplyCta" style="display:none">
         <div class="guest-apply">
           <div class="apply-title">🚀 Apply for this Job</div>
@@ -285,6 +290,29 @@
     }
   }
 
+  function showAlreadyApplied(app) {
+    const wrap = document.getElementById('alreadyApplied');
+    const text = document.getElementById('alreadyAppliedText');
+    const when = app.applied_at ? new Date(app.applied_at).toLocaleDateString() : null;
+    const status = (app.status || 'applied').replace('_', ' ');
+    text.textContent = (when ? `Applied on ${when}. ` : '') + `Current status: ${status}.`;
+    wrap.style.display = 'block';
+    document.getElementById('applyFormWrap').style.display = 'none';
+    document.getElementById('guestApplyCta').style.display = 'none';
+  }
+
+  function checkAlreadyApplied() {
+    const token = getToken();
+    if (!token) return;
+    fetch('/api/applications', { headers: { 'Authorization': 'Bearer ' + token } })
+      .then(r => r.ok ? r.json() : null)
+      .then(apps => {
+        const mine = Array.isArray(apps) ? apps.find(a => String(a.job_id) === String(jobId)) : null;
+        if (mine) showAlreadyApplied(mine);
+      })
+      .catch(() => {});
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     updateApplyUI();
     const token = getToken();
@@ -296,9 +324,14 @@
             if (profile.name) document.getElementById('appName').value = profile.name;
             if (profile.email) document.getElementById('appEmail').value = profile.email;
             if (profile.phone) document.getElementById('appPhone').value = profile.phone;
+            if ((profile.resume_text || '').trim()) {
+              document.getElementById('fileLabel').innerHTML =
+                'Drag & drop or <strong>browse</strong> to replace<br><span style="font-size:0.75rem;color:var(--text-dim)">Leave empty to use the résumé saved on your profile</span>';
+            }
           }
         })
         .catch(() => {});
+      checkAlreadyApplied();
     }
     loadJob(jobId);
     loadRelated(jobId);
@@ -473,8 +506,12 @@
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showAlert('success', 'Application submitted! Check your dashboard to track status.');
+        const how = data.used_profile_resume
+          ? (resumeText ? 'with your uploaded résumé' : 'with the résumé saved on your profile')
+          : 'with your cover letter';
+        showAlert('success', `Application submitted ${how}. Track its status in your dashboard.`);
         btn.textContent = '✅ Applied!';
+        setTimeout(() => showAlreadyApplied({ status: 'applied', applied_at: new Date().toISOString() }), 1500);
       } else if (res.status === 409) {
         showAlert('error', data.error || 'You have already applied to this job.');
         btn.disabled = false;
@@ -572,6 +609,12 @@
 
   function showError(msg) {
     document.getElementById('jobTitle').textContent = '⚠️ ' + msg;
+    document.getElementById('jobCompany').textContent = '';
+    document.getElementById('jobDesc').innerHTML = 'This listing may have been closed or removed. <a href="/" style="color:var(--primary)">Browse open jobs →</a>';
+    ['applyFormWrap', 'guestApplyCta', 'alreadyApplied'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
   }
 
   // Drag & drop

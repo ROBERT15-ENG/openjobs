@@ -88,15 +88,21 @@ def apply_job():
     if not job:
         return jsonify({'error': 'Job not found'}), 404
 
-    if not cover_letter and auto_cover and user:
-        cover_letter = generate_apply_cover_letter(dict(user), dict(job))
-
     existing = db.execute(
         'SELECT id FROM applications WHERE job_id = ? AND user_id = ?',
         (job_id, request.user_id),
     ).fetchone()
     if existing:
         return jsonify({'error': 'You have already applied to this job', 'application_id': existing['id']}), 409
+
+    if not cover_letter and auto_cover and user:
+        if not resume_text:
+            # A templated letter with nothing behind it is an empty application.
+            return jsonify({
+                'error': 'Add a résumé to your profile or write a cover letter before applying.',
+                'code': 'no_resume',
+            }), 400
+        cover_letter = generate_apply_cover_letter(dict(user), dict(job))
 
     job = dict(job)
     applicant = dict(user) if user else None
