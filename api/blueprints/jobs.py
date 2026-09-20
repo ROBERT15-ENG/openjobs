@@ -5,6 +5,7 @@ import logging
 import math
 
 from auth_utils import optional_auth, require_employer
+from billing import PENDING_PAYMENT, normalise_plan, payments_enabled
 from db import get_db
 from extensions import limiter
 from flask import Blueprint, jsonify, request
@@ -288,6 +289,12 @@ def create_job():
     now = utcnow_iso()
     expires_at = data.get('expires_at') or iso_after(days=30)
     employer_id = getattr(request, 'employer_id', None)
+    # Employers pay before a listing goes live (when payments are configured);
+    # admin-created listings and free-mode sites publish immediately.
+    plan = normalise_plan((request.json or {}).get('plan'))
+    requires_payment = payments_enabled() and request.user_role != 'admin'
+    is_active = 0 if requires_payment else 1
+    moderation_status = PENDING_PAYMENT if requires_payment else 'ok'
     location = data['location']
     lat, lng = geocode_job_location(location)
     inferred_country, inferred_region = infer_country_region(location)
@@ -298,8 +305,8 @@ def create_job():
             title, company, location, description, salary, category, is_active, created_at, posted_at,
             work_type, work_arrangement, salary_min, salary_max, salary_currency,
             search_summary, selling_points, video_url, expires_at, skills, employer_id,
-            latitude, longitude, country, region
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            latitude, longitude, country, region, moderation_status, plan
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data['title'],
             data['company'],
@@ -307,7 +314,7 @@ def create_job():
             data['description'],
             data.get('salary') or 'Competitive',
             data.get('category') or 'General',
-            1,
+            is_active,
             now,
             now,
             data.get('work_type') or 'full_time',
@@ -325,18 +332,32 @@ def create_job():
             lng,
             country,
             region,
+            moderation_status,
+            plan,
         ),
     )
     db.commit()
     job_id = cur.lastrowid
 
+    if not requires_payment:
+        notify_alerts(job_id)
+
+    return jsonify({
+        'success': True,
+        'message': 'Listing saved; complete payment to publish it' if requires_payment else 'Job published',
+        'job_id': job_id,
+        'status': moderation_status if requires_payment else 'active',
+        'requires_payment': requires_payment,
+        'plan': plan,
+    }), 201
+
+
+def notify_alerts(job_id: int) -> None:
     try:
         from job_alert_matcher import notify_alerts_for_job
         notify_alerts_for_job(job_id)
     except Exception:
         log.exception('[create_job] alert matching failed for job %s', job_id)
-
-    return jsonify({'success': True, 'message': 'Job created', 'job_id': job_id}), 201
 
 
 @jobs_bp.route('/api/jobs/<int:job_id>', methods=['PATCH'])
@@ -377,6 +398,12 @@ def update_job(job_id):
         and request.user_role != 'admin'
     ):
         return jsonify({'error': 'This listing was removed by moderation and cannot be reactivated'}), 403
+    if (
+        updates.get('is_active') == 1
+        and existing['moderation_status'] == PENDING_PAYMENT
+        and request.user_role != 'admin'
+    ):
+        return jsonify({'error': 'Complete payment to publish this listing', 'code': PENDING_PAYMENT}), 402
 
     if 'location' in updates:
         lat, lng = geocode_job_location(updates['location'])

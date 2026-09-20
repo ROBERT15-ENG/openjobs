@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     region TEXT,
     posted_at TEXT,
     moderation_status TEXT NOT NULL DEFAULT 'ok',
+    plan TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (employer_id) REFERENCES users(id)
 );

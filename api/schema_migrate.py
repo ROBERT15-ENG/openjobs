@@ -43,6 +43,7 @@ JOB_COLUMNS = {
     'posted_at': 'TEXT',
     'view_count': 'INTEGER NOT NULL DEFAULT 0',
     'moderation_status': "TEXT NOT NULL DEFAULT 'ok'",
+    'plan': 'TEXT',
 }
 
 TABLE_DDL = [

@@ -20,12 +20,15 @@ def employer_dashboard():
     job_ids = get_employer_job_ids(db, emp_id)
     if job_ids:
         placeholders = ','.join('?' * len(job_ids))
+        # All of the employer's listings, including ones awaiting payment or
+        # deactivated, so nothing silently disappears from "My Listings".
         my_jobs = db.execute(
-            f'SELECT * FROM jobs WHERE id IN ({placeholders}) AND is_active = 1 ORDER BY created_at DESC',
+            f'SELECT * FROM jobs WHERE id IN ({placeholders}) ORDER BY created_at DESC',
             job_ids,
         ).fetchall()
     else:
         my_jobs = []
+    active_jobs = sum(1 for job in my_jobs if job['is_active'])
 
     if job_ids:
         placeholders = ','.join('?' * len(job_ids))
@@ -62,7 +65,8 @@ def employer_dashboard():
 
     return jsonify({
         'stats': {
-            'active_jobs': len(my_jobs),
+            'active_jobs': active_jobs,
+            'total_jobs': len(my_jobs),
             'total_applicants': total_apps,
             'applied': applied_apps,
             'pending': applied_apps,

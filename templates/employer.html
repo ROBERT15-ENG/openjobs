@@ -261,10 +261,10 @@
         </div>
       </div>
       <div id="paymentNotice" style="display:none;background:rgba(0,212,170,0.08);border:1px solid rgba(0,212,170,0.25);border-radius:10px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:var(--primary);">
-        💳 You'll be redirected to Stripe to complete payment. Your job goes live immediately after.
+        💳 After you submit, you'll be taken to secure checkout (<span id="planPriceLabel">$99 AUD</span>). Your listing goes live as soon as payment is confirmed; until then it is saved under My Listings.
       </div>
-      <div id="freeNotice" style="display:block;background:rgba(107,107,128,0.08);border:1px solid var(--border);border-radius:10px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:var(--text-muted);">
-        🧪 Demo mode: no Stripe key configured. Job will be posted free for testing.
+      <div id="freeNotice" style="display:none;background:rgba(107,107,128,0.08);border:1px solid var(--border);border-radius:10px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:var(--text-muted);">
+        Payments are not enabled on this site. Listings are published free and go live immediately.
       </div>
 
       <div class="alert alert-success" id="postSuccess" style="display:none"></div>
@@ -667,6 +667,23 @@
     loadApplications();
     loadPipelineJobs();
     loadTeam();
+    loadPricingState();
+    handlePaymentReturn();
+  }
+
+  // Back from Stripe: the webhook publishes the listing, usually within seconds.
+  function handlePaymentReturn() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payment') !== 'success') return;
+    switchTab('listings');
+    const el = document.getElementById('myListings');
+    const note = document.createElement('div');
+    note.className = 'alert alert-success';
+    note.style.display = 'block';
+    note.textContent = '✅ Payment received. Your listing will show as Live within a minute once the payment is confirmed. Refresh if it still says "Awaiting payment".';
+    el.parentNode.insertBefore(note, el);
+    history.replaceState(null, '', '/employer');
+    setTimeout(() => { loadMyJobs(); loadOverview(); }, 8000);
   }
 
   // ── DATA LOADERS ────────────────────────────────────────────────────────────
@@ -710,17 +727,31 @@
       const appCountMap = {};
       (d.recent_applications || []).forEach(a => { appCountMap[a.job_id] = (appCountMap[a.job_id] || 0) + 1; });
 
+      const statusCell = (j) => {
+        if (j.moderation_status === 'pending_payment') return '<span class="badge badge-pending">Awaiting payment</span>';
+        if (j.moderation_status === 'removed') return '<span class="badge badge-inactive">Removed by moderation</span>';
+        return j.is_active ? '<span class="badge badge-active">Live</span>' : '<span class="badge badge-inactive">Inactive</span>';
+      };
+      const actions = (j) => {
+        let html = '';
+        if (j.moderation_status === 'pending_payment') {
+          html += '<button class="action-btn" style="border-color:var(--primary);color:var(--primary)" onclick="payForJob(' + j.id + ', \'' + (j.plan === 'premium' ? 'premium' : 'standard') + '\')">💳 Complete payment</button>';
+        }
+        html += '<button class="action-btn" onclick="openEditModal(' + j.id + ')">✏️ Edit</button>' +
+                '<button class="action-btn danger" onclick="deleteJob(' + j.id + ')">🗑 Delete</button>';
+        return html;
+      };
       el.innerHTML = '<div class="card"><div class="table-wrap"><table>' +
-        '<thead><tr><th>Job Title</th><th>Location</th><th>Type</th><th>Applicants</th><th>Views</th><th>Posted</th><th>Actions</th></tr></thead>' +
+        '<thead><tr><th>Job Title</th><th>Status</th><th>Location</th><th>Type</th><th>Applicants</th><th>Views</th><th>Posted</th><th>Actions</th></tr></thead>' +
         '<tbody>' + jobs.map(j => '<tr>' +
           '<td><div class="table-title">' + escHtml(j.title) + '</div><div class="table-company">' + escHtml(j.company) + '</div></td>' +
+          '<td>' + statusCell(j) + '</td>' +
           '<td>' + escHtml(j.location || '—') + '</td>' +
           '<td>' + escHtml(fmtWorkType(j.work_type)) + '</td>' +
           '<td>' + (appCountMap[j.id] || 0) + '</td>' +
           '<td>' + (j.view_count || 0) + '</td>' +
           '<td>' + timeSince(j.created_at) + '</td>' +
-          '<td><button class="action-btn" onclick="openEditModal(' + j.id + ')">✏️ Edit</button>' +
-              '<button class="action-btn danger" onclick="deleteJob(' + j.id + ')">🗑 Delete</button></td>' +
+          '<td>' + actions(j) + '</td>' +
         '</tr>').join('') + '</tbody></table></div></div>';
     } catch { el.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><h3>Could not load jobs</h3></div>'; }
   }
@@ -928,10 +959,47 @@
     if (radio) radio.checked = true;
     el.style.borderColor = 'var(--primary)';
     el.style.background = 'var(--primary-glow)';
-    document.getElementById('paymentNotice').style.display = plan === 'premium' ? 'block' : 'none';
-    document.getElementById('freeNotice').style.display = plan === 'premium' ? 'none' : 'block';
     window.selectedPlan = plan;
+    updatePlanNotices();
 }
+
+  let paymentsEnabled = false;
+  const PLAN_LABELS = { standard: '$99 AUD', premium: '$199 AUD' };
+
+  function updatePlanNotices() {
+    const plan = window.selectedPlan || 'standard';
+    document.getElementById('planPriceLabel').textContent = PLAN_LABELS[plan] || '';
+    document.getElementById('paymentNotice').style.display = paymentsEnabled ? 'block' : 'none';
+    document.getElementById('freeNotice').style.display = paymentsEnabled ? 'none' : 'block';
+  }
+
+  async function loadPricingState() {
+    try {
+      const res = await fetch('/api/pricing');
+      const d = await res.json();
+      paymentsEnabled = !!(d.payments_enabled ?? d.stripe_configured);
+    } catch { paymentsEnabled = false; }
+    updatePlanNotices();
+  }
+
+  async function startCheckout(jobId, plan) {
+    const res = await fetch('/api/payment/checkout', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ job_id: jobId, plan: plan || 'standard' })
+    });
+    const ck = await res.json().catch(() => ({}));
+    if (res.ok && ck.checkout_url) return ck.checkout_url;
+    throw new Error(ck.error || 'Could not start checkout');
+  }
+
+  async function payForJob(jobId, plan) {
+    try {
+      const url = await startCheckout(jobId, plan);
+      window.location.href = url;
+    } catch (e) {
+      alert('⚠️ ' + e.message + '. Please try again in a moment.');
+    }
+  }
 
 async function handlePostJob(e) {
     e.preventDefault();
@@ -956,7 +1024,7 @@ async function handlePostJob(e) {
         salary_currency:  'AUD',
         description:      document.getElementById('jobDesc').value.trim(),
         skills:           document.getElementById('jobSkills').value.trim(),
-        is_active:        1
+        plan,
       };
       const res = await fetch('/api/jobs', {
         method: 'POST', headers: authHeaders(), body: JSON.stringify(payload)
@@ -964,28 +1032,30 @@ async function handlePostJob(e) {
       const created = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(created.error || ('Server error ' + res.status));
       const jobId = created.job_id;
+      const showOk = (msg) => {
+        document.getElementById('postSuccess').textContent = msg;
+        document.getElementById('postSuccess').style.display = 'block';
+        document.getElementById('postError').style.display = 'none';
+      };
+      document.getElementById('postJobForm').reset();
 
-      if (plan === 'premium') {
-        const ckRes = await fetch('/api/payment/checkout', {
-          method: 'POST', headers: authHeaders(),
-          body: JSON.stringify({ job_id: jobId, plan })
-        });
-        const ck = await ckRes.json();
-        if (ckRes.status === 503) {
-          document.getElementById('freeNotice').textContent = '🧪 Demo: Stripe not configured. Job posted free.';
-        } else if (ck.checkout_url) {
-          if (confirm('Job created. Redirect to Stripe to complete $199 AUD payment?')) {
-            window.location.href = ck.checkout_url;
-          }
+      if (created.requires_payment) {
+        // Listing is saved but not live. Go straight to checkout; the webhook publishes it.
+        showOk('✅ Listing saved. Taking you to secure checkout…');
+        btn.textContent = 'Redirecting to checkout…';
+        try {
+          const url = await startCheckout(jobId, plan);
+          window.location.href = url;
+          return;
+        } catch (e) {
+          showErr('⚠️ Your listing is saved but not published: ' + e.message + '. Use "Complete payment" in My Listings to publish it.');
           btn.disabled = false; btn.textContent = '🚀 Publish Job →';
+          setTimeout(() => { switchTab('listings'); loadOverview(); }, 2500);
           return;
         }
       }
 
-      document.getElementById('postSuccess').textContent = '✅ Job published successfully!';
-      document.getElementById('postSuccess').style.display = 'block';
-      document.getElementById('postError').style.display = 'none';
-      document.getElementById('postJobForm').reset();
+      showOk('✅ Job published! It is live now and visible to job seekers.');
       setTimeout(() => { document.getElementById('postSuccess').style.display = 'none'; switchTab('listings'); loadOverview(); }, 1500);
     } catch(e) { showErr('⚠️ ' + (e && e.message ? e.message : 'Could not publish job. Is the server running?')); }
     btn.disabled = false; btn.textContent = '🚀 Publish Job →';

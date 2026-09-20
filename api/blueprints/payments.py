@@ -5,6 +5,7 @@ import os
 
 import requests
 from auth_utils import require_employer
+from billing import PLAN_PRICES_CENTS, activate_paid_job, payments_enabled
 from db import get_db
 from flask import Blueprint, current_app, jsonify, request
 from org_util import employer_can_access_job
@@ -12,7 +13,6 @@ from org_util import employer_can_access_job
 log = logging.getLogger(__name__)
 payments_bp = Blueprint('payments', __name__)
 
-PLAN_PRICES_CENTS = {'standard': 9900, 'premium': 19900}
 
 
 @payments_bp.route('/api/pricing', methods=['GET'])
@@ -37,7 +37,8 @@ def get_pricing():
                 'featured': True,
             },
         ],
-        'stripe_configured': bool(os.environ.get('STRIPE_SECRET_KEY')),
+        'stripe_configured': payments_enabled(),
+        'payments_enabled': payments_enabled(),
         'paypal_configured': bool(os.environ.get('PAYPAL_CLIENT_ID')),
     })
 
@@ -45,7 +46,7 @@ def get_pricing():
 @payments_bp.route('/api/payment/checkout', methods=['POST'])
 @require_employer
 def create_checkout():
-    if not os.environ.get('STRIPE_SECRET_KEY'):
+    if not payments_enabled():
         return jsonify({
             'error': 'Payment not configured',
             'demo': True,
@@ -136,10 +137,8 @@ def stripe_webhook():
                 if job['moderation_status'] == 'removed':
                     log.warning('paid job %s is moderation-removed; not reactivating', job_id)
                 else:
-                    db.execute(
-                        'UPDATE jobs SET is_active = 1, is_featured = ? WHERE id = ?',
-                        (1 if plan == 'premium' else 0, int(job_id)),
-                    )
-                    db.commit()
+                    activate_paid_job(db, int(job_id), plan)
+                    from blueprints.jobs import notify_alerts
+                    notify_alerts(int(job_id))
 
     return jsonify({'received': True})
