@@ -187,8 +187,18 @@ def forgot_password():
     if not email or '@' not in email:
         return jsonify({'error': 'Valid email is required'}), 400
 
+    if not smtp_configured():
+        # Nothing can be delivered; saying "link sent" would strand the user.
+        # This message does not depend on whether the account exists.
+        support = current_app.config.get('SUPPORT_EMAIL') or os.environ.get('SUPPORT_EMAIL')
+        contact = f' Contact {support} to have it reset.' if support else ' Contact the site administrator to have it reset.'
+        return jsonify({
+            'message': 'Password reset by email is not available on this site.' + contact,
+            'email_delivery': False,
+        }), 200
+
     # Same response whether or not the account exists (no enumeration).
-    generic = jsonify({'message': 'If that email exists, a reset link has been sent.'}), 200
+    generic = jsonify({'message': 'If that email exists, a reset link has been sent.', 'email_delivery': True}), 200
 
     db = get_db()
     user = db.execute('SELECT id, name FROM users WHERE lower(email) = ?', (email,)).fetchone()

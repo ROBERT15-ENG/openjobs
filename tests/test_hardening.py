@@ -45,9 +45,10 @@ def test_register_rejects_malformed_payload(client):
     assert client.post('/api/auth/register', json={'name': 'x', 'email': 'a@b.co'}).status_code == 400
 
 
-def test_reset_token_is_stored_hashed(app, client):
-    from email_notifier import SMTP_HOST  # noqa: F401 - ensure module import path works
+def test_reset_token_is_stored_hashed(app, client, monkeypatch):
+    import blueprints.auth as auth_mod
 
+    monkeypatch.setattr(auth_mod, 'smtp_configured', lambda: True)
     client.post('/api/auth/forgot-password', json={'email': 'seeker@test.com'})
     with app.app_context():
         from db import get_db
@@ -395,3 +396,17 @@ def test_radius_search_uses_bounding_box(client):
     assert near['jobs'][0]['distance_km'] == 0.0
     far = client.get('/api/jobs?near=Perth&radius_km=50').get_json()
     assert far['pagination']['total'] == 0
+
+
+def test_forgot_password_is_honest_without_smtp(client, monkeypatch):
+    import blueprints.auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, 'smtp_configured', lambda: False)
+    res = client.post('/api/auth/forgot-password', json={'email': 'seeker@test.com'})
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body['email_delivery'] is False
+    assert 'not available' in body['message']
+    # Still no enumeration: unknown address gets the identical answer.
+    other = client.post('/api/auth/forgot-password', json={'email': 'nobody@test.com'})
+    assert other.get_json() == body
