@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="OpenJobs — AI-powered job matching platform. Browse 70+ remote, hybrid and on-site jobs from top companies. Free to apply, smart recommendations.">
+  <meta name="description" content="OpenJobs — AI-powered job matching platform. Browse remote, hybrid and on-site jobs from companies hiring now. Free to apply, with AI-powered matching.">
   <meta name="keywords" content="jobs,remote jobs,AI job matching,careers,employment,software jobs,tech jobs">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://openjobs.example.com/">
 
   <!-- Open Graph -->
   <meta property="og:title" content="OpenJobs — Matching Skills with Opportunities">
-  <meta property="og:description" content="Browse 70+ jobs from top companies. AI-powered matching, real-time applications, salary insights. Free to get started.">
+  <meta property="og:description" content="Browse jobs from companies hiring now. AI-powered matching, application tracking, salary insights. Free to get started.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://openjobs.example.com/">
   <meta property="og:image" content="https://openjobs.example.com/og-image.png">
@@ -19,7 +19,7 @@
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="OpenJobs — Matching Skills with Opportunities">
-  <meta name="twitter:description" content="Browse 70+ jobs from top companies. AI-powered matching, real-time applications, salary insights.">
+  <meta name="twitter:description" content="Browse jobs from companies hiring now. AI-powered matching, application tracking, salary insights.">
   <meta name="twitter:image" content="https://openjobs.example.com/og-image.png">
 
   <title>OpenJobs — Matching Skills with Opportunities</title>
@@ -429,8 +429,7 @@
       <button class="quick-chip" onclick="setQuickFilter(this, 'full_time')">Full-time</button>
       <button class="quick-chip" onclick="setQuickFilter(this, 'part_time')">Part-time</button>
       <button class="quick-chip" onclick="setQuickFilter(this, 'internship')">Internship</button>
-      <button class="quick-chip" onclick="setQuickFilter(this, 'Nairobi')">Nairobi</button>
-      <button class="quick-chip" onclick="setQuickFilter(this, 'Sydney')">Sydney</button>
+      <button class="quick-chip" onclick="setQuickFilter(this, 'contract')">Contract</button>
     </div>
   </div>
 </section>
@@ -469,24 +468,24 @@
     <div class="filter-card">
       <h3>Work Type</h3>
       <div class="filter-check-group">
-        <label class="filter-check"><input type="checkbox" id="wt-full_time" checked onchange="fetchJobs()"> <span>Full-time</span></label>
-        <label class="filter-check"><input type="checkbox" id="wt-part_time" checked onchange="fetchJobs()"> <span>Part-time</span></label>
-        <label class="filter-check"><input type="checkbox" id="wt-contract" checked onchange="fetchJobs()"> <span>Contract</span></label>
-        <label class="filter-check"><input type="checkbox" id="wt-internship" checked onchange="fetchJobs()"> <span>Internship</span></label>
+        <label class="filter-check"><input type="checkbox" id="wt-full_time" checked onchange="syncChipsToBoxes(); fetchJobs()"> <span>Full-time</span></label>
+        <label class="filter-check"><input type="checkbox" id="wt-part_time" checked onchange="syncChipsToBoxes(); fetchJobs()"> <span>Part-time</span></label>
+        <label class="filter-check"><input type="checkbox" id="wt-contract" checked onchange="syncChipsToBoxes(); fetchJobs()"> <span>Contract</span></label>
+        <label class="filter-check"><input type="checkbox" id="wt-internship" checked onchange="syncChipsToBoxes(); fetchJobs()"> <span>Internship</span></label>
       </div>
     </div>
 
     <div class="filter-card">
       <h3>Work Arrangement</h3>
       <div class="filter-check-group">
-        <label class="filter-check"><input type="checkbox" id="wa-remote" checked onchange="fetchJobs()"> <span>🌎 Remote</span></label>
-        <label class="filter-check"><input type="checkbox" id="wa-onsite" checked onchange="fetchJobs()"> <span>🏢 On-site</span></label>
-        <label class="filter-check"><input type="checkbox" id="wa-hybrid" checked onchange="fetchJobs()"> <span>🔀 Hybrid</span></label>
+        <label class="filter-check"><input type="checkbox" id="wa-remote" checked onchange="syncChipsToBoxes(); fetchJobs()"> <span>🌎 Remote</span></label>
+        <label class="filter-check"><input type="checkbox" id="wa-onsite" checked onchange="syncChipsToBoxes(); fetchJobs()"> <span>🏢 On-site</span></label>
+        <label class="filter-check"><input type="checkbox" id="wa-hybrid" checked onchange="syncChipsToBoxes(); fetchJobs()"> <span>🔀 Hybrid</span></label>
       </div>
     </div>
 
     <div class="filter-card">
-      <h3>Salary Range (AUD)</h3>
+      <h3>Max salary (AUD)</h3>
       <div class="salary-range">
         <input type="range" id="salaryRange" min="0" max="300000" step="10000" value="300000" oninput="updateSalaryLabel(); fetchJobs()">
         <div class="salary-labels">
@@ -496,36 +495,15 @@
     </div>
 
     <div class="filter-card">
-      <h3>More filters</h3>
-      <div class="filter-check-group">
-        <label class="filter-check"><input type="checkbox" id="filterVisa" onchange="fetchJobs()"> <span>🌍 Visa sponsorship</span></label>
-      </div>
-      <div class="filter-group" style="margin-top:0.75rem">
-        <label for="filterCountry">Country</label>
-        <select class="filter-select" id="filterCountry" onchange="fetchJobs()">
-          <option value="">All countries</option>
-          <option value="AU">Australia</option>
-          <option value="SG">Singapore</option>
-          <option value="XX">Remote / Worldwide</option>
-        </select>
-      </div>
+      <h3>Location</h3>
       <div class="filter-group">
         <label for="filterRegion">Region</label>
         <select class="filter-select" id="filterRegion" onchange="fetchJobs()">
-          <option value="">All regions</option>
-          <option value="au-syd">Sydney</option>
-          <option value="au-mel">Melbourne</option>
-          <option value="au-bne">Brisbane</option>
-          <option value="au-per">Perth</option>
-          <option value="sg">Singapore</option>
-          <option value="remote">Remote</option>
+          <option value="">Anywhere</option>
         </select>
       </div>
-    </div>
-
-    <div class="filter-card">
-      <h3>Distance</h3>
       <div class="filter-group">
+        <label for="filterRadius">Distance</label>
         <select class="filter-select" id="filterRadius" onchange="fetchJobs()">
           <option value="">Any distance</option>
           <option value="25">Within 25 km</option>
@@ -533,22 +511,14 @@
           <option value="100">Within 100 km</option>
           <option value="200">Within 200 km</option>
         </select>
-        <p style="font-size:0.75rem;color:var(--text-muted);margin:0.5rem 0 0">Uses city centre when a location is selected</p>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin:0.5rem 0 0" id="radiusHint">Measured from the location you typed above, or the selected region's centre.</p>
       </div>
     </div>
 
     <div class="filter-card">
-      <h3>Location</h3>
-      <div class="filter-group">
-        <select class="filter-select" id="filterLocation" onchange="fetchJobs()">
-          <option value="">All Locations</option>
-          <option value="Nairobi">Nairobi</option>
-          <option value="Sydney">Sydney</option>
-          <option value="Melbourne">Melbourne</option>
-          <option value="Remote">Remote / Global</option>
-          <option value="Lagos">Lagos</option>
-          <option value="USA">USA</option>
-        </select>
+      <h3>More filters</h3>
+      <div class="filter-check-group">
+        <label class="filter-check"><input type="checkbox" id="filterVisa" onchange="fetchJobs()"> <span>🌍 Visa sponsorship</span></label>
       </div>
     </div>
   </aside>
@@ -556,7 +526,7 @@
   <!-- LISTINGS -->
   <div class="listings">
     <div class="listings-header">
-      <div class="results-count"><strong id="resultsCount">69</strong> jobs found</div>
+      <div class="results-count"><strong id="resultsCount">…</strong> jobs found</div>
       <select class="sort-select" id="sortSelect" onchange="fetchJobs()">
         <option value="newest">🕐 Newest First</option>
         <option value="featured">⭐ Featured First</option>
@@ -745,6 +715,7 @@
     }
     renderHeaderAuth();
     loadStats();
+    loadRegions();
     // Deep links: /?q=python&location=Sydney (used by company cards, 404 search, /cad)
     const initial = new URLSearchParams(window.location.search);
     if (initial.get('q')) document.getElementById('searchInput').value = initial.get('q');
@@ -780,15 +751,18 @@
     const category = document.getElementById('filterCategory').value;
     const sort = document.getElementById('sortSelect').value;
     const salaryMax = document.getElementById('salaryRange').value;
-    const locationFilter = document.getElementById('filterLocation').value;
 
-    // Collect checked work types (e.g. full_time, part_time, internship, contract)
-    const workTypes = ['full_time','part_time','internship','contract']
-      .filter(wt => document.getElementById('wt-' + wt)?.checked);
+    const workTypes = WORK_TYPES.filter(wt => document.getElementById('wt-' + wt)?.checked);
+    const workArr  = WORK_ARRANGEMENTS.filter(wa => document.getElementById('wa-' + wa)?.checked);
 
-    // Collect checked work arrangements (remote, onsite, hybrid)
-    const workArr  = ['remote','onsite','hybrid']
-      .filter(wa  => document.getElementById('wa-' + wa)?.checked);
+    // Every box unticked means "nothing", not "everything".
+    if (!workTypes.length || !workArr.length) {
+      const which = !workTypes.length ? 'work type' : 'work arrangement';
+      document.getElementById('jobsList').innerHTML = `<div class="empty-state"><div class="emoji">☑️</div><h3>No ${which} selected</h3><p>Tick at least one ${which} in the sidebar to see jobs.</p></div>`;
+      document.getElementById('resultsCount').textContent = '0';
+      document.getElementById('pagination').innerHTML = '';
+      return;
+    }
 
     let url = `/api/jobs?page=${currentPage}&limit=${PAGE_SIZE}`;
     const headers = {};
@@ -798,21 +772,19 @@
     if (location) url += `&location=${encodeURIComponent(location)}`;
     if (category) url += `&category=${encodeURIComponent(category)}`;
     if (salaryMax && salaryMax < 300000) url += `&max_salary=${salaryMax}`;
-    if (locationFilter) url += `&location=${encodeURIComponent(locationFilter)}`;
-    if (workTypes.length)  url += `&work_type=${workTypes.join(',')}`;
-    if (workArr.length)    url += `&work_arrangement=${workArr.join(',')}`;
+    if (workTypes.length < WORK_TYPES.length) url += `&work_type=${workTypes.join(',')}`;
+    if (workArr.length < WORK_ARRANGEMENTS.length) url += `&work_arrangement=${workArr.join(',')}`;
     if (document.getElementById('filterVisa')?.checked) url += '&visa=1';
-    const country = document.getElementById('filterCountry')?.value;
-    if (country) url += `&country=${encodeURIComponent(country)}`;
     const region = document.getElementById('filterRegion')?.value;
     if (region) url += `&region=${encodeURIComponent(region)}`;
     if (sort) url += `&sort=${encodeURIComponent(sort)}`;
     const radius = document.getElementById('filterRadius')?.value;
-    const nearCity = locationFilter || location;
+    const nearCity = location || (region && REGION_NAMES[region] && region !== 'remote' ? REGION_NAMES[region] : '');
     if (radius && nearCity) {
       url += `&near=${encodeURIComponent(nearCity)}&radius_km=${radius}`;
     }
 
+    document.getElementById('jobsList').setAttribute('aria-busy', 'true');
     fetch(url, { headers })
       .then(r => r.json())
       .then(data => {
@@ -821,7 +793,33 @@
         document.getElementById('resultsCount').textContent = data.pagination?.total || jobs.length;
         renderPagination(data.pagination);
       })
-      .catch(() => renderError());
+      .catch(() => renderError())
+      .finally(() => document.getElementById('jobsList').removeAttribute('aria-busy'));
+  }
+
+  const WORK_TYPES = ['full_time', 'part_time', 'contract', 'internship'];
+  const WORK_ARRANGEMENTS = ['remote', 'onsite', 'hybrid'];
+  const REGION_NAMES = {};
+
+  function loadRegions() {
+    fetch('/api/regions')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        const sel = document.getElementById('filterRegion');
+        if (!d || !d.regions || !sel) return;
+        const entries = Object.entries(d.regions).filter(([, r]) => r.status !== 'inactive');
+        entries.sort((a, b) => (a[1].country + a[1].name).localeCompare(b[1].country + b[1].name));
+        for (const [code, r] of entries) {
+          REGION_NAMES[code] = r.name;
+          const opt = document.createElement('option');
+          opt.value = code;
+          opt.textContent = r.country && r.country !== 'XX' ? `${r.name} (${r.country})` : r.name;
+          sel.appendChild(opt);
+        }
+        const preset = new URLSearchParams(window.location.search).get('region');
+        if (preset && REGION_NAMES[preset]) { sel.value = preset; fetchJobs(); }
+      })
+      .catch(() => {});
   }
 
   // ── RENDER JOBS ──────────────────────────────────────────────────
@@ -1075,21 +1073,32 @@
 
   // ── SEARCH HELPERS ─────────────────────────────────────────────────
   function doSearch() { currentPage = 1; fetchJobs(); }
+  function setChecks(prefix, values, selected) {
+    values.forEach(v => { const el = document.getElementById(prefix + v); if (el) el.checked = selected.includes(v); });
+  }
+
+  // Chips are shortcuts for the sidebar boxes, so the two never disagree.
   function setQuickFilter(btn, value) {
     document.querySelectorAll('.quick-chip').forEach(c => c.classList.remove('active'));
     btn.classList.add('active');
+    setChecks('wt-', WORK_TYPES, WORK_TYPES);
+    setChecks('wa-', WORK_ARRANGEMENTS, WORK_ARRANGEMENTS);
     if (value === 'Remote') {
-      document.getElementById('filterLocation').value = 'Remote';
-    } else if (['full_time','part_time','internship'].includes(value)) {
-      document.getElementById('filterLocation').value = '';
-    } else if (value) {
-      document.getElementById('locationInput').value = value;
-    } else {
-      document.getElementById('locationInput').value = '';
-      document.getElementById('filterLocation').value = '';
+      setChecks('wa-', WORK_ARRANGEMENTS, ['remote']);
+    } else if (WORK_TYPES.includes(value)) {
+      setChecks('wt-', WORK_TYPES, [value]);
     }
     currentPage = 1;
     fetchJobs();
+  }
+
+  function syncChipsToBoxes() {
+    // Sidebar edits deselect a chip that no longer describes the state.
+    const wt = WORK_TYPES.filter(v => document.getElementById('wt-' + v)?.checked);
+    const wa = WORK_ARRANGEMENTS.filter(v => document.getElementById('wa-' + v)?.checked);
+    document.querySelectorAll('.quick-chip').forEach(c => c.classList.remove('active'));
+    const all = wt.length === WORK_TYPES.length && wa.length === WORK_ARRANGEMENTS.length;
+    if (all) document.querySelector('.quick-chip')?.classList.add('active');
   }
   function updateSalaryLabel() {
     const v = document.getElementById('salaryRange').value;
@@ -1098,7 +1107,7 @@
 
   // ── RENDER ERROR ──────────────────────────────────────────────────
   function renderError() {
-    document.getElementById('jobsList').innerHTML = `<div class="empty-state"><div class="emoji">⚠️</div><h3>Could not load jobs</h3><p>Is the server running? <a href="http://localhost:5700/api/jobs" style="color:var(--primary)">Test API</a></p></div>`;
+    document.getElementById('jobsList').innerHTML = `<div class="empty-state"><div class="emoji">⚠️</div><h3>Could not load jobs</h3><p>Please check your connection and <a href="#" onclick="fetchJobs();return false;" style="color:var(--primary)">try again</a>.</p></div>`;
   }
 
   // ── UTILITIES ─────────────────────────────────────────────────────
