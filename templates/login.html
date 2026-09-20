@@ -210,7 +210,23 @@
 
 <script>
   let selectedRole = 'seeker';
-  const redirectAfterLogin = new URLSearchParams(window.location.search).get('redirect') || '';
+
+  // Only same-origin paths are honoured, so a crafted link cannot bounce a
+  // freshly signed-in user to another site.
+  function safeRedirect(raw) {
+    if (!raw) return '';
+    try {
+      const url = new URL(raw, window.location.origin);
+      if (url.origin !== window.location.origin) return '';
+      if (!url.pathname.startsWith('/') || url.pathname.startsWith('//')) return '';
+      return url.pathname + url.search + url.hash;
+    } catch { return ''; }
+  }
+  const redirectAfterLogin = safeRedirect(new URLSearchParams(window.location.search).get('redirect'));
+
+  function homeFor(role) {
+    return role === 'admin' ? '/admin' : role === 'employer' ? '/employer' : '/user';
+  }
 
   function setRole(role) {
     selectedRole = role;
@@ -267,14 +283,18 @@
         } else if (data.token) {
           sessionStorage.setItem('token', data.token);
         }
+        // Route by the role the server reports, never by the tab the user clicked.
         const role = data.user?.role || 'user';
-        let redirectUrl = redirectAfterLogin || '/user';
-        if (!redirectAfterLogin) {
-          if (selectedRole === 'employer' || role === 'employer') redirectUrl = '/employer';
-          else if (role === 'admin') redirectUrl = '/admin';
+        let redirectUrl = redirectAfterLogin || homeFor(role);
+        // Do not send a seeker into the employer console (or vice versa) via a stale redirect.
+        if (redirectUrl.startsWith('/employer') && role !== 'employer' && role !== 'admin') redirectUrl = homeFor(role);
+        if (redirectUrl.startsWith('/admin') && role !== 'admin') redirectUrl = homeFor(role);
+        if (selectedRole === 'employer' && role === 'user') {
+          showAlert('success', 'Signed in. This is a job-seeker account, so we are taking you to your dashboard.');
+        } else {
+          showAlert('success', 'Login successful! Redirecting...');
         }
-        showAlert('success', 'Login successful! Redirecting...');
-        setTimeout(() => window.location.href = redirectUrl, 600);
+        setTimeout(() => window.location.href = redirectUrl, selectedRole === 'employer' && role === 'user' ? 1800 : 600);
       } else if (data.error === 'email_not_confirmed') {
         showAlert('error', data.message || 'Please confirm your email before logging in.');
         btn.disabled = false;
