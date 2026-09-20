@@ -96,8 +96,9 @@ def apply_job():
         return jsonify({'error': 'You have already applied to this job', 'application_id': existing['id']}), 409
 
     if not cover_letter and auto_cover and user:
-        if not resume_text:
-            # A templated letter with nothing behind it is an empty application.
+        if not (data.get('resume_text') or '').strip() and not (user['resume_text'] or '').strip():
+            # Quick apply with no real résumé (a bare skills list is not one) and a
+            # templated letter would hand the employer an empty application.
             return jsonify({
                 'error': 'Add a résumé to your profile or write a cover letter before applying.',
                 'code': 'no_resume',
@@ -108,7 +109,8 @@ def apply_job():
     applicant = dict(user) if user else None
     employer = None
     if job.get('employer_id'):
-        employer = db.execute('SELECT name, email FROM users WHERE id = ?', (job['employer_id'],)).fetchone()
+        employer_row = db.execute('SELECT name, email FROM users WHERE id = ?', (job['employer_id'],)).fetchone()
+        employer = dict(employer_row) if employer_row else None
 
     try:
         from ats_util import compute_ats_score
