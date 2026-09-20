@@ -109,4 +109,5 @@ Quick gates:
 
 - SQLite is fine for early production; migrate to PostgreSQL before high traffic.
 - Logout is persisted (`revoked_tokens` table keyed by JWT `jti`), so it works across workers and restarts.
-- Payments are demo mode until `STRIPE_SECRET_KEY` is configured.
+- Payments are off until `STRIPE_SECRET_KEY` is configured: listings publish free and the employer UI says so. Once the key is set, every employer listing is held as `pending_payment` until the Stripe webhook (`STRIPE_WEBHOOK_SECRET`) confirms payment, so the webhook endpoint `/api/payment/webhook` must be reachable from Stripe before you enable the key.
+- Set `SUPPORT_EMAIL` if SMTP is not configured; it is shown to users who ask for a password reset.

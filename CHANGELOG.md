@@ -4,6 +4,24 @@ All notable changes to the OpenJobs platform are documented in this file.
 
 ---
 
+## v2.7.0 — UX audit: High-severity fixes
+
+**Tests:** `pytest tests/ -q` (117 tests; `tests/test_ux_high.py` covers the items below)
+
+| Finding | Fix |
+|---------|-----|
+| No way to sign out from the seeker or admin dashboards | Sign-out buttons on both; home header shows Dashboard / Sign out to members and clears expired tokens; a 401 on the dashboard sends the user to login instead of a dead-end error |
+| One-click "Apply Now" silently submitted empty applications | Home modal shows a confirmation stating exactly what will be sent; without a saved résumé it hands off to the full apply form; the API refuses an auto-generated letter with no résumé behind it (`400 no_resume`). Job page shows "Application sent" state instead of letting you re-apply into a 409 |
+| Headline, Bio, Desired Role, Expected Salary, Work Type and Remote Preference were never saved | New `users` columns (`headline`, `bio`, `desired_role`, `expected_salary`, `pref_work_type`, `pref_remote`) added by migration; API and dashboard wired; profile completion is computed from real data; fake default skills removed |
+| Employer listings went live before payment; Standard plan never charged | With `STRIPE_SECRET_KEY` set, every employer listing is stored as `pending_payment` (hidden, no alert emails) and published by the Stripe webhook; "Complete payment" button in My Listings; pricing copy reflects whether payments are on; new `jobs.plan` column. Without a key the site is explicitly free. Admin posts always publish |
+| Forgot-password claimed "link sent" with no SMTP | Returns an honest, non-enumerating message (with `SUPPORT_EMAIL` if set) and `email_delivery: false` |
+| Login tab misrouted seekers to `/employer`; `?redirect=` allowed off-site targets | Routing uses the server-reported role only; redirect must be a same-origin path |
+| Unbranded Flask 404; missing job showed the apply form | `templates/error.html` for 404/403/405/429/500 on HTML routes (API stays JSON); `/jobs/<bad id>` is a real 404; `/?q=` deep links now work (company cards, 404 search, `/cad`) |
+
+Also fixed: employer "new application" email was never sent (`sqlite3.Row.get` error swallowed as a warning).
+
+---
+
 ## v2.6.0 — Production hardening
 
 **Tests:** `pytest tests/ -q` (104 tests; `tests/test_hardening.py` covers each item below)

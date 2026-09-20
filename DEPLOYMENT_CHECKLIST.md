@@ -21,7 +21,8 @@ Use this before and after every production deploy. Pair with [PRODUCTION.md](./P
 - [ ] **Host** chosen (Railway / Render / Fly.io / VPS)
 - [ ] **Persistent disk** for SQLite + uploads (not ephemeral container FS)
 - [ ] **Email provider** chosen (SendGrid, Mailgun, SES, etc.)
-- [ ] **Stripe** — demo mode OK for launch? (posting stays free without keys)
+- [ ] **Stripe** — free mode OK for launch? (posting stays free without keys; with keys, listings stay hidden until the webhook confirms payment, so register the webhook first)
+- [ ] **SUPPORT_EMAIL** set if SMTP is not configured (shown on the forgot-password page)
 
 ---
 
