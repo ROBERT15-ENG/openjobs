@@ -127,7 +127,7 @@
     <div class="nav-item" onclick="switchTab('users')"><span class="icon">👥</span> Users</div>
     <div class="nav-item" onclick="switchTab('reports')"><span class="icon">🚩</span> Reports</div>
     <div class="nav-item" onclick="switchTab('analytics')"><span class="icon">📈</span> Analytics</div>
-    <div class="nav-item" onclick="switchTab('settings')"><span class="icon">⚙️</span> Settings</div>
+    <div class="nav-item" onclick="switchTab('settings')"><span class="icon">⚙️</span> Operations</div>
   </aside>
 
   <!-- CONTENT -->
@@ -326,39 +326,34 @@
 
     <!-- ── SETTINGS ── -->
     <div class="tab-content" id="tab-settings">
-      <h2 class="page-title">System Settings</h2>
-      <p class="page-sub">Configure platform-wide settings.</p>
+      <h2 class="page-title">Operations</h2>
+      <p class="page-sub">Email delivery, job alerts and data export. Platform configuration lives in environment variables (see PRODUCTION.md).</p>
+
       <div class="card">
-        <div class="card-title">🔧 Platform Configuration</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem;">
-          <div>
-            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.3rem">Platform Name</div>
-            <input type="text" class="search-input" value="OpenJobs" style="width:100%">
-          </div>
-          <div>
-            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.3rem">Contact Email</div>
-            <input type="email" class="search-input" value="admin@openjobs.com" style="width:100%">
-          </div>
-          <div>
-            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.3rem">Max Jobs per Employer</div>
-            <input type="number" class="search-input" value="10" style="width:100%">
-          </div>
-          <div>
-            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.3rem">Auto-approve Jobs</div>
-            <select class="search-input" style="width:100%;cursor:pointer">
-              <option>Yes — Auto-publish</option>
-              <option>No — Manual review</option>
-            </select>
-          </div>
+        <div class="card-title">📧 Email outbox</div>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin:0.5rem 0 1rem">Mail is queued here and delivered by the background drainer / cron. Failed rows are retried; use "Deliver now" after fixing SMTP settings.</p>
+        <div id="outboxCounts" style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem"><span style="color:var(--text-muted);font-size:0.85rem">Loading…</span></div>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="drainOutbox()" id="drainBtn">📨 Deliver now</button>
+          <button class="btn btn-ghost" onclick="loadOutbox()">↻ Refresh</button>
         </div>
-        <button class="btn btn-primary" style="margin-top:1.25rem" onclick="alert('Settings saved!')">💾 Save Settings</button>
+        <div id="outboxFailures" style="margin-top:1rem"></div>
       </div>
+
       <div class="card">
-        <div class="card-title">🗄 Database</div>
+        <div class="card-title">🔔 Job alerts</div>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin:0.5rem 0 1rem">Matches jobs posted in the last 24 hours against seekers' saved alerts and queues the emails. Normally run by cron; trigger it here after a bulk import.</p>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-ghost" onclick="runJobAlerts(true)">🔍 Preview (dry run)</button>
+          <button class="btn btn-primary" onclick="runJobAlerts(false)">🚀 Run now</button>
+          <span id="alertsRunResult" style="font-size:0.85rem;color:var(--text-muted)"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🗄 Data</div>
         <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:1rem">
-          <button class="btn btn-ghost" onclick="exportApplications()">📦 Export Applications (CSV)</button>
-          <button class="btn btn-ghost" onclick="alert('Restore feature coming soon')">♻️ Import Data</button>
-          <button class="btn btn-danger" onclick="if(confirm('Clear all applications? This cannot be undone.')) alert('Feature coming soon')">🗑 Clear Applications</button>
+          <button class="btn btn-ghost" onclick="exportApplications()">📦 Export applications (CSV)</button>
         </div>
       </div>
     </div>
@@ -404,8 +399,13 @@
     }
     try {
       const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        clearSession();
+        window.location.href = '/login?redirect=' + encodeURIComponent('/admin');
+        return false;
+      }
       if (payload.role !== 'admin') {
-        window.location.href = '/user';
+        window.location.href = payload.role === 'employer' ? '/employer' : '/user';
         return false;
       }
     } catch {
@@ -434,12 +434,13 @@
     const idx = names.indexOf(name);
     if (idx >= 0 && navItems[idx]) navItems[idx].classList.add('active');
     if (name === 'reports') loadReports();
+    if (name === 'settings') loadOutbox();
     window.scrollTo({top: 0, behavior: 'smooth'});
   }
 
   function loadStats() {
     fetch('/api/admin/stats', { headers: authHeaders() })
-      .then(r => r.json())
+      .then(r => { if (r.status === 401) { clearSession(); window.location.href = '/login?redirect=' + encodeURIComponent('/admin'); throw new Error('auth'); } return r.json(); })
       .then(d => {
         const s = d.summary || {};
         document.getElementById('sJobs').textContent    = s.total_jobs || 0;
@@ -485,7 +486,7 @@
 
     // Fill analytics tab insights
     fetch('/api/admin/stats', { headers: authHeaders() })
-      .then(r => r.json())
+      .then(r => { if (r.status === 401) { clearSession(); window.location.href = '/login?redirect=' + encodeURIComponent('/admin'); throw new Error('auth'); } return r.json(); })
       .then(d => {
         // Top employer
         const te = (d.top_employers || [])[0];
@@ -604,13 +605,36 @@
   }
 
   function loadJobs() {
-    fetch('/api/jobs?limit=100')
-      .then(r => r.json())
+    fetch('/api/admin/jobs?limit=500', { headers: authHeaders() })
+      .then(r => { if (r.status === 401 || r.status === 403) { ensureAdmin(); throw new Error('auth'); } return r.json(); })
       .then(d => {
         allJobs = d.jobs || [];
         renderJobsTable(allJobs);
       })
       .catch(() => renderJobsTable([]));
+  }
+
+  function jobStatusBadge(j) {
+    if (j.moderation_status === 'removed') return '<span class="badge badge-inactive">Removed</span>';
+    if (j.moderation_status === 'pending_payment') return '<span class="badge badge-pending">Awaiting payment</span>';
+    return j.is_active ? '<span class="badge badge-active">Live</span>' : '<span class="badge badge-inactive">Inactive</span>';
+  }
+
+  async function moderateJob(id, action) {
+    const verbs = { deactivate: 'Take this listing down? Employers cannot re-enable it until an admin reactivates it.', reactivate: 'Publish this listing again?' };
+    if (verbs[action] && !confirm(verbs[action])) return;
+    try {
+      const res = await fetch('/api/admin/jobs/bulk', {
+        method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ ids: [id], action }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Failed');
+      showAlert('jobAlert', 'success', action === 'deactivate' ? 'Listing taken down.' : 'Listing is live again.');
+      loadJobs();
+    } catch (e) {
+      showAlert('jobAlert', 'error', e.message);
+    }
   }
 
   function renderJobsTable(jobs) {
@@ -627,10 +651,13 @@
         <td>${escHtml(j.location)}</td>
         <td style="color:var(--primary);font-weight:600">${salary || 'TBD'}</td>
         <td>${escHtml(j.category || '—')}</td>
-        <td><span class="badge badge-active">${j.is_active !== 0 ? 'Active' : 'Inactive'}</span></td>
-        <td>
-          <button class="btn-sm" onclick="window.open('/job.html?id=${j.id}','_blank')">👁 View</button>
-          <button class="btn-sm danger" onclick="deleteJob(${j.id})">🗑</button>
+        <td>${jobStatusBadge(j)}</td>
+        <td style="white-space:nowrap">
+          ${j.is_active ? `<button class="btn-sm" onclick="window.open('/jobs/${j.id}','_blank')">👁 View</button>` : ''}
+          ${j.is_active
+            ? `<button class="btn-sm" onclick="moderateJob(${j.id}, 'deactivate')">⏸ Take down</button>`
+            : `<button class="btn-sm" onclick="moderateJob(${j.id}, 'reactivate')">▶ Publish</button>`}
+          <button class="btn-sm danger" onclick="deleteJob(${j.id})" aria-label="Delete job">🗑</button>
         </td>
       </tr>`;
     }).join('');
@@ -641,7 +668,7 @@
     const status = document.getElementById('jobStatusFilter').value;
     const filtered = allJobs.filter(j => {
       const matchQ = !q || j.title.toLowerCase().includes(q) || (j.company||'').toLowerCase().includes(q) || (j.location||'').toLowerCase().includes(q);
-      const matchStatus = !status || (status === 'active' && j.is_active !== 0) || (status === 'inactive' && j.is_active === 0);
+      const matchStatus = !status || (status === 'active' && j.is_active) || (status === 'inactive' && !j.is_active);
       return matchQ && matchStatus;
     });
     renderJobsTable(filtered);
@@ -784,7 +811,6 @@
         <td class="muted">${escHtml(u.skills || '—')}</td>
         <td class="muted">${timeSince(u.created_at)}</td>
         <td>
-          <button class="btn-sm" onclick="alert('Edit coming soon')">✏️</button>
           ${u.role !== 'admin' ? '<button class="btn-sm danger" onclick="deleteUser(' + u.id + ')">🗑</button>' : ''}
         </td>
       </tr>`;
@@ -815,8 +841,76 @@
     if (days < 30) return days + 'd ago';
     return Math.floor(days/30) + 'mo ago';
   }
+  // ── Operations: email outbox + job alerts ──
+  async function loadOutbox() {
+    const counts = document.getElementById('outboxCounts');
+    const failures = document.getElementById('outboxFailures');
+    try {
+      const res = await fetch('/api/admin/email/outbox', { headers: authHeaders() });
+      if (res.status === 401 || res.status === 403) { ensureAdmin(); return; }
+      const d = await res.json();
+      const c = d.counts || {};
+      const pill = (label, n, color) => `<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:0.6rem 1rem;min-width:110px"><div style="font-size:1.25rem;font-weight:800;color:${color}">${n || 0}</div><div style="font-size:0.75rem;color:var(--text-muted)">${label}</div></div>`;
+      counts.innerHTML = pill('Pending', c.pending, 'var(--warning)') + pill('Sent', c.sent, 'var(--success)') + pill('Failed', c.failed, 'var(--error)') + pill('Sending', c.sending, 'var(--info)');
+      const rows = d.recent_failures || [];
+      failures.innerHTML = rows.length
+        ? '<div class="table-wrap"><table><thead><tr><th>To</th><th>Subject</th><th>Attempts</th><th>Last error</th></tr></thead><tbody>' +
+          rows.map(r => `<tr><td>${escHtml(r.to_email)}</td><td>${escHtml(r.subject)}</td><td>${r.attempts}</td><td style="color:var(--error);font-size:0.8rem">${escHtml(r.last_error || '')}</td></tr>`).join('') +
+          '</tbody></table></div>'
+        : '<p style="font-size:0.85rem;color:var(--text-muted)">No failed deliveries.</p>';
+    } catch {
+      counts.innerHTML = '<span style="color:var(--error);font-size:0.85rem">Could not load outbox.</span>';
+    }
+  }
+
+  async function drainOutbox() {
+    const btn = document.getElementById('drainBtn');
+    btn.disabled = true; btn.textContent = 'Delivering…';
+    try {
+      const res = await fetch('/api/admin/email/drain', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: '{}' });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Drain failed');
+      showToast(`Delivered ${d.sent ?? 0}, failed ${d.failed ?? 0}, skipped ${d.skipped ?? 0}.`);
+    } catch (e) {
+      showToast(e.message === 'SMTP not configured' ? 'SMTP is not configured on this server, so nothing can be delivered. Set SMTP_HOST/USER/PASS.' : e.message, true);
+    }
+    btn.disabled = false; btn.textContent = '📨 Deliver now';
+    loadOutbox();
+  }
+
+  async function runJobAlerts(dryRun) {
+    const out = document.getElementById('alertsRunResult');
+    out.textContent = dryRun ? 'Previewing…' : 'Running…';
+    try {
+      const res = await fetch('/api/admin/job-alerts/run', {
+        method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ since_hours: 24, dry_run: dryRun }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Failed');
+      const matched = d.jobs_matched ?? 0;
+      const sent = d.emails_sent ?? 0;
+      out.textContent = dryRun ? `${matched} job match(es) across active alerts; nothing sent.` : `${sent} alert email(s) queued, ${matched} job match(es).`;
+    } catch (e) { out.textContent = '⚠️ ' + e.message; }
+  }
+
+  function showToast(msg, isError) {
+    let el = document.getElementById('adminToast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'adminToast';
+      el.style.cssText = 'position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:0.75rem 1.25rem;font-size:0.875rem;z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,0.4);max-width:90vw';
+      document.body.appendChild(el);
+    }
+    el.style.borderColor = isError ? 'var(--error)' : 'var(--primary)';
+    el.textContent = msg;
+    el.style.display = 'block';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.display = 'none'; }, 5000);
+  }
+
   async function exportApplications() {
-    const token = localStorage.getItem('token');
+    const token = getToken();
     if (!token) { alert('Please sign in as admin.'); return; }
     try {
       const res = await fetch('/api/admin/export/applications', {

@@ -181,6 +181,21 @@ def email_outbox_drain():
     return jsonify({'success': True, **drain_outbox(limit=limit)})
 
 
+@admin_bp.route('/api/admin/jobs', methods=['GET'])
+@require_role('admin')
+def list_all_jobs():
+    """Every listing regardless of state, for moderation (public /api/jobs hides inactive ones)."""
+    db = get_db()
+    limit = max(1, min(1000, request.args.get('limit', 500, type=int)))
+    rows = db.execute(
+        """SELECT id, title, company, location, category, work_type, salary_min, salary_max, salary_currency,
+                  is_active, is_featured, moderation_status, plan, employer_id, view_count, created_at
+           FROM jobs ORDER BY created_at DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return jsonify({'jobs': [dict(row) for row in rows], 'total': db.execute('SELECT COUNT(*) FROM jobs').fetchone()[0]})
+
+
 @admin_bp.route('/api/admin/jobs/bulk', methods=['POST'])
 @require_role('admin')
 def bulk_jobs():
