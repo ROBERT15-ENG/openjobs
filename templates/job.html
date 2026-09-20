@@ -137,6 +137,9 @@
       .apply-card .btn-apply { position: fixed; bottom: 16px; left: 16px; right: 16px; width: auto; z-index: 100; box-shadow: 0 -4px 24px rgba(0,0,0,0.5); }
       .apply-card { padding-bottom: 80px; }
     }
+    .modal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; padding: 1.5rem; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; width: 100%; max-width: 480px; padding: 1.5rem; }
   </style>
 </head>
 <body>
@@ -213,17 +216,11 @@
         <div class="alert alert-error" id="alertError"></div>
         <div class="alert alert-success" id="alertSuccess"></div>
 
-        <div class="form-group">
-          <label class="form-label">Full Name</label>
-          <input type="text" class="form-input" id="appName" placeholder="Your full name">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Email Address</label>
-          <input type="email" class="form-input" id="appEmail" placeholder="you@example.com">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Phone (optional)</label>
-          <input type="tel" class="form-input" id="appPhone" placeholder="+254 700 000 000">
+        <div class="form-group" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:0.75rem 1rem">
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.2rem">Applying as</div>
+          <div style="font-weight:600" id="applicantName">…</div>
+          <div style="font-size:0.85rem;color:var(--text-muted)" id="applicantEmail"></div>
+          <a href="/user#profile" style="font-size:0.8rem;color:var(--primary)">Edit contact details in your profile →</a>
         </div>
 
         <!-- File Upload -->
@@ -254,6 +251,32 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="reportModal" onclick="if(event.target===this)closeReport()">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+    <div class="apply-title" id="reportTitle">🚩 Report this listing</div>
+    <p style="color:var(--text-muted);font-size:0.85rem;margin:0.25rem 0 1rem">Tell us what's wrong. Reports are reviewed by moderators and are anonymous to the employer.</p>
+    <div class="form-group">
+      <label class="form-label" for="reportReason">Reason</label>
+      <select class="form-input" id="reportReason">
+        <option value="misleading">Misleading or inaccurate</option>
+        <option value="spam">Spam or scam</option>
+        <option value="discrimination">Discriminatory</option>
+        <option value="expired">No longer available</option>
+        <option value="other">Something else</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="reportDetails">Details (optional)</label>
+      <textarea class="form-textarea" id="reportDetails" maxlength="1000" placeholder="Anything that helps us check this quickly"></textarea>
+    </div>
+    <div style="display:flex;gap:0.75rem;justify-content:flex-end;align-items:center">
+      <span id="reportMsg" style="font-size:0.85rem;margin-right:auto"></span>
+      <button class="btn-save" onclick="closeReport()">Cancel</button>
+      <button class="btn-apply" id="reportSubmit" style="width:auto;padding:0.6rem 1.2rem" onclick="submitReport()">Send report</button>
+    </div>
+  </div>
+</div>
+
 <footer>
   <p>OpenJobs — AI-Powered Job Matching · © 2026</p>
   <p style="margin-top:0.5rem"><a href="/terms" style="color:var(--text-muted)">Terms</a> · <a href="/privacy" style="color:var(--text-muted)">Privacy</a> · <a href="/cookies" style="color:var(--text-muted)">Cookies</a></p>
@@ -266,6 +289,7 @@
   const jobId = (pathMatch && pathMatch[1]) || params.get('id') || {% if job %}{{ job.id }}{% else %}null{% endif %};
 
   let currentJob = null;
+  let profileHasResume = false;
 
   function getToken() {
     return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
@@ -321,10 +345,10 @@
         .then(r => r.ok ? r.json() : null)
         .then(profile => {
           if (profile && !profile.error) {
-            if (profile.name) document.getElementById('appName').value = profile.name;
-            if (profile.email) document.getElementById('appEmail').value = profile.email;
-            if (profile.phone) document.getElementById('appPhone').value = profile.phone;
+            document.getElementById('applicantName').textContent = profile.name || 'Your account';
+            document.getElementById('applicantEmail').textContent = [profile.email, profile.phone].filter(Boolean).join(' · ');
             if ((profile.resume_text || '').trim()) {
+              profileHasResume = true;
               document.getElementById('fileLabel').innerHTML =
                 'Drag & drop or <strong>browse</strong> to replace<br><span style="font-size:0.75rem;color:var(--text-dim)">Leave empty to use the résumé saved on your profile</span>';
             }
@@ -457,14 +481,13 @@
       return;
     }
 
-    const name  = document.getElementById('appName').value.trim();
-    const email = document.getElementById('appEmail').value.trim();
     const cover = document.getElementById('coverLetter').value.trim();
     const fileInput = document.getElementById('resumeFile');
     const file = fileInput && fileInput.files[0];
-
-    if (!name || !email) { showAlert('error', 'Please fill in your name and email'); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showAlert('error', 'Please enter a valid email address'); return; }
+    if (!file && !cover && !profileHasResume) {
+      showAlert('error', 'Upload a résumé or write a short cover letter so the employer has something to read.');
+      return;
+    }
 
     const btn = document.getElementById('applyBtn');
     btn.disabled = true;
@@ -592,19 +615,39 @@
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
-  async function reportJob() {
+  function reportJob() {
     if (!currentJob) return;
-    const reason = prompt('Why are you reporting this job? (spam, misleading, discrimination, expired, other)', 'misleading');
-    if (!reason) return;
+    document.getElementById('reportModal').classList.add('open');
+    document.getElementById('reportDetails').value = '';
+    document.getElementById('reportMsg').textContent = '';
+    document.getElementById('reportReason').focus();
+  }
+  function closeReport() { document.getElementById('reportModal').classList.remove('open'); }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeReport(); });
+  async function submitReport() {
+    const reason = document.getElementById('reportReason').value;
+    const details = document.getElementById('reportDetails').value.trim();
+    const msg = document.getElementById('reportMsg');
+    const btn = document.getElementById('reportSubmit');
     const headers = { 'Content-Type': 'application/json' };
     const token = getToken();
     if (token) headers['Authorization'] = 'Bearer ' + token;
-    const res = await fetch('/api/jobs/' + currentJob.id + '/report', {
-      method: 'POST', headers,
-      body: JSON.stringify({ reason: reason.toLowerCase(), details: '' }),
-    });
-    const data = await res.json().catch(() => ({}));
-    alert(res.ok ? (data.message || 'Report submitted.') : (data.error || 'Could not submit report.'));
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/jobs/' + currentJob.id + '/report', {
+        method: 'POST', headers, body: JSON.stringify({ reason, details }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        msg.style.color = 'var(--success)';
+        msg.textContent = data.message || 'Thanks — our team will review this listing.';
+        setTimeout(closeReport, 1800);
+      } else {
+        msg.style.color = 'var(--error)';
+        msg.textContent = data.error || 'Could not submit report.';
+      }
+    } catch { msg.style.color = 'var(--error)'; msg.textContent = 'Network error. Try again.'; }
+    btn.disabled = false;
   }
 
   function showError(msg) {
