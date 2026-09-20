@@ -131,7 +131,8 @@
     .skill-tag { display: flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.6rem; border-radius: 6px; background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.25); color: var(--primary); font-size: 0.78rem; font-weight: 600; }
     .skill-tag button { background: none; border: none; color: inherit; cursor: pointer; font-size: 0.9rem; padding: 0; line-height: 1; opacity: 0.7; }
     .skill-tag button:hover { opacity: 1; }
-    .skill-add { border: 1px dashed var(--border); border-radius: 6px; padding: 0.25rem 0.6rem; color: var(--text-muted); font-size: 0.78rem; cursor: pointer; background: none; font-family: 'Inter', sans-serif; }
+    .skill-add { border: 1px dashed var(--border); border-radius: 6px; padding: 0.25rem 0.6rem; color: var(--text); font-size: 0.78rem; background: none; font-family: 'Inter', sans-serif; min-width: 170px; }
+    .skill-add:focus { outline: none; border-style: solid; border-color: var(--primary); }
     .skill-add:hover { border-color: var(--primary); color: var(--primary); }
 
     .btn-save-profile { background: var(--primary); color: #000; border: none; padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 700; cursor: pointer; transition: all 0.2s; font-family: 'Inter', sans-serif; }
@@ -389,7 +390,10 @@
     <div class="card">
       <div class="card-header"><div class="card-title">🛠 Skills</div></div>
       <div class="skill-tags-input" id="skillsContainer">
-        <button class="skill-add" onclick="addSkillPrompt()">+ Add skill</button>
+        <input class="skill-add" id="skillInput" type="text" list="skillSuggestions" placeholder="+ Add skill, press Enter" maxlength="60" aria-label="Add a skill" onkeydown="if(event.key==='Enter'){event.preventDefault();addSkillFromInput();} else if(event.key===',' ){event.preventDefault();addSkillFromInput();}" onblur="addSkillFromInput()">
+        <datalist id="skillSuggestions">
+          <option value="Python"><option value="JavaScript"><option value="TypeScript"><option value="React"><option value="Node.js"><option value="SQL"><option value="AWS"><option value="Docker"><option value="Kubernetes"><option value="Java"><option value="Go"><option value="Figma"><option value="Project management"><option value="Data analysis"><option value="Excel"><option value="Customer service">
+        </datalist>
       </div>
       <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem" id="skillsHint">No skills yet. Add the tools and technologies you work with; they drive your job matches.</p>
     </div>
@@ -873,13 +877,16 @@
     skills = skills.filter(s => s !== skill);
     renderSkillTags();
   }
-  function addSkillPrompt() {
-    const skill = prompt('Enter a skill:');
-    const clean = (skill || '').trim();
+  function addSkillFromInput() {
+    const input = document.getElementById('skillInput');
+    const clean = (input.value || '').replace(/,$/, '').trim();
+    input.value = '';
     if (!clean) return;
-    if (skills.some(s => s.toLowerCase() === clean.toLowerCase())) return;
-    skills.push(clean);
-    renderSkillTags();
+    if (!skills.some(s => s.toLowerCase() === clean.toLowerCase())) {
+      skills.push(clean);
+      renderSkillTags();
+    }
+    input.focus();
   }
 
   function parseSalary(text) {
