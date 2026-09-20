@@ -277,11 +277,12 @@
 
       if (res.ok && data.success) {
         // Prefer httpOnly oj_session cookie; keep localStorage for legacy pages.
-        if (data.token) localStorage.setItem('token', data.token);
-        if (document.getElementById('remember').checked) {
-          sessionStorage.removeItem('token');
-        } else if (data.token) {
-          sessionStorage.setItem('token', data.token);
+        if (data.token) {
+          // "Keep me signed in" decides where the token lives: localStorage survives
+          // closing the browser, sessionStorage is cleared with the tab.
+          const remember = document.getElementById('remember').checked;
+          localStorage.removeItem('token'); localStorage.removeItem('oj_employer_tok'); sessionStorage.removeItem('token');
+          (remember ? localStorage : sessionStorage).setItem('token', data.token);
         }
         // Route by the role the server reports, never by the tab the user clicked.
         const role = data.user?.role || 'user';

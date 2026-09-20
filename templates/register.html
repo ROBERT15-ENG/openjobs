@@ -186,7 +186,7 @@
         <div class="form-group">
           <label class="form-label">Password</label>
           <div class="input-group">
-            <input type="password" class="form-input" id="password" placeholder="Min. 8 characters" required minlength="8" style="padding-right: 3rem;" oninput="checkStrength()">
+            <input type="password" class="form-input" id="password" placeholder="8+ characters, upper &amp; lower case, a number" required minlength="8" autocomplete="new-password" style="padding-right: 3rem;" oninput="checkStrength()">
             <button type="button" class="toggle-pass" onclick="togglePassword()">Show</button>
           </div>
           <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
@@ -232,22 +232,27 @@
     else { inp.type = 'password'; btn.textContent = 'Show'; }
   }
 
+  // Mirrors api/password_util.validate_password so the form never accepts what the server rejects.
+  const PASSWORD_RULES = [
+    { test: pw => pw.length >= 8, label: '8+ characters' },
+    { test: pw => /[A-Z]/.test(pw), label: 'an uppercase letter' },
+    { test: pw => /[a-z]/.test(pw), label: 'a lowercase letter' },
+    { test: pw => /[0-9]/.test(pw), label: 'a number' },
+  ];
+  function passwordProblems(pw) { return PASSWORD_RULES.filter(r => !r.test(pw)).map(r => r.label); }
+
   function checkStrength() {
     const pw = document.getElementById('password').value;
     const fill = document.getElementById('strengthFill');
     const label = document.getElementById('strengthLabel');
-    let score = 0;
-    if (pw.length >= 8) score++;
-    if (/[A-Z]/.test(pw)) score++;
-    if (/[0-9]/.test(pw)) score++;
-    if (/[^A-Za-z0-9]/.test(pw)) score++;
-    const colors = ['#ef4444','#f59e0b','#eab308','#22c55e'];
-    const labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
-    const widths = ['0%','25%','50%','75%','100%'];
-    fill.style.width = widths[score];
-    fill.style.background = colors[score] || '#ef4444';
-    label.textContent = labels[score] || '';
-    label.style.color = colors[score] || 'var(--text-muted)';
+    const missing = passwordProblems(pw);
+    const met = PASSWORD_RULES.length - missing.length;
+    const colors = ['#ef4444','#ef4444','#f59e0b','#eab308','#22c55e'];
+    fill.style.width = (met / PASSWORD_RULES.length * 100) + '%';
+    fill.style.background = colors[met];
+    if (!pw) { label.textContent = ''; return; }
+    label.textContent = missing.length ? 'Still needs: ' + missing.join(', ') : 'Meets all requirements';
+    label.style.color = missing.length ? 'var(--text-muted)' : '#22c55e';
   }
 
   function showAlert(type, msg) {
@@ -283,7 +288,8 @@
     if (!first || !last || !email || !password || !roleType) { showAlert('error', 'Please fill in all fields'); return; }
     if (isEmployer && !company) { showAlert('error', 'Company name is required for employer accounts'); return; }
     if (password !== confirm) { showAlert('error', 'Passwords do not match'); return; }
-    if (password.length < 8) { showAlert('error', 'Password must be at least 8 characters'); return; }
+    const missing = passwordProblems(password);
+    if (missing.length) { showAlert('error', 'Password needs ' + missing.join(', ')); return; }
 
     btn.disabled = true;
     btn.textContent = 'Creating account...';

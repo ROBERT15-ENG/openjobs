@@ -472,6 +472,7 @@
       <div class="modal-title" id="editModalTitle">✏️ Edit Job</div>
       <button class="modal-close" onclick="closeEditModal()" aria-label="Close edit job dialog">×</button>
     </div>
+    <div id="editAlert" role="alert" style="display:none;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:#f87171;border-radius:10px;padding:0.7rem 0.9rem;font-size:0.85rem;margin-bottom:1rem"></div>
     <form id="editJobForm" onsubmit="handleEditJob(event)">
       <input type="hidden" id="editJobId">
       <div class="form-grid">
@@ -582,7 +583,7 @@
 
   // ── AUTH HELPERS ────────────────────────────────────────────────────────────
 
-  function getToken() { return localStorage.getItem(AUTH_KEY) || localStorage.getItem('oj_employer_tok'); }
+  function getToken() { return localStorage.getItem(AUTH_KEY) || sessionStorage.getItem(AUTH_KEY) || localStorage.getItem('oj_employer_tok'); }
   function setToken(t) {
     localStorage.setItem(AUTH_KEY, t);
     localStorage.setItem('oj_employer_tok', t);
@@ -590,6 +591,7 @@
   function clearToken() {
     localStorage.removeItem(AUTH_KEY);
     localStorage.removeItem('oj_employer_tok');
+    sessionStorage.removeItem(AUTH_KEY);
   }
   function authHeaders() { return { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' }; }
 
@@ -1164,6 +1166,7 @@ async function handlePostJob(e) {
   }
 
   function closeEditModal() {
+    document.getElementById('editAlert').style.display = 'none';
     releaseFocus(document.getElementById('editModalDialog'));
     document.getElementById('editModal').classList.remove('open');
   }
@@ -1184,15 +1187,35 @@ async function handlePostJob(e) {
       description:      document.getElementById('editDesc').value.trim(),
       skills:           document.getElementById('editSkills').value.trim(),
     };
+    const alertEl = document.getElementById('editAlert');
+    alertEl.style.display = 'none';
+    if (payload.salary_min && payload.salary_max && payload.salary_min > payload.salary_max) {
+      alertEl.textContent = 'Minimum salary cannot be greater than maximum salary.';
+      alertEl.style.display = 'block';
+      return;
+    }
+    const submitBtn = document.querySelector('#editJobForm button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
     try {
       const res = await fetch('/api/jobs/' + id, {
         method: 'PATCH', headers: authHeaders(), body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) { clearToken(); window.location.href = '/login?redirect=' + encodeURIComponent('/employer'); return; }
+      if (!res.ok) {
+        alertEl.textContent = data.error || `Could not save changes (HTTP ${res.status}).`;
+        alertEl.style.display = 'block';
+        return;
+      }
       closeEditModal();
       loadMyJobs();
       loadOverview();
-    } catch { alert('Failed to update job.'); }
+    } catch {
+      alertEl.textContent = 'Network error — your changes were not saved. Check your connection and try again.';
+      alertEl.style.display = 'block';
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
   }
 
   async function confirmDeleteJob() {

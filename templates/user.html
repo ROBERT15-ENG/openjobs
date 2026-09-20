@@ -244,7 +244,7 @@
       <div class="stat-card">
         <div class="stat-card-top">
           <div class="stat-icon">⏳</div>
-          <div class="stat-trend trend-neutral">In progress</div>
+          <div class="stat-trend trend-neutral">Awaiting reply</div>
         </div>
         <div class="stat-value" id="statPending">0</div>
         <div class="stat-label">Pending Review</div>
@@ -252,7 +252,7 @@
       <div class="stat-card">
         <div class="stat-card-top">
           <div class="stat-icon">🤝</div>
-          <div class="stat-trend trend-up">Active</div>
+          <div class="stat-trend trend-neutral" id="statInterviewsTrend">None yet</div>
         </div>
         <div class="stat-value" id="statInterviews">0</div>
         <div class="stat-label">Interviews</div>
@@ -572,6 +572,9 @@
     document.getElementById('statApps').textContent = s.total_applications || 0;
     document.getElementById('statPending').textContent = s.applied ?? s.pending ?? 0;
     document.getElementById('statInterviews').textContent = s.interviews || 0;
+    const interviewsTrend = document.getElementById('statInterviewsTrend');
+    interviewsTrend.textContent = s.interviews ? 'In progress' : 'None yet';
+    interviewsTrend.className = 'stat-trend ' + (s.interviews ? 'trend-up' : 'trend-neutral');
     document.getElementById('statSaved').textContent = s.saved || 0;
     renderRecentApps(d.recent_applications || []);
     renderRecJobs(d.recommended || []);
