@@ -4,6 +4,28 @@ All notable changes to the OpenJobs platform are documented in this file.
 
 ---
 
+## v2.8.0 — UX audit: Medium-severity fixes
+
+**Tests:** `pytest tests/ -q` (124 tests; `tests/test_ux_medium.py` covers the items below)
+
+| Finding | Fix |
+|---------|-----|
+| Quick-filter chips (Full-time / Part-time / Internship) did nothing; unticking every Work Type box showed *all* jobs | Chips now set the sidebar checkboxes (and vice-versa); an empty selection shows a "No work type selected" state instead of everything. Hard-coded city chips removed |
+| Four overlapping location controls (Country, Region, Location, Distance) with inconsistent geography | One **Location** card: Region (populated from `/api/regions`) + Distance measured from the typed location or the region centre. `?region=` deep links honoured |
+| Job page collected Name / Email / Phone that were never sent | Replaced by an "Applying as" block from the profile with an edit link; the form requires a résumé or a cover letter |
+| Reporting a job and messaging used `prompt()` | Report is a modal with reason + details; messaging is a threaded conversation panel (bubbles, timestamps, Enter to send, 15 s refresh) on both dashboards; skills are added through an inline input with suggestions |
+| Register accepted passwords the server rejected; "Keep me signed in" was ignored | Client rules mirror `password_util.validate_password` with a "Still needs: …" hint; the token is stored in `sessionStorage` when the box is unticked |
+| Employer edit failures were swallowed into a generic alert | Errors (validation, 4xx, network) shown inside the modal; client-side min > max check; a 401 redirects to login |
+| Seeker stat badges were static ("Active" with 0 interviews) | Badges derive from real counts |
+| Admin **Settings** tab was entirely fake (Save Settings, Auto-approve, Import Data, Clear Applications, Edit user "coming soon") | Replaced by **Operations**: email outbox counts and failures with "Deliver now", job-alert dry-run/run, CSV export. Placeholder buttons removed |
+| Admin **All Jobs** listed only active jobs, badge always green, no way to reinstate a taken-down job | New `GET /api/admin/jobs` returns every listing with `moderation_status`; table shows Live / Awaiting payment / Inactive / Removed with **Take down** / **Publish** actions (moderation lock still blocks employers from re-enabling) |
+| Expired sessions: admin decoded the token without checking `exp`; applying with a stale token showed a generic error | Admin checks `exp` and handles 401 on load; the job page redirects to login on 401 |
+| Browsers could keep a stale copy of an HTML page (inline JS) after a deploy | `Cache-Control: no-cache` on `text/html` responses so pages are revalidated |
+
+Also fixed: `python3 api/server.py` failed to import `email_notifier` from the project root.
+
+---
+
 ## v2.7.0 — UX audit: High-severity fixes
 
 **Tests:** `pytest tests/ -q` (117 tests; `tests/test_ux_high.py` covers the items below)

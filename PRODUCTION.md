@@ -63,7 +63,8 @@ Schema upgrades are applied automatically at app start (`api/schema_migrate.py`,
 Email is queued in the `email_outbox` table and drained opportunistically by the
 web process; `send_outbox.py` is the durable backstop (retries up to 5 times,
 then marks the row `failed`). Inspect with `GET /api/admin/email/outbox`, force
-delivery with `POST /api/admin/email/drain`.
+delivery with `POST /api/admin/email/drain`. Both are surfaced in the admin
+console under **Operations**, together with a job-alert dry run.
 
 ## Run with Gunicorn
 

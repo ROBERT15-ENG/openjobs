@@ -131,6 +131,10 @@ def create_app(test_config=None):
         response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
         if production:
             response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        # Pages carry their JS inline, so a heuristically cached page after a deploy
+        # would talk to the new API with old code. Make browsers revalidate.
+        if response.mimetype == 'text/html' and 'Cache-Control' not in response.headers:
+            response.headers['Cache-Control'] = 'no-cache'
         return response
 
     limiter.init_app(app)

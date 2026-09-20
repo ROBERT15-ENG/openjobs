@@ -2,8 +2,14 @@
 """Local development entry point (use gunicorn via wsgi.py in production)."""
 
 import os
+import sys
 
-from app_factory import create_app
+# email_notifier and friends live in the project root, one level up.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from app_factory import create_app  # noqa: E402
 
 app = create_app()
 
