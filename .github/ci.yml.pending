@@ -1,0 +1,50 @@
+# CI pipeline for OpenJobs.
+#
+# This file lives outside .github/workflows/ only because the branch was pushed
+# with a token lacking the `workflow` scope. To activate CI:
+#     git mv .github/ci.yml.pending .github/workflows/ci.yml
+# (or add the file via the GitHub web UI), then commit.
+
+name: CI
+
+on:
+  push:
+    branches: [main, 'cursor/**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        run: python3 -m ruff check api tests scripts wsgi.py gunicorn.conf.py email_notifier.py
+
+      - name: Run tests
+        run: python3 -m pytest -q --cov=api --cov=email_notifier --cov-report=term-missing:skip-covered
+
+      - name: Boot check (gunicorn + health)
+        env:
+          SECRET_KEY: ci-secret-key-that-is-long-enough-000
+          FLASK_ENV: production
+          DATABASE_PATH: /tmp/ci-jobs.db
+          ADMIN_PASSWORD: ci-admin-password
+          PORT: "5700"
+        run: |
+          python3 scripts/init_db.py
+          gunicorn -c gunicorn.conf.py wsgi:app &
+          for i in $(seq 1 20); do curl -fsS localhost:5700/api/health && break || sleep 1; done
+          curl -fsS localhost:5700/api/health
+          kill %1
+
+      - name: Dependency audit
+        run: pip install pip-audit && pip-audit -r requirements.txt
