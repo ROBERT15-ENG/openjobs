@@ -5,7 +5,7 @@ import os
 import sys
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 
 load_dotenv()
@@ -62,10 +62,30 @@ def _wants_json() -> bool:
     return request.path.startswith('/api/') or request.is_json
 
 
+ERROR_PAGE_COPY = {
+    404: ('Page not found', "The page you're looking for doesn't exist, or the listing has closed."),
+    403: ('Not allowed', "You don't have access to this page. Sign in with a different account or head back to the jobs list."),
+    405: ('Not allowed', 'That action is not available here.'),
+    429: ('Slow down', 'Too many requests in a short time. Wait a minute and try again.'),
+    500: ('Something went wrong', 'An unexpected error occurred on our side. It has been logged; please try again shortly.'),
+}
+
+
+def render_error_page(code: int):
+    """Branded HTML error page for non-API routes (JSON is used for /api/*)."""
+    title, message = ERROR_PAGE_COPY.get(code, ERROR_PAGE_COPY[500])
+    try:
+        return render_template('error.html', code=code, title=title, message=message), code
+    except Exception:  # template dir missing (API-only deployment)
+        return f'{code} {title}', code
+
+
 def _register_error_handlers(app: Flask) -> None:
     @app.errorhandler(HTTPException)
     def handle_http_error(exc: HTTPException):
         if not _wants_json():
+            if exc.code in ERROR_PAGE_COPY:
+                return render_error_page(exc.code)
             return exc
         return jsonify({'error': exc.name, 'message': exc.description}), exc.code
 
@@ -75,7 +95,7 @@ def _register_error_handlers(app: Flask) -> None:
         if app.config.get('PROPAGATE_EXCEPTIONS') or app.testing or app.debug:
             raise exc
         if not _wants_json():
-            return 'Internal Server Error', 500
+            return render_error_page(500)
         return jsonify({'error': 'Internal Server Error'}), 500
 
 

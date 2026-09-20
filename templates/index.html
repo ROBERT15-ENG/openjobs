@@ -745,6 +745,10 @@
     }
     renderHeaderAuth();
     loadStats();
+    // Deep links: /?q=python&location=Sydney (used by company cards, 404 search, /cad)
+    const initial = new URLSearchParams(window.location.search);
+    if (initial.get('q')) document.getElementById('searchInput').value = initial.get('q');
+    if (initial.get('location')) document.getElementById('locationInput').value = initial.get('location');
     await loadSavedJobIds();
     fetchJobs();
     document.getElementById('searchInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });

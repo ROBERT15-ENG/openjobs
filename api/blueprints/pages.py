@@ -4,7 +4,7 @@ import os
 
 from config import TEMPLATES_DIR
 from db import get_db
-from flask import Blueprint, current_app, jsonify, redirect, render_template, request
+from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request
 from seo_util import job_posting_json_ld, job_url_path, slugify
 from timeutil import utcnow_iso
 
@@ -81,7 +81,7 @@ def job_seo_page(job_id, slug=None):
     db = get_db()
     job = db.execute('SELECT * FROM jobs WHERE id = ? AND is_active = 1', (job_id,)).fetchone()
     if not job:
-        return _render_page('job.html'), 404
+        abort(404)
     job_dict = dict(job)
     canonical_slug = slugify(job_dict.get('title', ''))
     if slug and slug != canonical_slug:

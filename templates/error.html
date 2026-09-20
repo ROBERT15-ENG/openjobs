@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>{{ code }} — {{ title }} · OpenJobs</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary: #00d4aa; --bg: #09090f; --bg-card: #111119; --border: #1e1e2e; --text: #ededf0; --text-muted: #6b6b80; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+    header { border-bottom: 1px solid var(--border); padding: 0 2rem; }
+    .header-inner { max-width: 1400px; margin: 0 auto; height: 64px; display: flex; align-items: center; }
+    .logo { font-size: 1.35rem; font-weight: 800; letter-spacing: -0.5px; color: var(--text); text-decoration: none; }
+    .logo span { color: var(--primary); }
+    main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 3rem 1.5rem; text-align: center; }
+    .code { font-size: clamp(4rem, 15vw, 7rem); font-weight: 800; line-height: 1; color: var(--primary); opacity: 0.9; letter-spacing: -3px; }
+    h1 { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 0.5rem; }
+    p { color: var(--text-muted); max-width: 460px; margin: 0 auto 2rem; line-height: 1.6; }
+    .actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+    .btn { padding: 0.75rem 1.4rem; border-radius: 10px; font-weight: 600; font-size: 0.9rem; text-decoration: none; border: 1px solid var(--border); color: var(--text-muted); transition: all 0.2s; }
+    .btn:hover { border-color: var(--primary); color: var(--primary); }
+    .btn-primary { background: var(--primary); color: #000; border-color: var(--primary); }
+    .btn-primary:hover { color: #000; filter: brightness(0.92); }
+    .search { display: flex; gap: 0.5rem; max-width: 460px; margin: 0 auto 1.5rem; }
+    .search input { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem 1rem; color: var(--text); font-size: 0.95rem; outline: none; min-width: 0; }
+    .search input:focus { border-color: var(--primary); }
+    footer { border-top: 1px solid var(--border); padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.8rem; }
+    footer a { color: var(--text-muted); }
+  </style>
+</head>
+<body>
+<header>
+  <div class="header-inner"><a class="logo" href="/">Open<span>Jobs</span></a></div>
+</header>
+<main>
+  <div>
+    <div class="code">{{ code }}</div>
+    <h1>{{ title }}</h1>
+    <p>{{ message }}</p>
+    {% if code == 404 %}
+    <form class="search" action="/" method="get" role="search">
+      <input type="search" name="q" placeholder="Search jobs, companies, skills…" aria-label="Search jobs">
+      <button class="btn btn-primary" type="submit">Search</button>
+    </form>
+    {% endif %}
+    <div class="actions">
+      <a class="btn btn-primary" href="/">Browse open jobs</a>
+      <a class="btn" href="/companies">Companies</a>
+      <a class="btn" href="/salary">Salary guide</a>
+      {% if code == 404 %}<a class="btn" href="javascript:history.back()">Go back</a>{% endif %}
+    </div>
+  </div>
+</main>
+<footer>OpenJobs · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/cookies">Cookies</a></footer>
+</body>
+</html>
