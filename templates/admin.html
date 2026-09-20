@@ -112,6 +112,7 @@
     <div class="header-actions">
       <a href="/" class="btn btn-ghost">← View Site</a>
       <button class="btn btn-primary" onclick="switchTab('jobs')">+ Add Job</button>
+      <button class="btn btn-danger" onclick="doLogout()">Sign Out</button>
     </div>
   </div>
 </header>
@@ -380,10 +381,25 @@
     return headers;
   }
 
+  function clearSession() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('oj_employer_tok');
+    sessionStorage.removeItem('token');
+  }
+
+  async function doLogout() {
+    const token = getToken();
+    if (token) {
+      try { await fetch('/api/auth/logout', { method: 'POST', headers: authHeaders() }); } catch {}
+    }
+    clearSession();
+    window.location.href = '/';
+  }
+
   function ensureAdmin() {
     const token = getToken();
     if (!token) {
-      window.location.href = '/login';
+      window.location.href = '/login?redirect=' + encodeURIComponent('/admin');
       return false;
     }
     try {

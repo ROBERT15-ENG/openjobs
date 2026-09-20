@@ -344,7 +344,7 @@
       .stats-bar { gap: 1rem; flex-wrap: wrap; }
       nav { display: none; flex-direction: column; position: absolute; top: 60px; left: 0; right: 0; background: var(--bg); border-bottom: 1px solid var(--border); padding: 1rem; z-index: 100; }
       nav.open { display: flex; }
-      .header-actions .btn-ghost { display: none; }
+      .header-actions a.btn-ghost { display: none; }
       .logo-sub { display: none; }
       .search-box { flex-direction: column; border-radius: 14px; }
       .search-box input { max-width: 100% !important; width: 100%; border-radius: 10px; border-right: 1px solid var(--border) !important; }
@@ -398,7 +398,7 @@
       <a href="/user">Dashboard</a>
       <a href="/employer">For Employers</a>
     </nav>
-    <div class="header-actions">
+    <div class="header-actions" id="headerActions">
       <a href="/employer" class="btn btn-ghost">Post a Job</a>
       <a href="/register" class="btn btn-primary">Sign Up Free</a>
       <button class="hamburger" id="hamburgerBtn" onclick="toggleMobileNav()" aria-label="Toggle menu">
@@ -636,6 +636,51 @@
     return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
   }
 
+  function tokenPayload() {
+    try {
+      const token = getToken();
+      if (!token) return null;
+      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (payload.exp && payload.exp * 1000 < Date.now()) return null;
+      return payload;
+    } catch { return null; }
+  }
+
+  function clearSession() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('oj_employer_tok');
+    sessionStorage.removeItem('token');
+  }
+
+  async function doLogout() {
+    const token = getToken();
+    if (token) {
+      try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } }); } catch {}
+    }
+    clearSession();
+    window.location.reload();
+  }
+
+  // Header shows Sign up / Post a job to visitors, Dashboard / Sign out to members.
+  function renderHeaderAuth() {
+    const payload = tokenPayload();
+    const actions = document.getElementById('headerActions');
+    if (!actions) return;
+    const hamburger = actions.querySelector('.hamburger');
+    if (!payload) {
+      if (getToken()) clearSession(); // expired token left behind
+      return;
+    }
+    const dest = payload.role === 'admin' ? '/admin' : payload.role === 'employer' ? '/employer' : '/user';
+    const label = payload.role === 'admin' ? 'Admin' : payload.role === 'employer' ? 'Employer Dashboard' : 'My Dashboard';
+    actions.innerHTML = `
+      <a href="${dest}" class="btn btn-primary">${label}</a>
+      <button class="btn btn-ghost" onclick="doLogout()">Sign out</button>`;
+    if (hamburger) actions.appendChild(hamburger);
+    const navDash = document.querySelector('nav a[href="/user"]');
+    if (navDash) { navDash.href = dest; navDash.textContent = 'Dashboard'; }
+  }
+
   async function loadSavedJobIds() {
     const token = getToken();
     if (!token) {
@@ -698,6 +743,7 @@
       const banner = document.getElementById('cookieBanner');
       if (banner) banner.style.display = 'flex';
     }
+    renderHeaderAuth();
     loadStats();
     await loadSavedJobIds();
     fetchJobs();
@@ -918,10 +964,35 @@
     return ageDays <= 7;
   }
 
+  function fullPostingUrl(job) {
+    return '/jobs/' + job.id + '#apply';
+  }
+
   async function applyToJob() {
     if (!currentJob) return;
     const token = getToken();
     if (!token) { window.location.href = '/login?redirect=' + encodeURIComponent('/?job=' + currentJob.id); return; }
+
+    // Quick apply sends the profile résumé plus a generated letter. Without a
+    // résumé there is nothing to send, so hand over to the full form instead.
+    let profile = null;
+    try {
+      const pr = await fetch('/api/user/profile', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (pr.status === 401) { clearSession(); window.location.href = '/login?redirect=' + encodeURIComponent('/?job=' + currentJob.id); return; }
+      if (pr.ok) profile = await pr.json();
+    } catch {}
+    const hasResume = !!(profile && (profile.resume_text || '').trim());
+    if (!hasResume) {
+      window.location.href = fullPostingUrl(currentJob);
+      return;
+    }
+    const ok = confirm(
+      `Apply to ${currentJob.title} at ${currentJob.company}?\n\n` +
+      'We will send the résumé saved on your profile and a short cover letter generated from it.\n' +
+      'To upload a different résumé or write your own letter, cancel and use "View full posting".'
+    );
+    if (!ok) return;
+
     try {
       const res = await fetch('/api/applications', {
         method: 'POST',
@@ -933,11 +1004,13 @@
       });
       const d = await res.json();
       if (res.ok && d.success) {
-        const extra = d.ats_score ? ` ATS score: ${d.ats_score}%.` : '';
-        alert('✅ Application submitted with your profile résumé and cover letter.' + extra);
+        const extra = d.ats_score ? ` ATS match: ${d.ats_score}%.` : '';
+        alert('✅ Application sent with your profile résumé.' + extra + '\nTrack it under Dashboard → Applications.');
         closeModal();
       } else if (res.status === 409) {
         alert('ℹ️ ' + (d.error || 'You have already applied to this job.'));
+      } else if (d.code === 'no_resume') {
+        window.location.href = fullPostingUrl(currentJob);
       } else {
         alert('⚠️ ' + (d.error || 'Something went wrong'));
       }

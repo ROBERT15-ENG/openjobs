@@ -47,6 +47,8 @@
     .notif-btn { position: relative; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-muted); font-size: 1.1rem; transition: all 0.2s; }
     .notif-btn:hover { border-color: var(--primary); color: var(--primary); }
     .notif-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--error); border: 2px solid var(--bg); }
+    .signout-btn { background: transparent; border: 1px solid var(--border); border-radius: 10px; padding: 0.45rem 0.9rem; color: var(--text-muted); font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; }
+    .signout-btn:hover { border-color: var(--error); color: var(--error); }
 
     /* PAGE LAYOUT */
     .page-wrap { max-width: 1400px; margin: 0 auto; padding: 2rem; }
@@ -181,11 +183,8 @@
       <a href="/">📚 Learning</a>
     </nav>
     <div class="header-right">
-      <button class="notif-btn">
-        🔔
-        <div class="notif-dot"></div>
-      </button>
-      <div class="avatar" id="userAvatar">T</div>
+      <div class="avatar" id="userAvatar" title="Your profile" onclick="switchTab('profile')">T</div>
+      <button class="signout-btn" onclick="doLogout()" aria-label="Sign out">Sign out</button>
     </div>
   </div>
 </header>
@@ -196,7 +195,7 @@
   <div class="page-header">
     <div class="alert-banner" id="alertBanner">
       <div class="icon">🎯</div>
-      <div class="text">Complete your profile to <strong>increase your match rate to 95%+</strong></div>
+      <div class="text">Complete your profile — <strong>a résumé and your skills</strong> are what job matching runs on.</div>
       <button class="cta" onclick="switchTab('profile')">Complete Profile →</button>
     </div>
     <div class="greeting">Welcome back, <span id="userName">Tonny</span> 👋</div>
@@ -219,7 +218,7 @@
       <div class="stat-card">
         <div class="stat-card-top">
           <div class="stat-icon">📋</div>
-          <div class="stat-trend trend-up">↑ 2 this week</div>
+          <div class="stat-trend trend-neutral" id="statAppsTrend">All time</div>
         </div>
         <div class="stat-value" id="statApps">0</div>
         <div class="stat-label">Total Applications</div>
@@ -372,12 +371,9 @@
     <div class="card">
       <div class="card-header"><div class="card-title">🛠 Skills</div></div>
       <div class="skill-tags-input" id="skillsContainer">
-        <span class="skill-tag">Python <button onclick="removeSkill(this)">×</button></span>
-        <span class="skill-tag">JavaScript <button onclick="removeSkill(this)">×</button></span>
-        <span class="skill-tag">AI/LangChain <button onclick="removeSkill(this)">×</button></span>
         <button class="skill-add" onclick="addSkillPrompt()">+ Add skill</button>
       </div>
-      <input type="hidden" id="skillsJson" value='["Python","JavaScript","AI/LangChain"]'>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem" id="skillsHint">No skills yet. Add the tools and technologies you work with; they drive your job matches.</p>
     </div>
 
     <div class="card">
@@ -413,7 +409,7 @@
       </div>
     </div>
 
-    <button class="btn-save-profile" onclick="saveProfile()">💾 Save Profile</button>
+    <button class="btn-save-profile" id="saveProfileBtn" onclick="saveProfile()">💾 Save Profile</button>
   </div>
 </div>
 
@@ -424,7 +420,7 @@
 
 <script>
   // ── INIT ──
-  let userProfile = { name: 'Tonny Tony', email: 'tonny@email.com', location: 'Nairobi, KE', skills: ['Python', 'JavaScript', 'AI/LangChain'] };
+  let userProfile = {};
   let dashboardData = null;
 
   function getToken() {
@@ -454,9 +450,29 @@
     return payload?.user_id || null;
   }
 
+  function clearSession() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('oj_employer_tok');
+    sessionStorage.removeItem('token');
+  }
+
+  function redirectToLogin() {
+    clearSession();
+    window.location.href = '/login?redirect=' + encodeURIComponent('/user');
+  }
+
+  async function doLogout() {
+    const token = getToken();
+    if (token) {
+      try { await fetch('/api/auth/logout', { method: 'POST', headers: authHeaders() }); } catch {}
+    }
+    clearSession();
+    window.location.href = '/';
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     if (!getToken()) {
-      window.location.href = '/login';
+      redirectToLogin();
       return;
     }
     loadDashboard();
@@ -469,6 +485,7 @@
     if (appsEl) appsEl.innerHTML = '<div class="empty-state"><div class="emoji">⏳</div><h3>Loading applications...</h3></div>';
     try {
       const res = await fetch('/api/dashboard/seeker', { headers: authHeaders() });
+      if (res.status === 401) { redirectToLogin(); return; }
       if (!res.ok) throw new Error('API unavailable');
       dashboardData = await res.json();
       renderDashboard(dashboardData);
@@ -484,26 +501,37 @@
       .then(data => {
         if (data && !data.error) {
           userProfile = data;
-          document.getElementById('userName').textContent = (data.name || 'Tonny').split(' ')[0];
-          document.getElementById('userAvatar').textContent = (data.name || 'T')[0].toUpperCase();
+          document.getElementById('userName').textContent = (data.name || 'there').split(' ')[0];
+          document.getElementById('userAvatar').textContent = (data.name || '?')[0].toUpperCase();
           document.getElementById('profileName').value = data.name || '';
           document.getElementById('profileEmail').value = data.email || '';
           document.getElementById('profileLocation').value = data.preferred_location || '';
           document.getElementById('profilePhone').value = data.phone || '';
-          if (data.skills) {
-            skills = data.skills.split(',').map(s => s.trim()).filter(Boolean);
-            const container = document.getElementById('skillsContainer');
-            const addBtn = container.querySelector('.skill-add');
-            container.querySelectorAll('.skill-tag').forEach(t => t.remove());
-            skills.forEach(skill => {
-              const tag = document.createElement('span');
-              tag.className = 'skill-tag';
-              tag.innerHTML = escHtml(skill) + ' <button onclick="removeSkill(this)">×</button>';
-              container.insertBefore(tag, addBtn);
-            });
-          }
+          document.getElementById('profileHeadline').value = data.headline || '';
+          document.getElementById('profileBio').value = data.bio || '';
+          document.getElementById('prefRole').value = data.desired_role || '';
+          document.getElementById('prefSalary').value = data.expected_salary ? Number(data.expected_salary).toLocaleString() : '';
+          document.getElementById('prefWorkType').value = data.pref_work_type || '';
+          document.getElementById('prefRemote').value = data.pref_remote || '';
+          skills = (data.skills || '').split(',').map(s => s.trim()).filter(Boolean);
+          renderSkillTags();
+          updateProgress();
         }
       });
+  }
+
+  function renderSkillTags() {
+    const container = document.getElementById('skillsContainer');
+    const addBtn = container.querySelector('.skill-add');
+    container.querySelectorAll('.skill-tag').forEach(t => t.remove());
+    skills.forEach(skill => {
+      const tag = document.createElement('span');
+      tag.className = 'skill-tag';
+      tag.innerHTML = escHtml(skill) + ' <button onclick="removeSkill(this)" aria-label="Remove ' + escHtml(skill) + '">×</button>';
+      container.insertBefore(tag, addBtn);
+    });
+    const hint = document.getElementById('skillsHint');
+    if (hint) hint.style.display = skills.length ? 'none' : 'block';
   }
 
   // ── RENDER ──
@@ -516,22 +544,26 @@
     renderRecentApps(d.recent_applications || []);
     renderRecJobs(d.recommended || []);
     renderAllRecJobs(d.recommended || []);
-    updateProgress(s);
+    updateProgress();
   }
 
-  function updateProgress(s) {
-    const apps = s.total_applications || 0;
-    const profile = Math.min(100, 40 + apps * 10);
-    const skills = userProfile.skills ? Math.min(100, userProfile.skills.length * 20) : 0;
+  function updateProgress() {
+    // Real completion: share of profile fields filled, skills count, résumé present.
+    const p = userProfile || {};
+    const fields = ['name', 'phone', 'preferred_location', 'headline', 'bio', 'desired_role', 'expected_salary', 'pref_work_type', 'pref_remote'];
+    const filled = fields.filter(k => p[k] !== null && p[k] !== undefined && String(p[k]).trim() !== '').length;
+    const profile = Math.round((filled / fields.length) * 100);
+    const skillPct = Math.min(100, skills.length * 20);
+    const resumePct = (p.resume_text || '').trim() ? 100 : 0;
     document.getElementById('profileBar').style.width = profile + '%';
     document.getElementById('profilePct').textContent = profile + '%';
-    document.getElementById('skillsBar').style.width = skills + '%';
-    document.getElementById('skillsPct').textContent = skills + '%';
-    document.getElementById('resumeBar').style.width = '0%';
-    document.getElementById('resumePct').textContent = '0%';
+    document.getElementById('skillsBar').style.width = skillPct + '%';
+    document.getElementById('skillsPct').textContent = skillPct + '%';
+    document.getElementById('resumeBar').style.width = resumePct + '%';
+    document.getElementById('resumePct').textContent = resumePct + '%';
 
-    // Hide banner if profile is complete
-    if (profile >= 90) document.getElementById('alertBanner').style.display = 'none';
+    const banner = document.getElementById('alertBanner');
+    if (banner) banner.style.display = (profile >= 80 && skillPct >= 60 && resumePct === 100) ? 'none' : 'flex';
   }
 
   function renderRecentApps(apps) {
@@ -746,54 +778,63 @@
   }
 
   // ── PROFILE ──
-  let skills = ['Python', 'JavaScript', 'AI/LangChain'];
+  let skills = [];
   function removeSkill(btn) {
     const tag = btn.parentElement;
     const skill = tag.textContent.replace('×','').trim();
     skills = skills.filter(s => s !== skill);
-    tag.remove();
+    renderSkillTags();
   }
   function addSkillPrompt() {
     const skill = prompt('Enter a skill:');
-    if (skill && skill.trim()) {
-      skills.push(skill.trim());
-      const container = document.getElementById('skillsContainer');
-      const btn = container.querySelector('.skill-add');
-      const tag = document.createElement('span');
-      tag.className = 'skill-tag';
-      tag.innerHTML = escHtml(skill.trim()) + ' <button onclick="removeSkill(this)">×</button>';
-      container.insertBefore(tag, btn);
-    }
+    const clean = (skill || '').trim();
+    if (!clean) return;
+    if (skills.some(s => s.toLowerCase() === clean.toLowerCase())) return;
+    skills.push(clean);
+    renderSkillTags();
   }
+
+  function parseSalary(text) {
+    const digits = String(text || '').replace(/[^0-9]/g, '');
+    return digits ? parseInt(digits, 10) : null;
+  }
+
   async function saveProfile() {
+    const btn = document.getElementById('saveProfileBtn');
     const name = document.getElementById('profileName').value.trim();
-    const location = document.getElementById('profileLocation').value.trim();
-    const phone = document.getElementById('profilePhone').value.trim();
+    if (!name) { alert('⚠️ Name is required.'); return; }
     const payload = {
       name,
-      preferred_location: location || null,
-      phone: phone || null,
+      preferred_location: document.getElementById('profileLocation').value.trim() || null,
+      phone: document.getElementById('profilePhone').value.trim() || null,
+      headline: document.getElementById('profileHeadline').value.trim() || null,
+      bio: document.getElementById('profileBio').value.trim() || null,
+      desired_role: document.getElementById('prefRole').value.trim() || null,
+      expected_salary: parseSalary(document.getElementById('prefSalary').value),
+      pref_work_type: document.getElementById('prefWorkType').value || null,
+      pref_remote: document.getElementById('prefRemote').value || null,
       skills: skills.join(', '),
     };
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
     try {
       const res = await fetch('/api/user/profile', {
         method: 'PATCH',
         headers: authHeaders(),
         body: JSON.stringify(payload),
       });
+      if (res.status === 401) { redirectToLogin(); return; }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Save failed');
-      userProfile = { ...userProfile, ...payload };
-      document.getElementById('userName').textContent = (name || 'User').split(' ')[0];
-      document.getElementById('userAvatar').textContent = (name || 'U')[0].toUpperCase();
-      document.getElementById('greetingSub').textContent = 'Profile updated! Keep building your profile for better matches.';
-      document.getElementById('profileBar').style.width = '85%';
-      document.getElementById('profilePct').textContent = '85%';
-      document.getElementById('skillsBar').style.width = Math.min(100, skills.length * 25) + '%';
-      document.getElementById('skillsPct').textContent = Math.min(100, skills.length * 25) + '%';
-      alert('✅ Profile saved successfully!');
+      userProfile = data.user || { ...userProfile, ...payload };
+      document.getElementById('userName').textContent = (name || 'there').split(' ')[0];
+      document.getElementById('userAvatar').textContent = (name || '?')[0].toUpperCase();
+      document.getElementById('greetingSub').textContent = 'Profile updated.';
+      document.getElementById('prefSalary').value = userProfile.expected_salary ? Number(userProfile.expected_salary).toLocaleString() : '';
+      updateProgress();
+      if (btn) { btn.textContent = '✅ Saved'; setTimeout(() => { btn.textContent = '💾 Save Profile'; btn.disabled = false; }, 1500); }
     } catch (e) {
       alert('⚠️ ' + (e.message || 'Could not save profile.'));
+      if (btn) { btn.textContent = '💾 Save Profile'; btn.disabled = false; }
     }
   }
 
