@@ -509,6 +509,10 @@
           if (!resumeText && uploadData.skills_found?.length) {
             resumeText = 'Skills: ' + uploadData.skills_found.join(', ');
           }
+        } else if (uploadRes.status === 401) {
+          localStorage.removeItem('token'); sessionStorage.removeItem('token');
+          window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+          return;
         } else if (!uploadRes.ok) {
           showAlert('error', uploadData.error || 'Resume upload failed');
           btn.disabled = false;
@@ -539,6 +543,10 @@
         showAlert('error', data.error || 'You have already applied to this job.');
         btn.disabled = false;
         btn.textContent = 'Submit Application →';
+      } else if (res.status === 401) {
+        localStorage.removeItem('token'); sessionStorage.removeItem('token');
+        showAlert('error', 'Your session has expired. Redirecting you to sign in…');
+        setTimeout(() => { window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname); }, 1200);
       } else {
         showAlert('error', data.error || 'Something went wrong. Please try again.');
         btn.disabled = false;
