@@ -26,6 +26,12 @@ USER_COLUMNS = {
     'address': 'TEXT',
     'salutation': 'TEXT',
     'visa_status': 'TEXT',
+    'headline': 'TEXT',
+    'bio': 'TEXT',
+    'desired_role': 'TEXT',
+    'expected_salary': 'INTEGER',
+    'pref_work_type': 'TEXT',
+    'pref_remote': 'TEXT',
 }
 
 JOB_COLUMNS = {

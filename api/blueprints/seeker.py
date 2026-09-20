@@ -25,7 +25,18 @@ PROFILE_FIELDS = {
     'dob': IsoDate(max_len=10),
     'nationality': Str(max_len=80),
     'visa_status': Str(max_len=80),
+    'headline': Str(max_len=160),
+    'bio': Str(max_len=4000),
+    'desired_role': Str(max_len=120),
+    'expected_salary': Int(min=0, max=100_000_000),
+    'pref_work_type': Str(max_len=20, choices=('full_time', 'part_time', 'contract', 'internship'), lower=True),
+    'pref_remote': Str(max_len=20, choices=('remote', 'hybrid', 'onsite'), lower=True),
 }
+PROFILE_COLUMNS = (
+    'id, name, email, role, skills, phone, preferred_location, experience, resume_text, '
+    'salutation, address, country, county, dob, nationality, visa_status, kyc_status, '
+    'headline, bio, desired_role, expected_salary, pref_work_type, pref_remote, created_at'
+)
 KYC_FIELDS = {
     **{k: PROFILE_FIELDS[k] for k in (
         'name', 'salutation', 'phone', 'address', 'country', 'county', 'dob', 'nationality', 'visa_status',
@@ -215,11 +226,7 @@ def unsave_job():
 def get_user_profile():
     db = get_db()
     user = db.execute(
-        """
-        SELECT id, name, email, role, skills, phone, preferred_location, experience, resume_text,
-               salutation, address, country, county, dob, nationality, visa_status, kyc_status, created_at
-        FROM users WHERE id = ?
-        """,
+        f'SELECT {PROFILE_COLUMNS} FROM users WHERE id = ?',
         (request.user_id,),
     ).fetchone()
     if not user:
@@ -245,11 +252,7 @@ def update_user_profile():
     )
     db.commit()
     user = db.execute(
-        """
-        SELECT id, name, email, role, skills, phone, preferred_location, experience, resume_text,
-               salutation, address, country, county, dob, nationality, visa_status, kyc_status, created_at
-        FROM users WHERE id = ?
-        """,
+        f'SELECT {PROFILE_COLUMNS} FROM users WHERE id = ?',
         (request.user_id,),
     ).fetchone()
     return jsonify({'success': True, 'user': dict(user)})
