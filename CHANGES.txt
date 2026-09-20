@@ -1,0 +1,68 @@
+OpenJobs — summary of changes on branch cursor/production-hardening-noci-a553
+==============================================================================
+
+v2.6.0 — Production hardening
+-----------------------------
+- Gunicorn entry point (wsgi.py, gunicorn.conf.py, Procfile); Railway config updated;
+  api/server.py is dev-only and refuses to start with FLASK_ENV=production.
+- SQLite connections centralised with WAL, foreign_keys=ON and busy_timeout; UPLOAD_DIR configurable.
+- JWT logout persisted via jti + revoked_tokens table (survives restarts and multiple workers).
+- Rate-limiter storage configurable via RATELIMIT_STORAGE_URI; Ollama availability probed with a TTL
+  instead of once at import.
+- Forgot-password always returns 200 (no account enumeration); emails normalised to lower-case with a
+  case-insensitive unique index; reset/confirm tokens stored hashed.
+- New api/validation.py applied to job, application, profile, alert and KYC writes; pagination clamped.
+- Moderation lock: employers cannot re-enable an admin-removed job; admin bulk
+  deactivate/reactivate/delete; premium plan sets is_featured; checkout verifies job ownership.
+- All timestamps UTC ISO-8601 via api/timeutil.py.
+- Email outbox table + scripts/send_outbox.py cron; request-path sends go through the outbox.
+- Geo radius search pre-filtered by bounding box.
+- FK-safe cascade deletes for users and jobs (api/deletion.py).
+- Logging, JSON error handlers for /api/*, HSTS and production CORS defaults; init_db.py refuses the
+  default admin password in production.
+- Docs: .env.example, README.md, PRODUCTION.md, DEPLOYMENT_CHECKLIST.md; CI workflow parked at
+  .github/ci.yml.pending (the PAT used to push lacks the workflow scope — move it to
+  .github/workflows/ci.yml).
+
+v2.7.0 — UX audit: High-severity fixes
+--------------------------------------
+- Sign-out on seeker and admin dashboards; home header shows Dashboard / Sign out when logged in;
+  expired tokens cleared.
+- Quick apply: confirmation step, hands off to the full form when no résumé exists, truthful success
+  message; API refuses an auto-generated letter with no résumé behind it (400 no_resume).
+- Profile fields headline, bio, desired role, expected salary, work type and remote preference now
+  persisted (migration + API + UI); profile completion computed from real data; fake default skills
+  removed.
+- Payment gating: with Stripe configured, employer listings sit in pending_payment until the webhook
+  activates them; "Complete payment" in My Listings; job alerts fire on activation; site is explicitly
+  free without a key.
+- Forgot-password gives an honest message when SMTP is not configured.
+- Login routes by the server-reported role; ?redirect= restricted to same-origin paths.
+- Branded 404/403/405/429/500 pages; /jobs/<bad id> is a real 404; /?q=&location= deep links work.
+- Bug fix: employer "new application" email was never sent (sqlite3.Row.get error).
+
+v2.8.0 — UX audit: Medium-severity fixes
+----------------------------------------
+- Home: quick chips drive the sidebar checkboxes and vice-versa; empty selection shows
+  "No work type selected"; Country/Region/Location/Distance collapsed into one Location card fed by
+  /api/regions; hard-coded city chips and stale "69 jobs" / "70+" copy removed.
+- Job page: decorative Name/Email/Phone inputs replaced by an "Applying as" block; résumé or cover
+  letter required; report is a modal instead of prompt(); 401 during apply redirects to login.
+- Messaging: threaded conversation panel on seeker and employer dashboards replaces prompt();
+  skills added via an inline input with suggestions.
+- Register: password rules mirror the server with a "Still needs: ..." hint.
+  Login: "Keep me signed in" honoured (sessionStorage when unticked).
+- Employer: edit-job errors shown inside the modal; client-side min > max salary check;
+  401 redirects to login.
+- Seeker dashboard: stat badges reflect real counts instead of a static "Active".
+- Admin: fake Settings tab replaced by Operations (email outbox counts/failures + "Deliver now",
+  job-alert dry-run/run, CSV export); new GET /api/admin/jobs lists every listing with moderation
+  status; Take down / Publish actions; placeholder buttons removed; token exp checked and 401 handled
+  on load.
+- Cache-Control: no-cache on HTML responses so browsers revalidate pages after a deploy.
+- python3 api/server.py fixed to import email_notifier from the project root.
+
+Tests
+-----
+- 124 tests passing (tests/test_hardening.py, tests/test_ux_high.py, tests/test_ux_medium.py added);
+  ruff clean.
