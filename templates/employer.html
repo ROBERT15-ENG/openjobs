@@ -140,6 +140,24 @@
 
     @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } .stats-grid { grid-template-columns: repeat(2, 1fr); } .kanban-board { grid-template-columns: repeat(3, minmax(160px, 1fr)); } }
     @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+    .chat-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,0.7); backdrop-filter: blur(6px); display: none; align-items: center; justify-content: center; padding: 1rem; }
+    .chat-overlay.open { display: flex; }
+    .chat-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px; width: 100%; max-width: 560px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; }
+    .chat-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
+    .chat-head h3 { font-size: 1rem; font-weight: 700; margin: 0; }
+    .chat-head small { display: block; color: var(--text-muted); font-size: 0.8rem; font-weight: 400; }
+    .chat-close { background: transparent; border: 1px solid var(--border); border-radius: 8px; width: 32px; height: 32px; color: var(--text-muted); cursor: pointer; }
+    .chat-body { flex: 1; overflow-y: auto; padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.6rem; min-height: 200px; }
+    .chat-msg { max-width: 80%; padding: 0.6rem 0.85rem; border-radius: 14px; font-size: 0.9rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    .chat-msg.me { align-self: flex-end; background: var(--primary); color: #000; border-bottom-right-radius: 4px; }
+    .chat-msg.them { align-self: flex-start; background: var(--bg); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+    .chat-msg time { display: block; font-size: 0.7rem; opacity: 0.7; margin-top: 0.25rem; }
+    .chat-empty { color: var(--text-muted); font-size: 0.85rem; text-align: center; margin: auto; }
+    .chat-compose { display: flex; gap: 0.5rem; padding: 0.875rem 1.25rem; border-top: 1px solid var(--border); }
+    .chat-compose textarea { flex: 1; resize: none; min-height: 44px; max-height: 120px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.8rem; color: var(--text); font-family: inherit; font-size: 0.9rem; }
+    .chat-compose textarea:focus { outline: none; border-color: var(--primary); }
+    .chat-send { background: var(--primary); color: #000; border: none; border-radius: 10px; padding: 0 1.1rem; font-weight: 700; cursor: pointer; }
+    .chat-send:disabled { opacity: 0.5; cursor: default; }
   </style>
 </head>
 <body>
@@ -519,6 +537,13 @@
 
 <script>
   const AUTH_KEY = 'token';
+  function getCurrentUserId() {
+    try {
+      const t = getToken() || '';
+      const payload = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return payload.user_id || null;
+    } catch { return null; }
+  }
   let currentUser = null;
   let employerApps = [];
   let employerJobs = [];
@@ -825,25 +850,79 @@
     window.currentAppId = null;
   }
 
-  async function messageCandidate(appId) {
+  function messageCandidate(appId, candidateName, jobTitle) {
     if (!appId) return;
+    const app = (employerApps || []).find(a => a.id === appId) || {};
+    openChatForApplication(appId, 'Message ' + (candidateName || app.applicant_name || 'candidate'), jobTitle || app.job_title || '');
+  }
+
+  // ── Messaging (conversation panel) ──
+  let chatConvId = null;
+  let chatTimer = null;
+
+  async function openChatForApplication(applicationId, title, subtitle) {
     const start = await fetch('/api/conversations', {
       method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ application_id: appId }),
+      body: JSON.stringify({ application_id: applicationId }),
     });
-    const data = await start.json();
+    const data = await start.json().catch(() => ({}));
     if (!start.ok) { alert(data.error || 'Could not open messages'); return; }
-    const convId = data.conversation.id;
-    const msgRes = await fetch('/api/conversations/' + convId + '/messages', { headers: authHeaders() });
-    const msgData = await msgRes.json();
-    const history = (msgData.messages || []).map(m => m.body).join('\n\n') || '(no messages yet)';
-    const body = prompt('Message candidate:\n\n' + history + '\n\nYour message:', '');
-    if (!body) return;
-    await fetch('/api/conversations/' + convId + '/messages', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ body }),
-    });
-    alert('Message sent.');
+    chatConvId = data.conversation.id;
+    document.getElementById('chatTitle').textContent = title || 'Messages';
+    document.getElementById('chatSub').textContent = subtitle || '';
+    document.getElementById('chatOverlay').classList.add('open');
+    document.getElementById('chatInput').value = '';
+    await loadChat();
+    document.getElementById('chatInput').focus();
+    clearInterval(chatTimer);
+    chatTimer = setInterval(loadChat, 15000);
+  }
+
+  function closeChat() {
+    document.getElementById('chatOverlay').classList.remove('open');
+    clearInterval(chatTimer);
+    chatConvId = null;
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChat(); });
+
+  function fmtChatTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return isNaN(d) ? '' : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function loadChat() {
+    if (!chatConvId) return;
+    const body = document.getElementById('chatBody');
+    try {
+      const res = await fetch('/api/conversations/' + chatConvId + '/messages', { headers: authHeaders() });
+      const d = await res.json();
+      const me = getCurrentUserId();
+      const msgs = d.messages || [];
+      body.innerHTML = msgs.length
+        ? msgs.map(m => `<div class="chat-msg ${m.sender_id === me ? 'me' : 'them'}">${escHtml(m.body)}<time>${m.sender_id === me ? 'You' : 'Candidate'} · ${fmtChatTime(m.created_at)}</time></div>`).join('')
+        : '<div class="chat-empty">No messages yet. Say hello — replies show up here.</div>';
+      body.scrollTop = body.scrollHeight;
+    } catch {
+      body.innerHTML = '<div class="chat-empty">Could not load messages.</div>';
+    }
+  }
+
+  async function sendChat(e) {
+    if (e) e.preventDefault();
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text || !chatConvId) return;
+    const btn = document.getElementById('chatSend');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/conversations/' + chatConvId + '/messages', {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ body: text }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Could not send'); }
+      else { input.value = ''; await loadChat(); }
+    } catch { alert('Network error. Try again.'); }
+    btn.disabled = false;
   }
 
   async function loadTeam() {
@@ -1210,5 +1289,19 @@ async function handlePostJob(e) {
     document.getElementById('dashboard').style.display = 'none';
   });
 </script>
+<div class="chat-overlay" id="chatOverlay" onclick="if(event.target===this)closeChat()">
+  <div class="chat-panel" role="dialog" aria-modal="true" aria-labelledby="chatTitle">
+    <div class="chat-head">
+      <div><h3 id="chatTitle">Messages</h3><small id="chatSub"></small></div>
+      <button class="chat-close" onclick="closeChat()" aria-label="Close messages">×</button>
+    </div>
+    <div class="chat-body" id="chatBody"><div class="chat-empty">Loading…</div></div>
+    <form class="chat-compose" onsubmit="sendChat(event)">
+      <textarea id="chatInput" placeholder="Write a message… (Enter to send, Shift+Enter for a new line)" maxlength="4000" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat(event);}"></textarea>
+      <button class="chat-send" id="chatSend" type="submit">Send</button>
+    </form>
+  </div>
+</div>
+
 </body>
 </html>

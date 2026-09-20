@@ -164,6 +164,24 @@
       .rec-grid { grid-template-columns: 1fr; }
       .job-card { flex-direction: column; }
     }
+    .chat-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,0.7); backdrop-filter: blur(6px); display: none; align-items: center; justify-content: center; padding: 1rem; }
+    .chat-overlay.open { display: flex; }
+    .chat-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px; width: 100%; max-width: 560px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; }
+    .chat-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
+    .chat-head h3 { font-size: 1rem; font-weight: 700; margin: 0; }
+    .chat-head small { display: block; color: var(--text-muted); font-size: 0.8rem; font-weight: 400; }
+    .chat-close { background: transparent; border: 1px solid var(--border); border-radius: 8px; width: 32px; height: 32px; color: var(--text-muted); cursor: pointer; }
+    .chat-body { flex: 1; overflow-y: auto; padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.6rem; min-height: 200px; }
+    .chat-msg { max-width: 80%; padding: 0.6rem 0.85rem; border-radius: 14px; font-size: 0.9rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    .chat-msg.me { align-self: flex-end; background: var(--primary); color: #000; border-bottom-right-radius: 4px; }
+    .chat-msg.them { align-self: flex-start; background: var(--bg); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+    .chat-msg time { display: block; font-size: 0.7rem; opacity: 0.7; margin-top: 0.25rem; }
+    .chat-empty { color: var(--text-muted); font-size: 0.85rem; text-align: center; margin: auto; }
+    .chat-compose { display: flex; gap: 0.5rem; padding: 0.875rem 1.25rem; border-top: 1px solid var(--border); }
+    .chat-compose textarea { flex: 1; resize: none; min-height: 44px; max-height: 120px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.8rem; color: var(--text); font-family: inherit; font-size: 0.9rem; }
+    .chat-compose textarea:focus { outline: none; border-color: var(--primary); }
+    .chat-send { background: var(--primary); color: #000; border: none; border-radius: 10px; padding: 0 1.1rem; font-weight: 700; cursor: pointer; }
+    .chat-send:disabled { opacity: 0.5; cursor: default; }
   </style>
 </head>
 <body>
@@ -413,6 +431,20 @@
   </div>
 </div>
 
+<div class="chat-overlay" id="chatOverlay" onclick="if(event.target===this)closeChat()">
+  <div class="chat-panel" role="dialog" aria-modal="true" aria-labelledby="chatTitle">
+    <div class="chat-head">
+      <div><h3 id="chatTitle">Messages</h3><small id="chatSub"></small></div>
+      <button class="chat-close" onclick="closeChat()" aria-label="Close messages">×</button>
+    </div>
+    <div class="chat-body" id="chatBody"><div class="chat-empty">Loading…</div></div>
+    <form class="chat-compose" onsubmit="sendChat(event)">
+      <textarea id="chatInput" placeholder="Write a message… (Enter to send, Shift+Enter for a new line)" maxlength="4000" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat(event);}"></textarea>
+      <button class="chat-send" id="chatSend" type="submit">Send</button>
+    </form>
+  </div>
+</div>
+
 <footer>
   <p>OpenJobs Dashboard · © 2026</p>
   <p style="margin-top:0.5rem;font-size:0.85rem"><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/cookies">Cookies</a></p>
@@ -604,8 +636,8 @@
     const canWithdraw = a.status && !['withdrawn', 'rejected', 'hired'].includes(a.status);
     const actions = canWithdraw
       ? `<button class="btn btn-ghost" style="margin-top:0.5rem;font-size:0.75rem;padding:0.3rem 0.6rem" onclick="withdrawApplication(${a.id})">Withdraw</button>
-         <button class="btn btn-ghost" style="margin-top:0.5rem;font-size:0.75rem;padding:0.3rem 0.6rem;margin-left:0.25rem" onclick="openMessages(${a.id})">Message</button>`
-      : `<button class="btn btn-ghost" style="margin-top:0.5rem;font-size:0.75rem;padding:0.3rem 0.6rem" onclick="openMessages(${a.id})">Message</button>`;
+         <button class="btn btn-ghost" style="margin-top:0.5rem;font-size:0.75rem;padding:0.3rem 0.6rem;margin-left:0.25rem" onclick='openMessages(${a.id}, ${JSON.stringify(a.title || a.job_title || "")}, ${JSON.stringify(a.company || "")})'>Message</button>`
+      : `<button class="btn btn-ghost" style="margin-top:0.5rem;font-size:0.75rem;padding:0.3rem 0.6rem" onclick='openMessages(${a.id}, ${JSON.stringify(a.title || a.job_title || "")}, ${JSON.stringify(a.company || "")})'>Message</button>`;
     return `
       <div class="app-item">
         <div class="app-logo">${letter}</div>
@@ -634,24 +666,77 @@
     else alert((await res.json().catch(() => ({}))).error || 'Could not withdraw');
   }
 
-  async function openMessages(applicationId) {
+  function openMessages(applicationId, jobTitle, company) {
+    openChatForApplication(applicationId, jobTitle ? 'Messages · ' + jobTitle : 'Messages', company ? 'with ' + company : 'with the employer');
+  }
+
+  // ── Messaging (conversation panel) ──
+  let chatConvId = null;
+  let chatTimer = null;
+
+  async function openChatForApplication(applicationId, title, subtitle) {
     const start = await fetch('/api/conversations', {
       method: 'POST', headers: authHeaders(),
       body: JSON.stringify({ application_id: applicationId }),
     });
-    const data = await start.json();
+    const data = await start.json().catch(() => ({}));
     if (!start.ok) { alert(data.error || 'Could not open messages'); return; }
-    const convId = data.conversation.id;
-    const msgRes = await fetch('/api/conversations/' + convId + '/messages', { headers: authHeaders() });
-    const msgData = await msgRes.json();
-    const history = (msgData.messages || []).map(m => (m.sender_id === getCurrentUserId() ? 'You: ' : 'Them: ') + m.body).join('\n\n') || '(no messages yet)';
-    const body = prompt('Messages with employer:\n\n' + history + '\n\nType a new message:', '');
-    if (!body) return;
-    await fetch('/api/conversations/' + convId + '/messages', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ body }),
-    });
-    alert('Message sent.');
+    chatConvId = data.conversation.id;
+    document.getElementById('chatTitle').textContent = title || 'Messages';
+    document.getElementById('chatSub').textContent = subtitle || '';
+    document.getElementById('chatOverlay').classList.add('open');
+    document.getElementById('chatInput').value = '';
+    await loadChat();
+    document.getElementById('chatInput').focus();
+    clearInterval(chatTimer);
+    chatTimer = setInterval(loadChat, 15000);
+  }
+
+  function closeChat() {
+    document.getElementById('chatOverlay').classList.remove('open');
+    clearInterval(chatTimer);
+    chatConvId = null;
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChat(); });
+
+  function fmtChatTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return isNaN(d) ? '' : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function loadChat() {
+    if (!chatConvId) return;
+    const body = document.getElementById('chatBody');
+    try {
+      const res = await fetch('/api/conversations/' + chatConvId + '/messages', { headers: authHeaders() });
+      const d = await res.json();
+      const me = getCurrentUserId();
+      const msgs = d.messages || [];
+      body.innerHTML = msgs.length
+        ? msgs.map(m => `<div class="chat-msg ${m.sender_id === me ? 'me' : 'them'}">${escHtml(m.body)}<time>${m.sender_id === me ? 'You' : 'Employer'} · ${fmtChatTime(m.created_at)}</time></div>`).join('')
+        : '<div class="chat-empty">No messages yet. Say hello — replies show up here.</div>';
+      body.scrollTop = body.scrollHeight;
+    } catch {
+      body.innerHTML = '<div class="chat-empty">Could not load messages.</div>';
+    }
+  }
+
+  async function sendChat(e) {
+    if (e) e.preventDefault();
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text || !chatConvId) return;
+    const btn = document.getElementById('chatSend');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/conversations/' + chatConvId + '/messages', {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ body: text }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Could not send'); }
+      else { input.value = ''; await loadChat(); }
+    } catch { alert('Network error. Try again.'); }
+    btn.disabled = false;
   }
 
   function renderRecJobs(jobs) {
