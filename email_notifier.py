@@ -76,7 +76,7 @@ def send_job_alert(to_email: str, user_name: str, jobs: list, keywords: str) -> 
             <p>Hi {_safe(user_name)}, we found {len(jobs)} new jobs matching your criteria:</p>
             {jobs_html}
             <p style="margin-top:20px;color:#888;">
-                <a href="{APP_URL}/alerts.html" style="color:#00d4ff;">Manage your job alerts</a>
+                <a href="{APP_URL}/user#alerts" style="color:#00d4ff;">Manage your job alerts</a>
             </p>
         </div>
     </body></html>

@@ -208,6 +208,7 @@
     <button class="tab active" onclick="switchTab('overview')">📊 Overview</button>
     <button class="tab" onclick="switchTab('applications')">📋 Applications</button>
     <button class="tab" onclick="switchTab('saved')">⭐ Saved Jobs</button>
+    <button class="tab" onclick="switchTab('alerts')">🔔 Job Alerts</button>
     <button class="tab" onclick="switchTab('recommendations')">🎯 For You</button>
     <button class="tab" onclick="switchTab('profile')">👤 Profile</button>
   </div>
@@ -313,6 +314,15 @@
     <div class="rec-grid" id="savedJobsList"><div class="empty-state"><div class="emoji">⭐</div><h3>No saved jobs yet</h3><p>Save jobs you like from the browse page</p></div></div>
   </div>
 
+  <!-- ── JOB ALERTS ── -->
+  <div class="tab-content" id="tab-alerts">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap;">
+      <div style="font-weight:700;font-size:1rem;">🔔 Job Alerts</div>
+      <a href="/jobs" style="padding:0.5rem 0.9rem;border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:0.8rem;text-decoration:none">+ New alert from a search</a>
+    </div>
+    <div class="card" id="alertsCard"><div id="alertsList"><div class="empty-state"><div class="emoji">⏳</div><h3>Loading…</h3></div></div></div>
+  </div>
+
   <!-- ── RECOMMENDATIONS ── -->
   <div class="tab-content" id="tab-recommendations">
     <div style="margin-bottom:1.5rem;font-weight:700;font-size:1rem;">🎯 Jobs Matched To Your Profile</div>
@@ -370,7 +380,7 @@
           <input type="text" class="profile-input" id="prefRole" placeholder="e.g. Senior Engineer">
         </div>
         <div class="profile-field">
-          <div class="profile-label">Expected Salary (AUD)</div>
+          <div class="profile-label">Expected Salary (KSh / month)</div>
           <input type="text" class="profile-input" id="prefSalary" placeholder="e.g. 120,000">
         </div>
         <div class="profile-field">
@@ -430,14 +440,14 @@
         recent_applications: [
           { id: 1, job_id: 71, title: 'Systems Administrator', company: 'OpenJobs', location: 'Remote', salary_min: 80000, salary_max: 120000, status: 'interview', applied_at: '2026-06-28T10:00:00', notes: 'Technical round scheduled Jul 8' },
           { id: 2, job_id: 70, title: 'Software Engineering Intern', company: 'OpenJobs', location: 'Remote', salary_min: 0, salary_max: 0, status: 'pending', applied_at: '2026-06-25T09:00:00', notes: '' },
-          { id: 3, job_id: 63, title: 'AutoCAD Drafter', company: 'Engineering Co', location: 'Sydney NSW', salary_min: 90000, salary_max: 90000, status: 'rejected', applied_at: '2026-06-20T14:00:00', notes: 'Position filled' },
+          { id: 3, job_id: 63, title: 'AutoCAD Drafter', company: 'Engineering Co', location: 'Westlands, Nairobi', salary_min: 90000, salary_max: 90000, status: 'rejected', applied_at: '2026-06-20T14:00:00', notes: 'Position filled' },
           { id: 4, job_id: 64, title: 'Fusion 360 Designer', company: 'TechFlow Australia', location: 'Melbourne VIC', salary_min: 95000, salary_max: 95000, status: 'screening', applied_at: '2026-07-01T11:00:00', notes: 'Recruiter call went well' },
           { id: 5, job_id: 65, title: 'SolidWorks Engineer', company: 'MechTech', location: 'Brisbane QLD', salary_min: 110000, salary_max: 110000, status: 'applied', applied_at: '2026-06-30T08:00:00', notes: '' }
         ],
         recommended: [
           { id: 72, title: 'DevOps Engineer', company: 'CloudScale', location: 'Remote', salary_min: 130000, salary_max: 160000, category: 'DevOps' },
           { id: 73, title: 'AI Engineer', company: 'Neural Labs', location: 'Nairobi', salary_min: 180000, salary_max: 220000, category: 'AI/ML' },
-          { id: 74, title: 'Frontend Developer', company: 'Designify', location: 'Sydney NSW', salary_min: 95000, salary_max: 120000, category: 'Development' },
+          { id: 74, title: 'Frontend Developer', company: 'Designify', location: 'Nairobi', salary_min: 95000, salary_max: 120000, category: 'Development' },
           { id: 75, title: 'Data Scientist', company: 'DataFlow', location: 'Melbourne VIC', salary_min: 110000, salary_max: 140000, category: 'Data Science' }
         ]
       };
@@ -574,7 +584,7 @@
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     // Activate clicked tab button
     const btns = document.querySelectorAll('.tab');
-    const names = ['overview','applications','saved','recommendations','profile'];
+    const names = ['overview','applications','saved','alerts','recommendations','profile'];
     const idx = names.indexOf(name);
     if (idx >= 0 && btns[idx]) btns[idx].classList.add('active');
     const content = document.getElementById('tab-' + name);
@@ -582,8 +592,54 @@
     window.scrollTo({top: 0, behavior: 'smooth'});
 
     if (name === 'saved') loadSavedJobs();
+    if (name === 'alerts') loadAlerts();
     if (name === 'applications') renderApplications();
   }
+
+  // ── JOB ALERTS (saved searches) ──
+  const escA = s => s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  async function loadAlerts() {
+    const el = document.getElementById('alertsList');
+    try {
+      const res = await fetch('/api/alerts', { headers: authHeaders() });
+      if (!res.ok) throw new Error();
+      const { alerts } = await res.json();
+      if (!alerts.length) {
+        el.innerHTML = '<div class="empty-state"><div class="emoji">🔔</div><h3>No job alerts yet</h3><p>Run a search on the <a href="/jobs" style="color:var(--primary)">jobs page</a> and click "Save search" to get new matches by email.</p></div>';
+        return;
+      }
+      el.innerHTML = alerts.map(a => `
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:0.9rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap;${a.is_active ? '' : 'opacity:.55'}">
+          <div style="min-width:0">
+            <a href="${escA(a.search_url)}" style="font-weight:600;color:var(--text);text-decoration:none">${escA(a.name || 'Job alert')}</a>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px">
+              ${[a.keywords && '“' + a.keywords + '”', a.classification, a.location, a.work_type, a.salary_min && '$' + Number(a.salary_min).toLocaleString() + '+'].filter(Boolean).map(escA).join(' · ') || 'All jobs'}
+              · ${a.frequency === 'instant' ? 'Instant' : 'Daily digest'}${a.last_sent_at ? ' · last sent ' + new Date(a.last_sent_at).toLocaleDateString() : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+            <select onchange="updateAlert(${a.id}, {frequency: this.value})" style="padding:0.35rem 0.6rem;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:0.78rem">
+              <option value="daily" ${a.frequency === 'daily' ? 'selected' : ''}>Daily</option>
+              <option value="instant" ${a.frequency === 'instant' ? 'selected' : ''}>Instant</option>
+            </select>
+            <button onclick="updateAlert(${a.id}, {is_active: ${a.is_active ? 'false' : 'true'}})" style="padding:0.35rem 0.7rem;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text-muted);font-size:0.78rem;cursor:pointer">${a.is_active ? 'Pause' : 'Resume'}</button>
+            <button onclick="deleteAlert(${a.id})" style="padding:0.35rem 0.7rem;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--error,#ef4444);font-size:0.78rem;cursor:pointer">Delete</button>
+          </div>
+        </div>`).join('');
+    } catch {
+      el.innerHTML = '<div class="empty-state"><div class="emoji">⚠️</div><h3>Could not load alerts</h3><p>Please sign in again.</p></div>';
+    }
+  }
+  async function updateAlert(id, patch) {
+    await fetch('/api/alerts/' + id, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    loadAlerts();
+  }
+  async function deleteAlert(id) {
+    if (!confirm('Delete this job alert?')) return;
+    await fetch('/api/alerts/' + id, { method: 'DELETE', headers: authHeaders() });
+    loadAlerts();
+  }
+  if (window.location.hash === '#alerts') document.addEventListener('DOMContentLoaded', () => switchTab('alerts'));
 
   async function loadSavedJobs() {
     try {
@@ -640,7 +696,7 @@
   // ── UTILITIES ──
   function formatSalaryRange(min, max) {
     if (!min && !max) return '';
-    const fmt = n => n >= 1000 ? 'AUD ' + Math.round(n/1000) + 'k' : '';
+    const fmt = n => 'KSh ' + Number(n).toLocaleString('en-KE');
     if (min && max && min !== max) return fmt(min) + ' – ' + fmt(max);
     if (min) return 'From ' + fmt(min);
     if (max) return 'Up to ' + fmt(max);
@@ -662,6 +718,21 @@
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+</script>
+<script>
+// Site-wide announcement / maintenance banner, controlled from the admin dashboard (Settings).
+(function () {
+  fetch('/api/settings/public').then(r => r.ok ? r.json() : null).then(s => {
+    if (!s || (!s.announcement && !s.maintenance_mode)) return;
+    var el = document.createElement('div');
+    el.id = 'siteBanner';
+    el.setAttribute('role', 'status');
+    el.style.cssText = 'position:sticky;top:0;z-index:1000;text-align:center;padding:0.55rem 1rem;font-size:0.85rem;font-weight:600;background:' +
+      (s.maintenance_mode ? '#f59e0b;color:#111' : '#00d4aa;color:#062b23');
+    el.textContent = s.maintenance_mode ? (s.announcement || 'OpenJobs is in maintenance mode — browsing works, but posting and applying are paused.') : s.announcement;
+    document.body.prepend(el);
+  }).catch(function () {});
+})();
 </script>
 </body>
 </html>

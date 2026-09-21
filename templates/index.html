@@ -53,6 +53,7 @@
 
 
     /* ── TYPE SCALE — Major Third (×1.25) from 16px base ── */
+    :root {
     --type-display:   clamp(2.5rem,  6vw,  4rem);     /* 40–64px  display/hero */
     --type-h1:        clamp(1.8rem,  4vw,  2.5rem);     /* 29–40px  page h1    */
     --type-h2:        clamp(1.35rem, 3vw,  1.75rem);    /* 22–28px  section h2  */
@@ -66,6 +67,7 @@
     /* Default body */
     --type-line-height: 1.6;
     --type-letter-spacing: 0;
+    }
     /* ── SKIP LINK ── */
     .skip-link {
       position: absolute;
@@ -176,7 +178,7 @@
       background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0,212,170,0.12) 0%, transparent 70%);
     }
     .hero h1 {
-      font-size: var(--type-display)
+      font-size: var(--type-display);
       line-height: 1.1;
       font-weight: 800; letter-spacing: -1px;
       line-height: 1.1; margin-bottom: 1rem;
@@ -510,14 +512,13 @@
       <div class="logo-sub">AI-Powered Career Platform</div>
     </div>
     <nav>
-      <a href="/">Find Jobs</a>
+      <a href="/jobs">Find Jobs</a>
       <a href="/companies">Companies</a>
       <a href="/salary">Salary Guide</a>
-      <a href="/learning">Learning</a>
-      <a href="/templates/employer.html">For Employers</a>
+      <a href="/employer">For Employers</a>
     </nav>
     <div class="header-actions">
-      <a href="#" class="btn btn-ghost" onclick="alert('Coming soon — post a job from the employer dashboard')">Post a Job</a>
+      <a href="/employer" class="btn btn-ghost">Post a Job</a>
       <a href="/register" class="btn btn-primary">Sign Up Free</a>
       <button class="hamburger" id="hamburgerBtn" onclick="toggleMobileNav()" aria-label="Toggle menu">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -531,32 +532,33 @@
 <!-- HERO -->
 <section class="hero" id="main-content">
   <h1>Find Your Next<br><span class="gradient">Dream Job</span></h1>
-  <p>69 jobs matched to your skills. Updated every hour. Powered by AI matching.</p>
+  <p>Search every live job by title, skill, company or location — then save your search and let new jobs come to you.</p>
   <div class="search-section">
     <div class="search-box">
-      <input type="text" id="searchInput" placeholder="Job title, keyword, or company..." autocomplete="off">
-      <input type="text" id="locationInput" placeholder="Location..." style="max-width:160px;">
+      <input type="text" id="searchInput" placeholder="Job title, keyword, or company..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearch();}">
+      <input type="text" id="locationInput" placeholder="Town or county" style="max-width:200px;" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearch();}">
       <button class="btn btn-primary" onclick="doSearch()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline;vertical-align:middle;margin-right:6px;"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
         Search
       </button>
     </div>
     <div class="quick-filters" id="countryChips">
-      <button class="quick-chip active" data-country="" onclick="setCountryFilter(this, '')">🌍 All</button>
-      <button class="quick-chip" data-country="remote" onclick="setCountryFilter(this, 'remote')">🌎 Remote</button>
-      <button class="quick-chip" data-country="africa" onclick="setCountryFilter(this, 'africa')">🌍 Africa</button>
-      <button class="quick-chip" data-country="asia" onclick="setCountryFilter(this, 'asia')">🌏 Asia</button>
-      <button class="quick-chip" data-country="europe" onclick="setCountryFilter(this, 'europe')">🌍 Europe</button>
-      <button class="quick-chip" data-country="usa" onclick="setCountryFilter(this, 'usa')">🇺🇸 USA</button>
-      <button class="quick-chip" data-country="oceania" onclick="setCountryFilter(this, 'oceania')">🌏 Oceania</button>
+      <button class="quick-chip active" data-country="" onclick="setCountryFilter(this, '')">🇰🇪 All Kenya</button>
+      <button class="quick-chip" data-country="remote" onclick="setCountryFilter(this, 'remote')">🏠 Remote</button>
+      <button class="quick-chip" data-country="nairobi" onclick="setCountryFilter(this, 'nairobi')">Nairobi</button>
+      <button class="quick-chip" data-country="coast" onclick="setCountryFilter(this, 'coast')">Coast</button>
+      <button class="quick-chip" data-country="rift" onclick="setCountryFilter(this, 'rift')">Rift Valley</button>
+      <button class="quick-chip" data-country="western" onclick="setCountryFilter(this, 'western')">Western &amp; Nyanza</button>
+      <button class="quick-chip" data-country="central" onclick="setCountryFilter(this, 'central')">Central &amp; Eastern</button>
+      <button class="quick-chip" data-country="international" onclick="setCountryFilter(this, 'international')">🌍 International</button>
       <button class="quick-chip" data-country="full_time" onclick="setQuickFilter(this, 'full_time')">Full-time</button>
       <button class="quick-chip" data-country="part_time" onclick="setQuickFilter(this, 'part_time')">Part-time</button>
       <button class="quick-chip" data-country="contract" onclick="setQuickFilter(this, 'contract')">Contract</button>
       <button class="quick-chip" data-country="internship" onclick="setQuickFilter(this, 'internship')">Internship</button>
     </div>
-    <!-- City sub-filter — shown when a country/region is selected -->
+    <!-- Town sub-filter — shown when a Kenyan region is selected -->
     <div class="quick-filters city-subfilter" id="citySubfilter" style="display:none; margin-top:0.4rem;">
-      <span style="font-size:var(--type-caption);color:var(--color-text-muted);align-self:center;margin-right:0.25rem;">Major cities <span id="regionLabel"></span>:</span>
+      <span style="font-size:var(--type-caption);color:var(--color-text-muted);align-self:center;margin-right:0.25rem;">Towns <span id="regionLabel"></span>:</span>
       <div id="cityChips"></div>
     </div>
   </div>
@@ -614,11 +616,11 @@
     </div>
 
     <div class="filter-card">
-      <h3>Salary Range (AUD)</h3>
+      <h3>Salary Range (KSh / month)</h3>
       <div class="salary-range">
-        <input type="range" id="salaryRange" min="0" max="300000" step="10000" value="300000" oninput="updateSalaryLabel(); fetchJobs()">
+        <input type="range" id="salaryRange" min="0" max="500000" step="10000" value="500000" oninput="updateSalaryLabel(); fetchJobs()">
         <div class="salary-labels">
-          <span>$0</span><span id="salaryLabel">$300k+</span>
+          <span>KSh 0</span><span id="salaryLabel">KSh 500k+</span>
         </div>
       </div>
     </div>
@@ -627,47 +629,46 @@
       <h3>Location</h3>
       <div class="filter-group">
         <select class="filter-select" id="filterLocation" onchange="fetchJobs()">
-          <option value="">All Locations</option>
-          <optgroup label="🌍 Africa">
+          <option value="">All of Kenya</option>
+          <optgroup label="🏙️ Nairobi Metro">
             <option value="Nairobi">Nairobi</option>
-            <option value="Lagos">Lagos</option>
-            <option value="Accra">Accra</option>
-            <option value="Kampala">Kampala</option>
-            <option value="Johannesburg">Johannesburg</option>
-            <option value="Cairo">Cairo</option>
-            <option value="Dar es Salaam">Dar es Salaam</option>
+            <option value="Westlands">Westlands</option>
+            <option value="Upper Hill">Upper Hill</option>
+            <option value="Kiambu">Kiambu / Thika / Ruiru</option>
+            <option value="Machakos">Machakos / Athi River</option>
+            <option value="Kajiado">Kajiado / Kitengela / Rongai</option>
           </optgroup>
-          <optgroup label="🌏 Asia">
-            <option value="Singapore">Singapore</option>
-            <option value="Bangalore">Bangalore</option>
-            <option value="Mumbai">Mumbai</option>
-            <option value="Dubai">Dubai</option>
-            <option value="Hong Kong">Hong Kong</option>
-            <option value="Tokyo">Tokyo</option>
+          <optgroup label="🌊 Coast">
+            <option value="Mombasa">Mombasa</option>
+            <option value="Kilifi">Kilifi / Malindi</option>
+            <option value="Kwale">Kwale / Diani</option>
+            <option value="Lamu">Lamu</option>
           </optgroup>
-          <optgroup label="🌍 Europe">
-            <option value="London">London</option>
-            <option value="Berlin">Berlin</option>
-            <option value="Paris">Paris</option>
-            <option value="Amsterdam">Amsterdam</option>
-            <option value="Zurich">Zurich</option>
+          <optgroup label="⛰️ Rift Valley">
+            <option value="Nakuru">Nakuru / Naivasha</option>
+            <option value="Uasin Gishu">Eldoret</option>
+            <option value="Kericho">Kericho</option>
+            <option value="Laikipia">Nanyuki / Laikipia</option>
+            <option value="Trans Nzoia">Kitale</option>
+            <option value="Narok">Narok</option>
           </optgroup>
-          <optgroup label="🇺🇸 USA">
-            <option value="New York">New York</option>
-            <option value="San Francisco">San Francisco</option>
-            <option value="Seattle">Seattle</option>
-            <option value="Austin">Austin</option>
-            <option value="Los Angeles">Los Angeles</option>
+          <optgroup label="🌾 Western &amp; Nyanza">
+            <option value="Kisumu">Kisumu</option>
+            <option value="Kakamega">Kakamega</option>
+            <option value="Kisii">Kisii</option>
+            <option value="Bungoma">Bungoma</option>
+            <option value="Busia">Busia</option>
           </optgroup>
-          <optgroup label="🌏 Oceania">
-            <option value="Sydney">Sydney</option>
-            <option value="Melbourne">Melbourne</option>
-            <option value="Brisbane">Brisbane</option>
-            <option value="Perth">Perth</option>
-            <option value="Auckland">Auckland</option>
+          <optgroup label="🌄 Central &amp; Eastern">
+            <option value="Nyeri">Nyeri</option>
+            <option value="Meru">Meru</option>
+            <option value="Embu">Embu</option>
+            <option value="Kitui">Kitui</option>
+            <option value="Garissa">Garissa</option>
           </optgroup>
-          <optgroup label="🌎 Remote">
-            <option value="Remote">Remote / Global</option>
+          <optgroup label="🏠 Remote / Abroad">
+            <option value="Remote">Remote</option>
+            <option value="International">International</option>
           </optgroup>
         </select>
       </div>
@@ -1057,7 +1058,16 @@
   }
 
   // ── SEARCH HELPERS ─────────────────────────────────────────────────
-  function doSearch() { currentPage = 1; fetchJobs(); }
+  // The hero search hands off to the full Seek-style results page (/jobs) which has
+  // relevance ranking, facets, sorting, pagination and saved-search alerts.
+  function doSearch() {
+    const p = new URLSearchParams();
+    const q = (document.getElementById('searchInput') || {}).value?.trim();
+    const loc = (document.getElementById('locationInput') || {}).value?.trim();
+    if (q) p.set('q', q);
+    if (loc) p.set('location', loc);
+    window.location.href = '/jobs' + (p.toString() ? '?' + p.toString() : '');
+  }
   // Quick filters: these set a MODE that gets combined with checkbox filters.
   // Each quick filter category is independent — they stack with checkbox state.
   // Active quick filter is tracked so its button shows the "active" style.
@@ -1127,14 +1137,14 @@
       return;
     }
 
-    // City/location quick filter (e.g. Nairobi, Sydney) — leave all work type/arrangement checkboxes as-is
+    // City/location quick filter (e.g. Nairobi, Mombasa) — leave all work type/arrangement checkboxes as-is
     document.getElementById('filterLocation').value = '';
     document.getElementById('locationInput').value = value;
     fetchJobs();
   }
   function updateSalaryLabel() {
     const v = document.getElementById('salaryRange').value;
-    document.getElementById('salaryLabel').textContent = v >= 300000 ? 'Any' : '$' + (v/1000) + 'k';
+    document.getElementById('salaryLabel').textContent = v >= 500000 ? 'Any' : 'KSh ' + (v/1000) + 'k';
   }
 
   // ── RENDER ERROR ──────────────────────────────────────────────────
@@ -1159,20 +1169,20 @@
   function formatSalary(job) {
     const min = job.salary_min;
     const max = job.salary_max;
-    const curr = job.salary_currency || 'AUD';
+    const curr = job.salary_currency || 'KES';
     if (!min && !max) return '';
-    // KES amounts stored as raw numbers (e.g. 800 = KES 800k); AUD as thousands (e.g. 80 = AUD 80k)
+    if (job.salary && typeof job.salary === 'string' && /\d/.test(job.salary)) return job.salary; // server-formatted (e.g. 'KSh 80,000 – 120,000 /month')
     if (curr === 'KES') {
-      const fmtKES = n => n >= 1000 ? 'KES ' + n.toLocaleString() : 'KES ' + n;
-      if (min && max && min !== max) return fmtKES(min) + ' – ' + fmtKES(max);
-      if (min) return 'From ' + fmtKES(min);
-      if (max) return 'Up to ' + fmtKES(max);
+      const fmtKES = n => 'KSh ' + Number(n).toLocaleString('en-KE');
+      if (min && max && min !== max) return fmtKES(min) + ' – ' + fmtKES(max) + ' /month';
+      if (min) return 'From ' + fmtKES(min) + ' /month';
+      if (max) return 'Up to ' + fmtKES(max) + ' /month';
       return '';
     }
-    const fmtAUD = n => n >= 1000 ? 'AUD ' + Math.round(n/1000) + 'k' : 'AUD ' + n;
-    if (min && max && min !== max) return fmtAUD(min) + ' – ' + fmtAUD(max);
-    if (min) return 'From ' + fmtAUD(min);
-    if (max) return 'Up to ' + fmtAUD(max);
+    const fmtOther = n => curr + ' ' + Number(n).toLocaleString('en-KE');
+    if (min && max && min !== max) return fmtOther(min) + ' – ' + fmtOther(max);
+    if (min) return 'From ' + fmtOther(min);
+    if (max) return 'Up to ' + fmtOther(max);
     return '';
   }
 
@@ -1212,13 +1222,16 @@
 
 // ── COUNTRY / CITY TWO-TIER LOCATION FILTER ────────────────────────────
 const COUNTRY_CITIES = {
-  africa:  ['Nairobi', 'Lagos', 'Accra', 'Kampala', 'Johannesburg', 'Cairo', 'Dar es Salaam', 'Kigali', 'Addis Ababa'],
-  asia:    ['Singapore', 'Bangalore', 'Mumbai', 'Manila', 'Ho Chi Minh', 'Bangkok', 'Jakarta', 'Kuala Lumpur', 'Hong Kong', 'Tokyo', 'Seoul', 'Dubai', 'Tel Aviv'],
-  europe:  ['London', 'Berlin', 'Paris', 'Amsterdam', 'Stockholm', 'Madrid', 'Barcelona', 'Warsaw', 'Prague', 'Vienna', 'Zurich', 'Lisbon', 'Dublin', 'Milan', 'Rome'],
-  usa:     ['New York', 'San Francisco', 'Seattle', 'Austin', 'Boston', 'Chicago', 'Los Angeles', 'Denver', 'Atlanta', 'Miami', 'Washington DC'],
-  oceania: ['Sydney', 'Melbourne', 'Brisbane', 'Auckland', 'Perth', 'Wellington'],
+  nairobi: ['Nairobi CBD', 'Westlands', 'Upper Hill', 'Kilimani', 'Karen', 'Industrial Area', 'Ruaraka', 'Embakasi', 'Kiambu', 'Thika', 'Ruiru', 'Kitengela', 'Athi River'],
+  coast:   ['Mombasa', 'Nyali', 'Malindi', 'Kilifi', 'Diani', 'Voi', 'Lamu'],
+  rift:    ['Nakuru', 'Naivasha', 'Eldoret', 'Kericho', 'Nanyuki', 'Kitale', 'Narok', 'Lodwar'],
+  western: ['Kisumu', 'Kakamega', 'Kisii', 'Bungoma', 'Busia', 'Homa Bay', 'Migori'],
+  central: ['Nyeri', 'Meru', 'Embu', 'Machakos', 'Kitui', "Murang'a", 'Isiolo', 'Garissa'],
+  international: [],
   remote:  [],
 };
+// Region chip without a town selected -> the region's main county (Nairobi) or all of Kenya
+const REGION_DEFAULT_FILTER = { nairobi: { state: 'Nairobi' }, international: { state: 'International' } };
 
 let activeRegion = '';
 let activeCity = '';
@@ -1239,12 +1252,12 @@ function setCountryFilter(btn, country) {
   if (!country || !COUNTRY_CITIES[country] || COUNTRY_CITIES[country].length === 0) {
     sub.style.display = 'none';
     cityWrap.innerHTML = '';
-    currentLocationHint = '';
+    currentLocationHint = country;
     fetchJobs();
     return;
   }
 
-  const regionNames = { africa:'Africa', asia:'Asia', europe:'Europe', usa:'USA', oceania:'Oceania' };
+  const regionNames = { nairobi:'Nairobi Metro', coast:'the Coast', rift:'the Rift Valley', western:'Western & Nyanza', central:'Central & Eastern' };
   if (regionLabel) regionLabel.textContent = 'in ' + (regionNames[country] || country);
 
   cityWrap.innerHTML = COUNTRY_CITIES[country].map(city =>
@@ -1286,8 +1299,10 @@ function fetchJobs() {
   if (isRemote) params.set('work_arrangement', 'remote');
   if (activeCity) {
     params.set('location', activeCity);
-  } else if (currentLocationHint) {
-    params.set('location_hint', currentLocationHint);
+  } else if (currentLocationHint && REGION_DEFAULT_FILTER[currentLocationHint]) {
+    Object.entries(REGION_DEFAULT_FILTER[currentLocationHint]).forEach(([k, v]) => params.set(k, v));
+  } else if (currentLocationHint && currentLocationHint !== 'remote') {
+    params.set('location', 'Kenya');   // any Kenyan county; refine with a town chip
   }
   params.set('sort', sort);
   params.set('limit', '30');
@@ -1319,6 +1334,21 @@ function setQuickFilter(btn, value) {
   fetchJobs();
 }
 
+</script>
+<script>
+// Site-wide announcement / maintenance banner, controlled from the admin dashboard (Settings).
+(function () {
+  fetch('/api/settings/public').then(r => r.ok ? r.json() : null).then(s => {
+    if (!s || (!s.announcement && !s.maintenance_mode)) return;
+    var el = document.createElement('div');
+    el.id = 'siteBanner';
+    el.setAttribute('role', 'status');
+    el.style.cssText = 'position:sticky;top:0;z-index:1000;text-align:center;padding:0.55rem 1rem;font-size:0.85rem;font-weight:600;background:' +
+      (s.maintenance_mode ? '#f59e0b;color:#111' : '#00d4aa;color:#062b23');
+    el.textContent = s.maintenance_mode ? (s.announcement || 'OpenJobs is in maintenance mode — browsing works, but posting and applying are paused.') : s.announcement;
+    document.body.prepend(el);
+  }).catch(function () {});
+})();
 </script>
 </body>
 </html>

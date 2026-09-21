@@ -2,11 +2,19 @@
 """
 seo_utils.py — Slug generation, canonical URL helpers, structured data helpers.
 """
+import os
 import re
 from urllib.parse import urljoin
 
-# ── Your canonical base domain (configure once) ──────────────────────────────
-SITE_URL = "https://openjobs.com.au"   # ⚠️ change on deploy
+# ── Canonical base domain: APP_URL in .env, falls back to the production domain ──
+SITE_URL = (os.environ.get('APP_URL') or "https://openjobs.co.ke").rstrip('/') + '/'
+
+
+def make_slug(*parts) -> str:
+    """Generic URL slug: make_slug('Atlassian Pty Ltd') -> 'atlassian-pty-ltd'."""
+    text = ' '.join(str(p) for p in parts if p)
+    return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-') or 'item'
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. SLUG GENERATION
@@ -90,23 +98,28 @@ def job_listing_jsonld(job: dict, canonical: str) -> str:
             "@type": "Place",
             "address": {
                 "@type": "PostalAddress",
-                "addressLocality": job.get("location", "")
+                "addressLocality": job.get("location", ""),
+                "addressRegion": job.get("state") if job.get("state") not in (None, "", "Remote", "International", "Other") else None,
+                "addressCountry": "KE" if job.get("state") != "International" else None,
             }
         },
+        "jobLocationType": "TELECOMMUTE" if job.get("work_arrangement") == "remote" or job.get("state") == "Remote" else None,
         "description": job.get("description", "")[:5000],
         "baseSalary": {
             "@type": "MonetaryAmount",
-            "currency": job.get("salary_currency", "AUD"),
+            "currency": job.get("salary_currency") or "KES",
             "value": {
                 "@type": "QuantitativeValue",
                 "minValue": job.get("salary_min", 0),
                 "maxValue": job.get("salary_max", 0),
-                "unitText": "YEAR"
+                # Kenyan salaries are quoted monthly; anything else stored in the system is annual
+                "unitText": "MONTH" if (job.get("salary_currency") or "KES") == "KES" else "YEAR"
             }
         } if job.get("salary_min") else None,
         "url": canonical,
     }
-    # Remove None values before dumping
+    # Remove None values (top level and inside the address) before dumping
+    schema["jobLocation"]["address"] = {k: v for k, v in schema["jobLocation"]["address"].items() if v is not None}
     schema = {k: v for k, v in schema.items() if v is not None}
     return f'<script type="application/ld+json">{_jsonld_dumps(schema)}</script>'
 

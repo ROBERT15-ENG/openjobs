@@ -234,7 +234,7 @@
           <input type="radio" name="plan" value="standard" id="planStandard" checked style="display:none">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
             <div style="font-weight:700;font-size:0.95rem;">Standard</div>
-            <div style="background:var(--primary);color:#000;font-weight:800;font-size:0.85rem;padding:0.2rem 0.6rem;border-radius:6px;">$99 AUD</div>
+            <div style="background:var(--primary);color:#000;font-weight:800;font-size:0.85rem;padding:0.2rem 0.6rem;border-radius:6px;" id="priceStandard">KSh 5,000</div>
           </div>
           <div style="font-size:0.8rem;color:var(--text-muted);">30-day listing · AI-matched candidates · Email applications</div>
         </div>
@@ -242,9 +242,9 @@
           <input type="radio" name="plan" value="premium" id="planPremium" style="display:none">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
             <div style="font-weight:700;font-size:0.95rem;">⭐ Premium</div>
-            <div style="background:var(--primary);color:#000;font-weight:800;font-size:0.85rem;padding:0.2rem 0.6rem;border-radius:6px;">$199 AUD</div>
+            <div style="background:var(--primary);color:#000;font-weight:800;font-size:0.85rem;padding:0.2rem 0.6rem;border-radius:6px;" id="pricePremium">KSh 12,000</div>
           </div>
-          <div style="font-size:0.8rem;color:var(--text-muted);">Top placement · Featured badge · Email to matched seekers</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);">Top placement · Featured badge · Instant alerts to matched seekers</div>
         </div>
       </div>
       <div id="paymentNotice" style="display:none;background:rgba(0,212,170,0.08);border:1px solid rgba(0,212,170,0.25);border-radius:10px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:var(--primary);">
@@ -270,16 +270,18 @@
             </div>
             <div class="form-group">
               <label class="form-label">Location *</label>
-              <input type="text" class="form-input" id="jobLocation" placeholder="e.g. Sydney, NSW or Remote" required>
+              <input type="text" class="form-input" id="jobLocation" placeholder="e.g. Westlands, Nairobi or Remote" required>
             </div>
             <div class="form-group">
-              <label class="form-label">Category *</label>
-              <select class="form-select" id="jobCategory" required>
-                <option value="">Select category...</option>
-                <option>Software Development</option><option>Engineering</option><option>Design</option>
-                <option>DevOps / Sysadmin</option><option>Fintech</option><option>Technology</option>
-                <option>Sales</option><option>Marketing</option><option>Data Science</option>
-                <option>Product</option><option>General</option>
+              <label class="form-label">Classification *</label>
+              <select class="form-select" id="jobClassification" required onchange="fillSubclassifications('jobClassification','jobSubclassification')">
+                <option value="">Select classification...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Sub-classification</label>
+              <select class="form-select" id="jobSubclassification">
+                <option value="">Select classification first</option>
               </select>
             </div>
             <div class="form-group">
@@ -301,11 +303,11 @@
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Salary Min (AUD)</label>
+              <label class="form-label">Salary Min (KSh / month)</label>
               <input type="number" class="form-input" id="jobSalaryMin" placeholder="80000">
             </div>
             <div class="form-group">
-              <label class="form-label">Salary Max (AUD)</label>
+              <label class="form-label">Salary Max (KSh / month)</label>
               <input type="number" class="form-input" id="jobSalaryMax" placeholder="120000">
             </div>
             <div class="form-group full">
@@ -373,7 +375,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Primary Location</label>
-            <input type="text" class="form-input" id="settingsLocation" placeholder="e.g. Sydney, NSW or Remote">
+            <input type="text" class="form-input" id="settingsLocation" placeholder="e.g. Westlands, Nairobi or Remote">
           </div>
           <div class="form-group full">
             <label class="form-label">Company Name</label>
@@ -415,13 +417,14 @@
           <input type="text" class="form-input" id="editLocation" required>
         </div>
         <div class="form-group">
-          <label class="form-label">Category</label>
-          <select class="form-select" id="editCategory">
-            <option>Software Development</option><option>Engineering</option><option>Design</option>
-            <option>DevOps / Sysadmin</option><option>Fintech</option><option>Technology</option>
-            <option>Sales</option><option>Marketing</option><option>Data Science</option>
-            <option>Product</option><option>General</option>
+          <label class="form-label">Classification</label>
+          <select class="form-select" id="editClassification" onchange="fillSubclassifications('editClassification','editSubclassification')">
+            <option value="">Select classification...</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sub-classification</label>
+          <select class="form-select" id="editSubclassification"><option value="">—</option></select>
         </div>
         <div class="form-group">
           <label class="form-label">Work Type</label>
@@ -438,11 +441,11 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Salary Min (AUD)</label>
+          <label class="form-label">Salary Min (KSh / month)</label>
           <input type="number" class="form-input" id="editSalaryMin">
         </div>
         <div class="form-group">
-          <label class="form-label">Salary Max (AUD)</label>
+          <label class="form-label">Salary Max (KSh / month)</label>
           <input type="number" class="form-input" id="editSalaryMax">
         </div>
         <div class="form-group full">
@@ -739,6 +742,18 @@
 
   // ── POST JOB ───────────────────────────────────────────────────────────────
 
+  // Prices come from the API (KES; configurable per environment)
+  window.PRICE_LABELS = {};
+  fetch('/api/pricing').then(r => r.json()).then(p => {
+    const sym = p.currency_symbol || p.currency || '';
+    (p.plans || []).forEach(pl => {
+      const label = sym + ' ' + Number(pl.price).toLocaleString('en-KE');
+      window.PRICE_LABELS[pl.id] = label;
+      const el = document.getElementById(pl.id === 'premium' ? 'pricePremium' : 'priceStandard');
+      if (el) el.textContent = label;
+    });
+  }).catch(() => {});
+
   function selectPlan(plan, el) {
     document.querySelectorAll('[name="plan"]').forEach(r => { r.checked = false; });
     document.querySelectorAll('#pricingPlans .card').forEach(c => {
@@ -770,12 +785,13 @@ async function handlePostJob(e) {
         title:            document.getElementById('jobTitle').value.trim(),
         company:          document.getElementById('jobCompany').value.trim(),
         location:         document.getElementById('jobLocation').value.trim(),
-        category:         document.getElementById('jobCategory').value,
+        classification:   document.getElementById('jobClassification').value,
+        subclassification: document.getElementById('jobSubclassification').value,
         work_type:        document.getElementById('jobWorkType').value,
         work_arrangement: document.getElementById('jobArrangement').value,
-        salary_min:       parseInt(document.getElementById('jobSalaryMin').value) || 0,
-        salary_max:       parseInt(document.getElementById('jobSalaryMax').value) || 0,
-        salary_currency:  'AUD',
+        salary_min:       parseInt(document.getElementById('jobSalaryMin').value) || null,
+        salary_max:       parseInt(document.getElementById('jobSalaryMax').value) || null,
+        salary_currency:  'KES',
         description:      document.getElementById('jobDesc').value.trim(),
         skills:           document.getElementById('jobSkills').value.trim(),
         is_active:        1
@@ -791,7 +807,7 @@ async function handlePostJob(e) {
           // No Stripe — post free in demo mode
           document.getElementById('freeNotice').textContent = '🧪 Demo: Stripe not configured. Posting free.';
         } else if (ck.checkout_url) {
-          if (confirm('Redirect to Stripe to complete payment for $199 AUD?')) {
+          if (confirm('Redirect to Stripe to complete payment for ' + (window.PRICE_LABELS?.premium || 'the Premium listing') + '?')) {
             window.location.href = ck.checkout_url;
           }
           btn.disabled = false; btn.textContent = '🚀 Publish Job →';
@@ -811,6 +827,29 @@ async function handlePostJob(e) {
     btn.disabled = false; btn.textContent = '🚀 Publish Job →';
   }
 
+  // ── CLASSIFICATIONS (shared by post + edit forms) ─────────────────────────
+  let CLASSIFICATIONS = [];
+  const taxonomyReady = fetch('/api/classifications').then(r => r.json()).then(d => {
+    CLASSIFICATIONS = d.classifications || [];
+    ['jobClassification', 'editClassification'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      CLASSIFICATIONS.forEach(c => {
+        const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; sel.appendChild(o);
+      });
+    });
+  }).catch(() => {});
+
+  function fillSubclassifications(classId, subId) {
+    const cls = document.getElementById(classId).value;
+    const sub = document.getElementById(subId);
+    const entry = CLASSIFICATIONS.find(c => c.name === cls);
+    sub.innerHTML = '<option value="">' + (entry ? 'Any / not specified' : 'Select classification first') + '</option>';
+    (entry ? entry.subclassifications : []).forEach(s => {
+      const o = document.createElement('option'); o.value = s; o.textContent = s; sub.appendChild(o);
+    });
+  }
+
   // ── EDIT / DELETE ──────────────────────────────────────────────────────────
 
   async function openEditModal(jobId) {
@@ -818,18 +857,14 @@ async function handlePostJob(e) {
       const res = await fetch('/api/jobs/' + jobId);
       if (!res.ok) return;
       const j = await res.json();
-      document.getElementById('editJobId').value = job.id;
-    document.getElementById('editTitle').value = job.title || '';
-    document.getElementById('editCompany').value = job.company || '';
-    document.getElementById('editLocation').value = job.location || '';
-    document.getElementById('editCategory').value = job.category || 'General';
-    document.getElementById('editWorkType').value = job.work_type || 'full_time';
-    document.getElementById('editDescription').value = job.description || '';
-    document.getElementById('editModal').style.display = 'flex';
+      document.getElementById('editJobId').value = j.id;
       document.getElementById('editTitle').value = j.title || '';
       document.getElementById('editCompany').value = j.company || '';
       document.getElementById('editLocation').value = j.location || '';
-      document.getElementById('editCategory').value = j.category || '';
+      await taxonomyReady;
+      document.getElementById('editClassification').value = j.classification || '';
+      fillSubclassifications('editClassification', 'editSubclassification');
+      document.getElementById('editSubclassification').value = j.subclassification || '';
       document.getElementById('editWorkType').value = j.work_type || 'full_time';
       document.getElementById('editArrangement').value = j.work_arrangement || 'onsite';
       document.getElementById('editSalaryMin').value = j.salary_min || '';
@@ -849,12 +884,13 @@ async function handlePostJob(e) {
       title:            document.getElementById('editTitle').value.trim(),
       company:          document.getElementById('editCompany').value.trim(),
       location:         document.getElementById('editLocation').value.trim(),
-      category:         document.getElementById('editCategory').value,
+      classification:   document.getElementById('editClassification').value,
+      subclassification: document.getElementById('editSubclassification').value,
       work_type:        document.getElementById('editWorkType').value,
       work_arrangement: document.getElementById('editArrangement').value,
-      salary_min:       parseInt(document.getElementById('editSalaryMin').value) || 0,
-      salary_max:       parseInt(document.getElementById('editSalaryMax').value) || 0,
-      salary_currency:  'AUD',
+      salary_min:       parseInt(document.getElementById('editSalaryMin').value) || null,
+      salary_max:       parseInt(document.getElementById('editSalaryMax').value) || null,
+      salary_currency:  'KES',
       description:      document.getElementById('editDesc').value.trim(),
       skills:           document.getElementById('editSkills').value.trim(),
     };
@@ -1036,5 +1072,20 @@ function updateAppStatusFromModal(status) {
   }
 }
 
+<script>
+// Site-wide announcement / maintenance banner, controlled from the admin dashboard (Settings).
+(function () {
+  fetch('/api/settings/public').then(r => r.ok ? r.json() : null).then(s => {
+    if (!s || (!s.announcement && !s.maintenance_mode)) return;
+    var el = document.createElement('div');
+    el.id = 'siteBanner';
+    el.setAttribute('role', 'status');
+    el.style.cssText = 'position:sticky;top:0;z-index:1000;text-align:center;padding:0.55rem 1rem;font-size:0.85rem;font-weight:600;background:' +
+      (s.maintenance_mode ? '#f59e0b;color:#111' : '#00d4aa;color:#062b23');
+    el.textContent = s.maintenance_mode ? (s.announcement || 'OpenJobs is in maintenance mode — browsing works, but posting and applying are paused.') : s.announcement;
+    document.body.prepend(el);
+  }).catch(function () {});
+})();
+</script>
 </body>
 </html>

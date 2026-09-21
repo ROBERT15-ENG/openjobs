@@ -1,4 +1,4 @@
-# OpenJobs — AI-Powered Australian Job Board
+# OpenJobs — AI-Powered Job Board for Kenya
 
 > The smarter job board that matches candidates to roles using semantic AI — not just keyword searches. Built with Flask, SQLite, and Ollama.
 
@@ -16,7 +16,7 @@
 - 📊 **ATS compatibility score** — know how well your skills match each role before applying
 
 ### For Employers
-- 📋 **Employer dashboard** — post, edit, and manage job listings with pricing (Standard $99 / Premium $199 AUD via Stripe)
+- 📋 **Employer dashboard** — post, edit, and manage job listings with pricing (Standard KSh 5,000 / Premium KSh 12,000 via Stripe; amounts configurable with `PLAN_PRICE_*_CENTS`)
 - 📥 **Application pipeline** — kanban board (Applied → Screening → Interview → Offer → Hired / Rejected) with drag-and-drop
 - 👀 **View tracking** — see how many times each job has been viewed
 - �✉️ **Email notifications** — applicants get confirmation, employers get alerts (SMTP/SendGrid)
@@ -86,9 +86,23 @@ ollama pull gemma3:4b   # or your chosen model
 
 # 5. Run the server (creates jobs.db and all tables on first start)
 python api/server.py
+
+# 6. (staging only) fill the database with realistic demo ads, companies and reviews
+python api/seed_demo.py            # idempotent; --force to reseed
 ```
 
-Open `http://localhost:5700` in your browser.
+Open `http://localhost:5700` in your browser. The seed script creates demo logins
+(`seeker@demo.openjobs.local`, `employer.atlassian@demo.openjobs.local`, ... — password `Demo1234!`).
+Never run it against a production database.
+
+### Job alert digests
+
+Instant alerts are sent as soon as a matching ad is posted. Daily digests are sent by a
+cron job (or Railway/Render scheduled task):
+
+```bash
+python api/alerts.py            # add --dry-run to see what would be sent
+```
 
 ---
 
@@ -106,6 +120,26 @@ python api/db_schema.py --admin you@example.com
 ```
 
 Then sign in at `/login` and open `/admin`.
+
+### Admin dashboard (`/admin`)
+
+Everything needed to run the board day to day, backed by `api/admin_routes.py`:
+
+| Tab | What you can do |
+|-----|-----------------|
+| **Overview** | KPIs (live ads, seekers, employers, applications, alerts, reviews), 30-day trend chart, live ads by classification and county, top employers, recent sign-ups/reviews, and an *attention* list (expired ads still live, unclassified ads, pending KYC, SMTP not configured…) with one-click fixes |
+| **Jobs** | Every ad including inactive/expired; search by title/company/employer/#id; activate, deactivate, feature, extend (+7/30/90 days), reclassify, delete; bulk actions on selected rows |
+| **Users** | Search/filter seekers, employers and admins; change role, confirm email, set KYC status and posting plan; **suspend** (signs the user out everywhere, blocks login, takes their ads offline) and delete |
+| **KYC review** | Approve or reject identity submissions |
+| **Reviews** | Moderate company reviews — hide (excluded from public profiles and ratings) or delete |
+| **Job alerts** | See all saved searches, pause/resume/delete, trigger the daily digest |
+| **System health** | Runtime + DB info, which integrations are configured (SMTP, Stripe, M-Pesa, Google, Redis, Telegram — never the values), a maintenance checklist, and tasks: deactivate expired ads, backfill county/classification, rebuild the FTS index, purge orphans / stale unconfirmed accounts, integrity check, vacuum, seed/remove demo data (non-production only) |
+| **Settings** | Runtime switches, no restart: maintenance mode (non-admin writes get 503 + site banner), announcement banner, allow free posting, require KYC to post, default ad lifetime, max live ads per employer |
+| **Audit log** | Who did what, to which record, from which IP — every admin mutation is recorded |
+
+Role and suspension are checked against the database on every authenticated request, so
+demoting or suspending a user takes effect immediately even if they hold a valid token.
+Admin endpoints are exempt from the public per-IP rate limits.
 
 ### Creating an Employer Account (UI)
 1. Go to `http://localhost:5700/employer`
@@ -157,15 +191,36 @@ TELEGRAM_BOT_TOKEN=123456:ABC...
 | `POST` | `/api/auth/logout` | Revoke token |
 | `GET` | `/api/auth/me` | Current user profile |
 
-### Jobs
+### Jobs & search
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/jobs` | Search/filter jobs |
-| `POST` | `/api/jobs` | Post job (auth required) |
-| `GET` | `/api/jobs/<id>` | Job detail |
+| `GET` | `/api/jobs` | Search. Params: `q` (FTS5 relevance-ranked, highlighted `snippet`), `location` (town/estate/county/`Remote`), `state` (county name, e.g. `Nairobi`, `Uasin Gishu`), `classification`, `subclassification`, `work_type` & `work_arrangement` (csv), `salary_min`/`salary_max`, `date_listed` (days), `company`, `sort` (`relevance`\|`date`\|`salary_desc`\|`salary_asc`), `page`, `limit`, `facets=1` |
+| `GET` | `/api/jobs/<id>` | Job detail + `similar` jobs + canonical `url` |
+| `POST` | `/api/jobs` | Post job (employer/admin). Accepts `classification`/`subclassification`; `state` is derived from `location` |
 | `PATCH` | `/api/jobs/<id>` | Update job (owner or admin) |
 | `DELETE` | `/api/jobs/<id>` | Soft-delete job (owner or admin) |
 | `PATCH` | `/api/jobs/<id>/view` | Increment view count |
+| `GET` | `/api/classifications` | Classification taxonomy with live counts, plus market metadata (`country`, `currency`/`currency_symbol`, `salary_period`, `regions` = 47 counties, `salary_bands`) |
+| `GET` | `/api/suggest?q=` | Keyword autocomplete (titles, skills, companies) |
+| `GET` | `/api/locations/suggest?q=` | Location autocomplete |
+
+Pages: `/jobs` (search results with facets and split-view preview), `/jobs/<title-slug>-<id>`
+(canonical job URL; stale slugs 301), `/companies`, `/companies/<slug>`.
+
+### Saved searches / job alerts
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/alerts` | Signed-in user's alerts |
+| `POST` | `/api/alerts` | Create (`keywords`, `location`, `classification`, `work_type`, `work_arrangement`, `salary_min`, `frequency` = `daily`\|`instant`) |
+| `PATCH` | `/api/alerts/<id>` | Pause/resume (`is_active`), change `frequency`/`name` |
+| `DELETE` | `/api/alerts/<id>` | Delete |
+
+### Companies & reviews
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/companies` | Companies with live ads (`q`, `sort` = `jobs`\|`rating`\|`name`) |
+| `GET` | `/api/companies/<slug>` | Profile: open jobs, rating distribution, anonymous reviews |
+| `POST` | `/api/companies/<slug>/reviews` | Write/update your review (auth; one per company) |
 
 ### Applications & ATS
 | Method | Endpoint | Description |
@@ -192,6 +247,23 @@ TELEGRAM_BOT_TOKEN=123456:ABC...
 | `GET` | `/api/pricing` | Pricing plans |
 | `POST` | `/api/payment/checkout` | Stripe checkout session |
 
+### Admin (role `admin`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/admin/overview` | KPIs, trends, breakdowns, recent activity, attention items |
+| `GET` | `/api/admin/users` | `q`, `role`, `status` (active/suspended/unconfirmed/kyc_pending), `sort`, `page` |
+| `PATCH` `DELETE` | `/api/admin/users/<id>` | `role`, `is_suspended`, `suspended_reason`, `email_confirmed`, `kyc_status`, `plan` / delete |
+| `GET` | `/api/admin/jobs` | `q`, `status` (active/inactive/expired/featured/unclassified), `employer_id`, `sort`, `page` |
+| `PATCH` | `/api/admin/jobs/<id>` | `action`: activate, deactivate, feature, unfeature, extend (`days`), reclassify, delete |
+| `POST` | `/api/admin/jobs/bulk` | Same actions over `ids[]` |
+| `GET` `PATCH` `DELETE` | `/api/admin/reviews[/<id>]` | Moderation queue; `is_hidden` |
+| `GET` `PATCH` `DELETE` | `/api/admin/alerts[/<id>]` | All saved searches; `is_active` |
+| `GET` | `/api/admin/system` | Runtime, database, integrations, maintenance checks |
+| `POST` | `/api/admin/system/tasks` | `task`: expire_jobs, backfill_jobs, rebuild_fts, purge_unconfirmed, run_digests, purge_orphans, vacuum, integrity_check, seed_demo, purge_demo |
+| `GET` `PUT` | `/api/admin/settings` | Runtime switches (see Settings tab) |
+| `GET` | `/api/admin/audit` | Audit log, `action` / `admin` filters |
+| `GET` | `/api/settings/public` | *(no auth)* announcement + maintenance flag for the frontends |
+
 ---
 
 ## 🗄️ Database
@@ -201,11 +273,37 @@ and is applied automatically at startup: missing tables and columns are added, e
 is left untouched. Run it by hand with `python api/db_schema.py`. Key tables:
 
 **`users`** — job seekers and employers
-**`jobs`** — all job listings (soft delete: `is_active=0`)
+**`jobs`** — all job listings (soft delete: `is_active=0`); `classification`, `subclassification`, `state` power the facets
+**`jobs_fts`** — SQLite FTS5 index over jobs, kept in sync by triggers (falls back to `LIKE` if FTS5 is unavailable)
 **`applications`** — job applications with ATS scores
 **`saved_jobs`** — jobs saved by seekers
-**`job_alerts`** — email alert preferences
+**`job_alerts`** — saved searches (`instant` or `daily`), matched by `api/alerts.py`
+**`company_reviews`** — anonymous employee reviews (one per user per company); `is_hidden` = moderated out
 **`skills_taxonomy`** — 42 skills with aliases and demand scores
+**`admin_audit_log`** — every admin mutation (admin, action, target, detail, IP)
+**`site_settings`** — runtime switches edited from the admin dashboard
+
+The classification taxonomy and location normalisation live in `api/taxonomy.py`; the query
+builder and facet counting in `api/search.py`.
+
+### Kenya launch market
+
+The board is Kenya-first. `api/taxonomy.py` is the single place that encodes the market:
+
+- **Locations** — the `jobs.state` column holds the **county** (one of the 47). `derive_state()` maps
+  free-text locations to a county (`"Westlands, Nairobi"` → `Nairobi`, `"Eldoret"` → `Uasin Gishu`,
+  `"Mombasa Road, Nairobi"` → `Nairobi`), or to `Remote` / `International` / `Other`. Searching by county
+  name (or `"Nairobi County"`) in the *where* box therefore also finds ads listed by town or estate.
+- **Salaries** — `salary_min` / `salary_max` are **KES per month** (`salary_currency` defaults to `KES`),
+  rendered as `KSh 80,000 – 120,000 /month`. Other currencies are kept and shown as-is.
+- **Classifications** — Seek-style list adapted for Kenya (NGO, Development & Humanitarian; Agriculture
+  incl. tea/coffee/floriculture; Mobile Money & Fintech; Clinical Officers; Security & Protective Services;
+  Boda Boda, Riders & Drivers; CBC/TVET teaching...).
+- **SEO** — JobPosting JSON-LD emits `addressCountry: KE`, `addressRegion: <county>`, `unitText: MONTH`;
+  the sitemap includes a landing URL per county and per classification. Default `APP_URL` is `https://openjobs.co.ke`.
+
+To launch in another market, change the constants and `REGIONS` / `TOWN_TO_REGION` tables in
+`api/taxonomy.py`; the API, search page, sitemap and seed script all read from there.
 
 Schema diagram: [OpenJobs_CodeSchematic.pdf](./OpenJobs_CodeSchematic.pdf)
 
@@ -239,12 +337,14 @@ jobseek/
 ├── api/
 │   ├── server.py            # Flask app — all routes
 │   ├── db_schema.py         # Declarative schema + startup migration + --admin
+│   ├── admin_routes.py      # Admin API: users, jobs, reviews, alerts, system tasks, settings, audit
 │   └── semantic_matcher.py  # AI matching engine
 ├── templates/               # HTML pages (served manually)
 │   ├── index.html           # Public job search
 │   ├── job.html             # Job detail + apply
 │   ├── user.html            # Seeker dashboard
-│   └── employer.html        # Employer dashboard + ATS
+│   ├── employer.html        # Employer dashboard + ATS
+│   └── admin.html           # Admin dashboard
 ├── bot/
 │   ├── telegram_bot.py      # Telegram bot (/search /remote /visa /top)
 │   └── bot_config.py        # Reads TELEGRAM_BOT_TOKEN from the environment
