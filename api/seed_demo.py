@@ -41,6 +41,27 @@ COMPANIES = [
     ('BURN Manufacturing', 'Ruiru, Kiambu'), ('Sanergy', 'Mukuru, Nairobi'), ('Andela', 'Remote'), ('Ajua', 'Remote'),
 ]
 
+# What each employer mostly hires for (a minority of ads still fall outside, like real boards)
+ICT, BANK, HEALTH, NGO, AGRI, MFG, HOSP, RETAIL, SALES, MKT, ACC, ADMIN, ENG, ENERGY, GOV, EDU, CS = (
+    'Information & Communication Technology', 'Banking & Financial Services', 'Healthcare & Medical',
+    'NGO, Development & Humanitarian', 'Agriculture, Animals & Conservation', 'Manufacturing, Transport & Logistics',
+    'Hospitality & Tourism', 'Retail & Consumer Products', 'Sales', 'Marketing & Communications', 'Accounting',
+    'Administration & Office Support', 'Engineering', 'Energy, Oil & Gas', 'Government & Public Sector',
+    'Education & Training', 'Call Centre & Customer Service')
+COMPANY_FOCUS = {
+    'Safaricom': [ICT, BANK, MKT, CS, SALES], 'Equity Bank': [BANK, ACC, ICT, CS], 'KCB Group': [BANK, ACC, ICT, 'Legal'],
+    'M-KOPA': [ICT, SALES, BANK, CS], 'Twiga Foods': [MFG, AGRI, SALES, ICT], 'Kenya Airways': [HOSP, ENG, CS, ACC],
+    'Britam': ['Insurance', BANK, SALES, ACC], 'Jumia Kenya': [ICT, MFG, MKT, CS], 'Nation Media Group': ['Advertising, Arts & Media', MKT, SALES, ICT],
+    'East African Breweries (EABL)': [MFG, SALES, MKT, ENG], 'Co-operative Bank of Kenya': [BANK, ACC, ICT, CS], 'Cellulant': [ICT, BANK, SALES],
+    'Kenya Power (KPLC)': [ENERGY, ENG, 'Trades & Services', CS], 'Aga Khan University Hospital': [HEALTH, ADMIN, ACC],
+    'Naivas Supermarkets': [RETAIL, MFG, 'Security & Protective Services', ACC], 'Carrefour Kenya (Majid Al Futtaim)': [RETAIL, MFG, MKT],
+    'Bamburi Cement': [MFG, ENG, SALES, ENERGY], 'Kenya Ports Authority': [MFG, ENG, GOV, 'Security & Protective Services'],
+    'Serena Hotels': [HOSP, SALES, ADMIN], 'Kisumu County Government': [GOV, HEALTH, EDU, ADMIN], 'James Finlay Kenya': [AGRI, MFG, ACC],
+    'Kakuzi PLC': [AGRI, MFG, ACC], 'Oserian Development Company': [AGRI, MFG, ENG], 'Moi Teaching & Referral Hospital': [HEALTH, ADMIN, GOV],
+    'Kenya Red Cross Society': [NGO, HEALTH, 'Community & Social Services', ADMIN], 'Amref Health Africa': [NGO, HEALTH, ACC, MKT],
+    'BURN Manufacturing': [MFG, ENG, SALES, ENERGY], 'Sanergy': [NGO, MFG, ENG, AGRI], 'Andela': [ICT, 'Human Resources & Recruitment'], 'Ajua': [ICT, MKT, CS],
+}
+
 LOCATIONS = ['Nairobi CBD', 'Westlands, Nairobi', 'Upper Hill, Nairobi', 'Kilimani, Nairobi', 'Karen, Nairobi', 'Industrial Area, Nairobi',
              'Thika, Kiambu', 'Ruiru, Kiambu', 'Athi River, Machakos', 'Kitengela, Kajiado', 'Mombasa', 'Nyali, Mombasa', 'Malindi, Kilifi',
              'Diani, Kwale', 'Kisumu', 'Nakuru', 'Naivasha, Nakuru', 'Eldoret', 'Kericho', 'Nyeri', 'Meru', 'Kakamega', 'Kitale',
@@ -207,6 +228,11 @@ ROLES = {
         ('Security Supervisor', 'Security Supervisors & Managers', 'Team supervision, Incident reporting, CCTV, Patrols', 30000, 55000),
         ('Loss Prevention Officer', 'Investigations & Loss Prevention', 'Investigations, Stock audits, CCTV review, Reporting', 40000, 75000),
     ],
+    'Advertising, Arts & Media': [
+        ('Multimedia Journalist', 'Journalism & Broadcasting', 'News writing, Video, Social media, MCK accreditation', 60000, 120000),
+        ('Digital Content Producer', 'Content Creation & Social Media', 'Video editing, TikTok/YouTube, Analytics, Storytelling', 50000, 100000),
+        ('Sub-Editor', 'Editing & Publishing', 'Copy editing, Headlines, CMS, Deadlines', 70000, 130000),
+    ],
     'Insurance': [
         ('Underwriter', 'Underwriting', 'Motor & medical underwriting, Risk assessment, IRA compliance', 70000, 140000),
         ('Claims Officer', 'Claims', 'Claims assessment, Customer service, Documentation', 50000, 95000),
@@ -304,8 +330,13 @@ def seed(db_path, n_jobs=180, seed=42):
         pool = [(cls, role) for cls, roles in ROLES.items() for role in roles]
         created = 0
         for i in range(n_jobs):
-            cls, (title, sub, skills, lo, hi) = random.choice(pool)
             company, hq = random.choice(COMPANIES)
+            focus = [c for c in COMPANY_FOCUS.get(company, []) if c in ROLES]
+            if focus and random.random() < 0.8:
+                cls = random.choice(focus)
+                title, sub, skills, lo, hi = random.choice(ROLES[cls])
+            else:
+                cls, (title, sub, skills, lo, hi) = random.choice(pool)
             location = hq if random.random() < 0.5 else random.choice(LOCATIONS)
             arrangement = 'remote' if 'Remote' in location else random.choice(ARRANGEMENTS)
             work_type = random.choice(WORK_TYPES)
