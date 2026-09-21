@@ -1335,5 +1335,20 @@ function setQuickFilter(btn, value) {
 }
 
 </script>
+<script>
+// Site-wide announcement / maintenance banner, controlled from the admin dashboard (Settings).
+(function () {
+  fetch('/api/settings/public').then(r => r.ok ? r.json() : null).then(s => {
+    if (!s || (!s.announcement && !s.maintenance_mode)) return;
+    var el = document.createElement('div');
+    el.id = 'siteBanner';
+    el.setAttribute('role', 'status');
+    el.style.cssText = 'position:sticky;top:0;z-index:1000;text-align:center;padding:0.55rem 1rem;font-size:0.85rem;font-weight:600;background:' +
+      (s.maintenance_mode ? '#f59e0b;color:#111' : '#00d4aa;color:#062b23');
+    el.textContent = s.maintenance_mode ? (s.announcement || 'OpenJobs is in maintenance mode — browsing works, but posting and applying are paused.') : s.announcement;
+    document.body.prepend(el);
+  }).catch(function () {});
+})();
+</script>
 </body>
 </html>
