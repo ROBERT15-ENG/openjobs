@@ -232,7 +232,7 @@ def facets(db, f: dict, match: str = ''):
     cases = ', '.join(f"SUM(CASE WHEN jobs.created_at >= '{(now - datetime.timedelta(days=d)).isoformat()}' THEN 1 ELSE 0 END) AS d{d}"
                       for d, _ in DATE_LISTED_OPTIONS)
     row = _facet_query(db, f, 'date_listed', cases, group=False, match=match)[0]
-    out['date_listed'] = [{'value': d, 'label': label, 'count': row[f'd{d}']} for d, label in DATE_LISTED_OPTIONS]
+    out['date_listed'] = [{'value': d, 'label': label, 'count': row[f'd{d}'] or 0} for d, label in DATE_LISTED_OPTIONS]
 
     band_cases = []
     for i, (lo, hi, _) in enumerate(SALARY_BANDS):
@@ -241,7 +241,7 @@ def facets(db, f: dict, match: str = ''):
             cond += f" AND COALESCE(jobs.salary_max, jobs.salary_min) < {hi}"
         band_cases.append(f"SUM(CASE WHEN {cond} THEN 1 ELSE 0 END) AS b{i}")
     row = _facet_query(db, f, 'salary', ', '.join(band_cases), group=False, match=match)[0]
-    out['salary'] = [{'min': lo, 'max': hi, 'label': label, 'count': row[f'b{i}']}
+    out['salary'] = [{'min': lo, 'max': hi, 'label': label, 'count': row[f'b{i}'] or 0}
                      for i, (lo, hi, label) in enumerate(SALARY_BANDS)]
     return out
 

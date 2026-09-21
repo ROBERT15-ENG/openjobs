@@ -514,7 +514,7 @@ function facetOpts(container, items, key, selectedSet, labelFn, single) {
   const opts = container.querySelector('.opts');
   if (!items || !items.length) { opts.innerHTML = '<div class="facet-opt muted">No options</div>'; return; }
   const type = single ? 'radio' : 'checkbox';
-  opts.innerHTML = items.slice(0, 12).map(it => `<label class="facet-opt"><input type="${type}" ${selectedSet.has(String(it.value)) ? 'checked' : ''} onchange="${single ? `setParam('${key}', this.checked ? '${esc(String(it.value))}' : '', true)` : `toggleMulti('${key}', '${esc(String(it.value))}')`}"><span class="lbl">${esc(labelFn(it.value))}</span><span class="cnt">${it.count.toLocaleString()}</span></label>`).join('');
+  opts.innerHTML = items.slice(0, 12).map(it => `<label class="facet-opt"><input type="${type}" ${selectedSet.has(String(it.value)) ? 'checked' : ''} onchange="${single ? `setParam('${key}', this.checked ? '${esc(String(it.value))}' : '', true)` : `toggleMulti('${key}', '${esc(String(it.value))}')`}"><span class="lbl">${esc(labelFn(it.value))}</span><span class="cnt">${(it.count || 0).toLocaleString()}</span></label>`).join('');
 }
 function renderFacets(f) {
   const sel = k => new Set((state[k] || '').split(',').filter(Boolean));
@@ -524,11 +524,11 @@ function renderFacets(f) {
   const dateItems = (f.date_listed || []).map(x => ({value: x.value, count: x.count, label: x.label}));
   const dateBox = document.getElementById('facetDate').querySelector('.opts');
   dateBox.innerHTML = `<label class="facet-opt"><input type="radio" name="dl" ${!state.date_listed ? 'checked' : ''} onchange="setParam('date_listed','',true)"><span class="lbl">Any time</span></label>` +
-    dateItems.map(x => `<label class="facet-opt"><input type="radio" name="dl" ${state.date_listed == x.value ? 'checked' : ''} onchange="setParam('date_listed','${x.value}',true)"><span class="lbl">${esc(x.label)}</span><span class="cnt">${x.count.toLocaleString()}</span></label>`).join('');
+    dateItems.map(x => `<label class="facet-opt"><input type="radio" name="dl" ${state.date_listed == x.value ? 'checked' : ''} onchange="setParam('date_listed','${x.value}',true)"><span class="lbl">${esc(x.label)}</span><span class="cnt">${(x.count || 0).toLocaleString()}</span></label>`).join('');
   document.getElementById('salaryMin').value = state.salary_min || '';
   document.getElementById('salaryMax').value = state.salary_max || '';
   document.getElementById('facetSalary').querySelector('.opts').innerHTML = (f.salary || []).filter(b => b.count).map(b =>
-    `<label class="facet-opt"><input type="radio" name="sb" ${state.salary_min == b.min && (state.salary_max || '') == (b.max || '') ? 'checked' : ''} onchange="state.salary_min='${b.min}'; ${b.max ? `state.salary_max='${b.max}'` : 'delete state.salary_max'}; delete state.page; writeUrl(true); load()"><span class="lbl">${esc(b.label)}</span><span class="cnt">${b.count.toLocaleString()}</span></label>`).join('');
+    `<label class="facet-opt"><input type="radio" name="sb" ${state.salary_min == b.min && (state.salary_max || '') == (b.max || '') ? 'checked' : ''} onchange="state.salary_min='${b.min}'; ${b.max ? `state.salary_max='${b.max}'` : 'delete state.salary_max'}; delete state.page; writeUrl(true); load()"><span class="lbl">${esc(b.label)}</span><span class="cnt">${(b.count || 0).toLocaleString()}</span></label>`).join('');
   // classification facet only when none selected; sub-classification when one is
   const fc = document.getElementById('facetClass'), fs = document.getElementById('facetSub');
   if (state.classification) {
@@ -536,12 +536,12 @@ function renderFacets(f) {
     const subs = f.subclassification || [];
     fs.style.display = subs.length ? '' : 'none';
     fs.querySelector('.opts').innerHTML = `<label class="facet-opt"><input type="radio" name="sc" ${!state.subclassification ? 'checked' : ''} onchange="setParam('subclassification','',true)"><span class="lbl">All ${esc(state.classification)}</span></label>` +
-      subs.map(s => `<label class="facet-opt"><input type="radio" name="sc" ${state.subclassification === s.value ? 'checked' : ''} onchange="setParam('subclassification','${esc(s.value).replace(/'/g, "\\'")}',true)"><span class="lbl">${esc(s.value)}</span><span class="cnt">${s.count.toLocaleString()}</span></label>`).join('');
+      subs.map(s => `<label class="facet-opt"><input type="radio" name="sc" ${state.subclassification === s.value ? 'checked' : ''} onchange="setParam('subclassification','${esc(s.value).replace(/'/g, "\\'")}',true)"><span class="lbl">${esc(s.value)}</span><span class="cnt">${(s.count || 0).toLocaleString()}</span></label>`).join('');
   } else {
     fs.style.display = 'none';
     const items = f.classification || [];
     fc.style.display = items.length ? '' : 'none';
-    fc.querySelector('.opts').innerHTML = items.slice(0, 10).map(c => `<a class="facet-opt" href="#" onclick="setParam('classification','${esc(c.value).replace(/'/g, "\\'")}',true);return false"><span class="lbl">${esc(c.value)}</span><span class="cnt">${c.count.toLocaleString()}</span></a>`).join('');
+    fc.querySelector('.opts').innerHTML = items.slice(0, 10).map(c => `<a class="facet-opt" href="#" onclick="setParam('classification','${esc(c.value).replace(/'/g, "\\'")}',true);return false"><span class="lbl">${esc(c.value)}</span><span class="cnt">${(c.count || 0).toLocaleString()}</span></a>`).join('');
   }
 }
 function renderActiveFilters() {

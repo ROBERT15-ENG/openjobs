@@ -5,7 +5,7 @@ profiles and alerts have something to show.
 
     python api/seed_demo.py [--db path/to/jobs.db] [--jobs 180] [--force]
 
-Creates demo employer + seeker accounts (password: Demo1234!), ~180 job ads spread
+Creates demo employer + seeker accounts (password: Demo1234!), ~240 job ads spread
 across classifications, Kenyan towns/counties, KES monthly salary bands and the last 30 days, plus a
 handful of company reviews and one saved-search alert. Idempotent: re-running does
 nothing unless --force, which removes previously seeded demo data first.
@@ -228,6 +228,27 @@ ROLES = {
         ('Security Supervisor', 'Security Supervisors & Managers', 'Team supervision, Incident reporting, CCTV, Patrols', 30000, 55000),
         ('Loss Prevention Officer', 'Investigations & Loss Prevention', 'Investigations, Stock audits, CCTV review, Reporting', 40000, 75000),
     ],
+    'Consulting & Strategy': [
+        ('Management Consultant', 'Management & Change Consulting', 'Strategy, Financial modelling, Client delivery, PowerPoint', 200000, 400000),
+        ('Sustainability Analyst', 'Environment & Sustainability', 'ESG reporting, Carbon accounting, NEMA regulations', 100000, 200000),
+    ],
+    'CEO & General Management': [
+        ('Country Director', 'CEO & Country Director', 'P&L ownership, Board reporting, Regulatory relations, Leadership', 600000, 1200000),
+        ('General Manager - Operations', 'General/Business Unit Manager', 'Operations, Budgets, Team leadership, KPIs', 350000, 650000),
+    ],
+    'Real Estate & Property': [
+        ('Property Manager', 'Property Management', 'Tenant relations, Rent collection, Service charge, Maintenance', 60000, 120000),
+        ('Real Estate Sales Executive', 'Residential Sales & Letting', 'Property sales, Site visits, Negotiation, Commission', 40000, 100000),
+        ('Registered Valuer', 'Valuation', 'ISK/VRB registration, Valuation reports, Market analysis', 100000, 200000),
+    ],
+    'Science & Technology': [
+        ('Laboratory Analyst', 'Laboratory & Technical Services', 'ISO 17025, HPLC, Sampling, Reporting', 50000, 100000),
+        ('Biostatistician', 'Mathematics, Statistics & Information Sciences', 'R/Stata, Clinical trials, Data management, Publications', 120000, 250000),
+    ],
+    'Sport & Recreation': [
+        ('Fitness Instructor', 'Fitness & Personal Training', 'Group classes, Personal training, First aid, Client retention', 30000, 70000),
+        ('Football Academy Coach', 'Coaching & Instruction', 'CAF licence, Youth development, Session planning', 40000, 90000),
+    ],
     'Advertising, Arts & Media': [
         ('Multimedia Journalist', 'Journalism & Broadcasting', 'News writing, Video, Social media, MCK accreditation', 60000, 120000),
         ('Digital Content Producer', 'Content Creation & Social Media', 'Video editing, TikTok/YouTube, Analytics, Storytelling', 50000, 100000),
@@ -315,7 +336,7 @@ def _user(con, name, email, role, company=None):
     return cur.lastrowid
 
 
-def seed(db_path, n_jobs=180, seed=42):
+def seed(db_path, n_jobs=240, seed=42):
     random.seed(seed)
     init_db(db_path)
     con = _connect(db_path)
@@ -328,15 +349,28 @@ def seed(db_path, n_jobs=180, seed=42):
 
         now = datetime.datetime.now()
         pool = [(cls, role) for cls, roles in ROLES.items() for role in roles]
-        created = 0
-        for i in range(n_jobs):
-            company, hq = random.choice(COMPANIES)
+        hq_by_company = dict(COMPANIES)
+        employers_for = {cls: [c for c, focus in COMPANY_FOCUS.items() if cls in focus] for cls in ROLES}
+
+        # Every role appears at least once (with an employer that plausibly hires for it),
+        # then the remainder follows each employer's focus so company profiles look coherent.
+        plan = []
+        for cls, role in random.sample(pool, len(pool)):
+            plan.append((random.choice(employers_for[cls] or [c for c, _ in COMPANIES]), cls, role))
+        while len(plan) < n_jobs:
+            company, _ = random.choice(COMPANIES)
             focus = [c for c in COMPANY_FOCUS.get(company, []) if c in ROLES]
             if focus and random.random() < 0.8:
                 cls = random.choice(focus)
-                title, sub, skills, lo, hi = random.choice(ROLES[cls])
+                plan.append((company, cls, random.choice(ROLES[cls])))
             else:
-                cls, (title, sub, skills, lo, hi) = random.choice(pool)
+                cls, role = random.choice(pool)
+                plan.append((company, cls, role))
+        plan = plan[:n_jobs]
+
+        created = 0
+        for company, cls, (title, sub, skills, lo, hi) in plan:
+            hq = hq_by_company[company]
             location = hq if random.random() < 0.5 else random.choice(LOCATIONS)
             arrangement = 'remote' if 'Remote' in location else random.choice(ARRANGEMENTS)
             work_type = random.choice(WORK_TYPES)
@@ -393,7 +427,7 @@ def seed(db_path, n_jobs=180, seed=42):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description='Seed demo data for staging')
     ap.add_argument('--db', default=os.environ.get('DATABASE_URL', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'jobs.db')))
-    ap.add_argument('--jobs', type=int, default=180)
+    ap.add_argument("--jobs", type=int, default=240)
     ap.add_argument('--force', action='store_true', help='remove previously seeded demo data first')
     a = ap.parse_args()
     init_db(a.db)
