@@ -1060,8 +1060,8 @@ _COMPANY_AGG_SQL = """
     SELECT j.company AS name,
            COUNT(*) AS open_jobs,
            MAX(j.created_at) AS latest_job_at,
-           GROUP_CONCAT(DISTINCT j.state) AS states,
-           GROUP_CONCAT(DISTINCT j.classification) AS classifications,
+           GROUP_CONCAT(DISTINCT j.state || char(31)) AS states,
+           GROUP_CONCAT(DISTINCT j.classification || char(31)) AS classifications,
            (SELECT ROUND(AVG(rating), 1) FROM company_reviews r WHERE LOWER(r.company) = LOWER(j.company)) AS review_rating,
            (SELECT COUNT(*) FROM company_reviews r WHERE LOWER(r.company) = LOWER(j.company)) AS review_count,
            (SELECT ROUND(AVG(rating), 1) FROM company_ratings r WHERE LOWER(r.company) = LOWER(j.company)) AS quick_rating
@@ -1076,9 +1076,16 @@ def _company_row(r) -> dict:
     d['url'] = f"/companies/{d['slug']}"
     d['rating'] = d.pop('review_rating') or d.pop('quick_rating', None) or 0
     d.pop('quick_rating', None)
-    d['states'] = [s for s in (d.get('states') or '').split(',') if s]
-    d['classifications'] = [c for c in (d.get('classifications') or '').split(',') if c]
+    d['states'] = _split_concat(d.get('states'))
+    d['classifications'] = _split_concat(d.get('classifications'))
     return d
+
+
+def _split_concat(raw) -> list:
+    """GROUP_CONCAT(DISTINCT x || char(31)) can't take a custom separator, so values arrive as
+    'A\\x1f,B\\x1f'. Split on the unit separator so names containing commas
+    ('NGO, Development & Humanitarian') stay intact."""
+    return [v.strip(', ') for v in (raw or '').split('\x1f') if v.strip(', ')]
 
 
 def _find_company_name(db, ident: str):
