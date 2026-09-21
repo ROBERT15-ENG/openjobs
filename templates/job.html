@@ -280,7 +280,10 @@
 <script>
   // ── LOAD JOB ──
   const params = new URLSearchParams(window.location.search);
-  const jobId = params.get('id') || 1;
+  // Canonical URLs are /jobs/<title-slug>-<id>; ?id= is kept for legacy links.
+  const jobId = params.get('id')
+    || (window.location.pathname.match(/-(\d+)\/?$/) || [])[1]
+    || '{{ job.id if job and job.id else "" }}';
 
   let currentJob = null;
 
@@ -305,7 +308,7 @@
 
   function renderJob(job) {
     document.title = job.title + ' — OpenJobs';
-    const shareUrl = 'https://openjobs.com.au/jobs/' + slugify(job.title) + '-' + job.id;
+    const shareUrl = window.location.origin + (job.url || ('/jobs/' + slugify(job.title) + '-' + job.id));
     // Update canonical URL
     const canon = document.querySelector('link[rel="canonical"]');
     if (canon) canon.href = shareUrl;
@@ -319,7 +322,12 @@
     if (ogUrl)    ogUrl.content    = shareUrl;
     document.getElementById('jobLogo').textContent = (job.company || 'J')[0].toUpperCase();
     document.getElementById('jobTitle').textContent = job.title;
-    document.getElementById('jobCompany').textContent = job.company + ' · ' + job.location;
+    const companyEl = document.getElementById('jobCompany');
+    companyEl.innerHTML = (job.company_url
+        ? `<a href="${escHtml(job.company_url)}" style="color:inherit;text-decoration:underline dotted" title="View company profile and reviews">${escHtml(job.company)}</a>`
+        : escHtml(job.company))
+      + (job.company_rating ? ` <span style="color:var(--warning,#f59e0b)" title="${job.company_rating} / 5">★ ${job.company_rating}</span>` : '')
+      + ' · ' + escHtml(job.location);
     document.getElementById('jobDesc').textContent = job.description || 'No description provided.';
 
     // Track view server-side
@@ -337,7 +345,10 @@
     else if (wt === 'part_time') badges.push('<span class="badge badge-parttime">Part-time</span>');
     else if (wt === 'contract') badges.push('<span class="badge badge-contract">Contract</span>');
     else if (wt === 'internship') badges.push('<span class="badge badge-internship">Internship</span>');
-    if (job.category) badges.push('<span class="badge" style="background:rgba(0,212,170,0.08);color:var(--primary)">🏷 ' + escHtml(job.category) + '</span>');
+    if (job.classification) {
+      const href = '/jobs?classification=' + encodeURIComponent(job.classification) + (job.subclassification ? '&subclassification=' + encodeURIComponent(job.subclassification) : '');
+      badges.push('<a class="badge" href="' + href + '" style="background:rgba(0,212,170,0.08);color:var(--primary);text-decoration:none">🏷 ' + escHtml(job.classification) + (job.subclassification ? ' › ' + escHtml(job.subclassification) : '') + '</a>');
+    } else if (job.category) badges.push('<span class="badge" style="background:rgba(0,212,170,0.08);color:var(--primary)">🏷 ' + escHtml(job.category) + '</span>');
     document.getElementById('jobBadges').innerHTML = badges.join('');
 
     // Skills
@@ -362,23 +373,27 @@
       <div class="detail-item"><div class="detail-label">📍 Location</div><div class="detail-value">${escHtml(job.location)}</div></div>
       <div class="detail-item"><div class="detail-label">💼 Work Type</div><div class="detail-value">${escHtml(formatWorkType(job.work_type))}</div></div>
       <div class="detail-item"><div class="detail-label">🕐 Posted</div><div class="detail-value">${timeSince(job.created_at)}</div></div>
-      ${job.category ? `<div class="detail-item"><div class="detail-label">🏷 Category</div><div class="detail-value">${escHtml(job.category)}</div></div>` : ''}
+      ${(job.classification || job.category) ? `<div class="detail-item"><div class="detail-label">🏷 Classification</div><div class="detail-value">${escHtml(job.classification || job.category)}</div></div>` : ''}
     `;
+    if (Array.isArray(job.similar) && job.similar.length) renderRelated(job.similar);
   }
 
   function loadRelated(id) {
+    // Server-side "similar jobs" (same classification/company) arrive with the job itself;
+    // this is only a fallback when that list is empty.
+    if (currentJob && Array.isArray(currentJob.similar) && currentJob.similar.length) return;
     fetch('/api/jobs?limit=20')
       .then(r => r.json())
       .then(data => {
-        const related = (data.jobs || [])
-          .filter(j => j.id != id)
-          .filter(j => j.category === (currentJob && currentJob.category))
-          .slice(0, 4);
-        if (!related.length) {
-          related.push(...(data.jobs || []).filter(j => j.id != id).slice(0, 4));
-        }
-        document.getElementById('relatedJobs').innerHTML = related.map(j => `
-          <div class="related-job" onclick="window.location.href='/job.html?id=${j.id}'">
+        const related = (data.jobs || []).filter(j => j.id != id).slice(0, 4);
+        renderRelated(related);
+      })
+      .catch(() => {});
+  }
+
+  function renderRelated(related) {
+        document.getElementById('relatedJobs').innerHTML = related.slice(0, 4).map(j => `
+          <div class="related-job" onclick="window.location.href='${escHtml(j.url || ('/job?id=' + j.id))}'">
             <div class="related-logo">${(j.company||'J')[0].toUpperCase()}</div>
             <div class="related-info">
               <div class="related-title">${escHtml(j.title)}</div>
@@ -386,10 +401,9 @@
             </div>
             <div class="related-salary">${formatSalary(j) || 'TBD'}</div>
           </div>`).join('');
-      })
-      .catch(() => {
-        document.getElementById('relatedJobs').innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">No related jobs found</p>';
-      });
+    if (!related.length) {
+      document.getElementById('relatedJobs').innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">No related jobs found</p>';
+    }
   }
 
   // ── APPLY ──

@@ -19,12 +19,16 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from semantic_matcher import rank_jobs_for_resume
 from db_schema import init_db
+from taxonomy import (CLASSIFICATIONS, WORK_TYPES, WORK_ARRANGEMENTS, AU_STATES, derive_state, state_label,
+                      normalize_classification, normalize_subclassification)
+from search import parse_filters, search_jobs, suggest_keywords, suggest_locations
+from alerts import dispatch_instant_alerts
 
 # SEO infrastructure
-from seo_utils import parse_job_slug, job_canonical_url, should_noindex
+from seo_utils import parse_job_slug, job_canonical_url, should_noindex, make_slug, make_job_slug
 from seo_utils import job_listing_jsonld, breadcrumbs_jsonld
 from robots_txt import get_robots_txt
-from sitemap_generator import get_sitemap_index, get_sitemap_static, get_sitemap_jobs
+from sitemap_generator import get_sitemap_index, get_sitemap_static, get_sitemap_jobs, get_sitemap_companies
 
 from email_notifier import send_email
 import email_notifier
@@ -811,102 +815,42 @@ def _fmt_salary(salary_min, salary_max, currency='AUD'):
     return ''
 
 
+def _decorate_job(row: dict) -> dict:
+    """Presentation fields shared by list/detail responses."""
+    row['views'] = row.pop('view_count', 0) if 'view_count' in row else row.get('views', 0)
+    row['salary'] = _fmt_salary(row.get('salary_min'), row.get('salary_max'), row.get('salary_currency') or 'AUD') or row.get('salary') or ''
+    row['url'] = f"/jobs/{make_job_slug(row.get('title') or 'job', row['id'])}"
+    row['company_url'] = f"/companies/{make_slug(row.get('company'))}" if row.get('company') else None
+    row['work_type_label'] = WORK_TYPES.get(row.get('work_type'), row.get('work_type'))
+    row['state_label'] = state_label(row.get('state'))
+    row.pop('rank', None)
+    return row
+
+
 @app.route('/api/jobs', methods=['GET'])
 def get_jobs():
+    """Seek-style search: FTS relevance, facets, sort, date-listed, classification and location filters.
+
+    Query params: q, location, state, classification, subclassification, work_type (csv),
+    work_arrangement (csv), salary_min/salary_max (min_salary/max_salary accepted for compatibility),
+    date_listed (days), company, category, sort (relevance|date|salary_desc|salary_asc),
+    page, limit, facets=1.
+    """
     db = get_db()
-    
-    # Pagination
+    args = request.args.to_dict()
+    args.setdefault('salary_min', args.get('min_salary'))
+    args.setdefault('salary_max', args.get('max_salary'))
+    filters = parse_filters(args)
     page = request.args.get('page', 1, type=int)
-    limit = request.args.get('limit', 50, type=int)
-    limit = min(limit, 100)  # Cap at 100
-    offset = (page - 1) * limit
-    
-    # Filters
-    category = request.args.get('category')
-    location = request.args.get('location')
-    work_type = request.args.get('work_type')
-    work_arrangement = request.args.get('work_arrangement')
-    search = request.args.get('q', '').strip()
-    min_salary = request.args.get('min_salary', type=int)
-    max_salary = request.args.get('max_salary', type=int)
+    limit = request.args.get('limit', 20, type=int)
+    include_facets = request.args.get('facets', '0') in ('1', 'true')
 
-    # Build query
-    now = datetime.datetime.now().isoformat()
-    where = ["is_active = 1", "(expires_at IS NULL OR expires_at > ?)"]
-    params = [now]
+    result = search_jobs(db, filters, page=page, limit=limit, sort=request.args.get('sort'),
+                         include_facets=include_facets)
+    result['jobs'] = [_decorate_job(j) for j in result['jobs']]
+    result['filters'] = {k: v for k, v in filters.items() if v and k != 'since'}
+    return jsonify(result)
 
-    if category:
-        where.append("category = ?")
-        params.append(category)
-
-    if location:
-        where.append("location LIKE ?")
-        params.append(f"%{location}%")
-
-    if work_type:
-        # Accepts single value (e.g. "internship") or comma-separated (e.g. "internship,full_time")
-        wts = [w.strip() for w in work_type.split(',') if w.strip()]
-        if len(wts) == 1:
-            where.append("work_type = ?")
-            params.append(wts[0])
-        else:
-            placeholders = ','.join('?' * len(wts))
-            where.append(f"work_type IN ({placeholders})")
-            params.extend(wts)
-
-    if work_arrangement:
-        # Same: single or comma-separated
-        was_ = [w.strip() for w in work_arrangement.split(',') if w.strip()]
-        if len(was_) == 1:
-            where.append("work_arrangement = ?")
-            params.append(was_[0])
-        else:
-            placeholders = ','.join('?' * len(was_))
-            where.append(f"work_arrangement IN ({placeholders})")
-            params.extend(was_)
-
-    if min_salary:
-        where.append("(salary_max >= ? OR (salary_max IS NULL AND salary_min >= ?))")
-        params.extend([min_salary, min_salary])
-
-    if max_salary:
-        where.append("(salary_min <= ? OR (salary_min IS NULL AND salary_max <= ?))")
-        params.extend([max_salary, max_salary])
-
-    if search:
-        where.append("(title LIKE ? OR company LIKE ? OR description LIKE ? OR search_summary LIKE ?)")
-        params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
-
-    where_clause = " AND ".join(where) if where else "1=1"
-    
-    # Get total count
-    total = db.execute(f"SELECT COUNT(*) FROM jobs WHERE {where_clause}", params).fetchone()[0]
-    
-    # Get jobs
-    cols = ["id","title","company","location","salary","salary_min","salary_max","salary_currency",
-               "description","category","work_type","work_arrangement","skills","created_at",
-               "is_active","expires_at","view_count","is_featured","application_count","company_rating"]
-    jobs = db.execute(
-        f"SELECT {','.join(cols)} FROM jobs WHERE {where_clause} ORDER BY is_featured DESC, created_at DESC LIMIT ? OFFSET ?",
-        params + [limit, offset]
-    ).fetchall()
-
-    result = []
-    for j in jobs:
-        row = dict(j)
-        row['views'] = row.pop('view_count', 0)
-        row['salary'] = _fmt_salary(row.get('salary_min'), row.get('salary_max'), row.get('salary_currency', 'AUD'))
-        result.append(row)
-
-    return jsonify({
-        'jobs': result,
-        'pagination': {
-            'page': page,
-            'limit': limit,
-            'total': total,
-            'pages': (total + limit - 1) // limit
-        }
-    })
 
 @app.route('/api/jobs/<int:job_id>', methods=['GET'])
 def get_job(job_id):
@@ -914,10 +858,46 @@ def get_job(job_id):
     job = db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if not job:
         return jsonify({'error': 'Not found'}), 404
-    job = dict(job)
-    if job.get('salary_min') or job.get('salary_max'):
-        job['salary'] = _fmt_salary(job.get('salary_min'), job.get('salary_max'), job.get('salary_currency', 'AUD'))
+    job = _decorate_job(dict(job))
+    job['similar'] = [_decorate_job(dict(r)) for r in db.execute(
+        """SELECT id, title, company, location, state, salary_min, salary_max, salary_currency, work_type,
+                  created_at, is_featured FROM jobs
+           WHERE is_active = 1 AND id != ? AND (classification = ? OR category = ? OR LOWER(company) = LOWER(?))
+           ORDER BY (classification = ?) DESC, created_at DESC LIMIT 6""",
+        (job_id, job.get('classification'), job.get('category'), job.get('company'), job.get('classification'))
+    )]
     return jsonify(job)
+
+
+@app.route('/api/classifications', methods=['GET'])
+def get_classifications():
+    """Classification taxonomy with live job counts (for filter sidebars and the post-job form)."""
+    db = get_db()
+    counts = {r['classification']: r['n'] for r in db.execute(
+        "SELECT classification, COUNT(*) AS n FROM jobs WHERE is_active = 1 AND classification IS NOT NULL GROUP BY classification")}
+    return jsonify({
+        'classifications': [
+            {'name': name, 'slug': make_slug(name), 'count': counts.get(name, 0), 'subclassifications': subs}
+            for name, subs in CLASSIFICATIONS.items()
+        ],
+        'work_types': WORK_TYPES,
+        'work_arrangements': WORK_ARRANGEMENTS,
+        'states': AU_STATES,
+    })
+
+
+@app.route('/api/suggest', methods=['GET'])
+@limiter.limit("120 per minute")
+def suggest():
+    db = get_db()
+    return jsonify({'suggestions': suggest_keywords(db, request.args.get('q', ''))})
+
+
+@app.route('/api/locations/suggest', methods=['GET'])
+@limiter.limit("120 per minute")
+def suggest_location():
+    db = get_db()
+    return jsonify({'suggestions': suggest_locations(db, request.args.get('q', ''))})
 
 @app.route('/api/jobs', methods=['POST'])
 @require_auth
@@ -937,27 +917,34 @@ def create_job():
     expires_at = data.get('expires_at') or (datetime.datetime.now() + datetime.timedelta(days=30)).isoformat()
     
     employer_id = getattr(request, 'employer_id', None)
-    db.execute("""INSERT INTO jobs (
-        title, company, location, description, salary, category, is_active, created_at,
-        work_type, work_arrangement, salary_min, salary_max, salary_currency,
+    classification = normalize_classification(data.get('classification')) or normalize_classification(data.get('category'))
+    subclassification = normalize_subclassification(classification, data.get('subclassification'))
+    work_type = data.get('work_type') if data.get('work_type') in WORK_TYPES else 'full_time'
+    work_arrangement = data.get('work_arrangement') if data.get('work_arrangement') in WORK_ARRANGEMENTS else 'onsite'
+    cur = db.execute("""INSERT INTO jobs (
+        title, company, location, state, description, salary, category, classification, subclassification,
+        is_active, created_at, work_type, work_arrangement, salary_min, salary_max, salary_currency,
         search_summary, selling_points, video_url, expires_at, skills, employer_id,
         company_rating, is_featured
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data.get('title'),
             data.get('company'),
             data.get('location'),
+            derive_state(data.get('location')),
             data.get('description'),
             data.get('salary') or '',
-            data.get('category', 'General'),
+            data.get('category') or classification or 'General',
+            classification,
+            subclassification,
             1,
             datetime.datetime.now().isoformat(),
-            data.get('work_type', 'full_time'),
-            data.get('work_arrangement', 'remote'),
+            work_type,
+            work_arrangement,
             data.get('salary_min'),
             data.get('salary_max'),
             data.get('salary_currency', 'AUD'),
-            data.get('search_summary', '')[:300],
+            (data.get('search_summary') or '')[:300],
             json.dumps(data.get('selling_points', []))[:500],
             data.get('video_url', ''),
             expires_at,
@@ -968,24 +955,10 @@ def create_job():
         )
     )
     db.commit()
-    job_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    job_id = cur.lastrowid
 
-    # Alert matching job seekers
-    try:
-        from email_notifier import send_job_alert
-        skills_raw = data.get('skills', '')
-        keywords = skills_raw.split(',')[0].strip() if skills_raw else (data.get('title', '')[:50])
-        matching_users = db.execute(
-            "SELECT name, email FROM users WHERE role='user' AND email IS NOT NULL LIMIT 50"
-        ).fetchall()
-        if keywords and matching_users:
-            sample_jobs = [dict(db.execute(
-                "SELECT id, title, company, location, salary FROM jobs WHERE id=?", (job_id,)
-            ).fetchone())]
-            for u in matching_users:
-                send_job_alert(u['email'], u['name'] or 'there', sample_jobs, keywords)
-    except Exception as e:
-        print(f"[create_job] alert error: {e}")
+    # Notify seekers whose saved-search alerts match this job (own connection, off the request thread)
+    threading.Thread(target=dispatch_instant_alerts, args=(DB_PATH, job_id), daemon=True).start()
 
     return jsonify({'success': True, 'message': 'Job created', 'job_id': job_id}), 201
 
@@ -1009,11 +982,23 @@ def update_job(job_id):
     if not data:
         return jsonify({'error': 'No update fields provided'}), 400
     ALLOWED = ['title', 'description', 'location', 'salary', 'salary_min', 'salary_max',
-               'salary_currency', 'category', 'work_type', 'work_arrangement',
-               'is_active', 'expires_at', 'skills', 'selling_points', 'video_url']
+               'salary_currency', 'category', 'classification', 'subclassification',
+               'work_type', 'work_arrangement', 'is_active', 'expires_at', 'skills',
+               'selling_points', 'video_url', 'search_summary']
     updates = {k: v for k, v in data.items() if k in ALLOWED}
     if not updates:
         return jsonify({'error': 'No valid fields to update'}), 400
+    if 'location' in updates:
+        updates['state'] = derive_state(updates['location'])
+    if 'classification' in updates:
+        updates['classification'] = normalize_classification(updates['classification'])
+        updates['subclassification'] = normalize_subclassification(updates['classification'], data.get('subclassification'))
+    elif 'subclassification' in updates:
+        updates.pop('subclassification')  # cannot be set without a classification
+    if 'work_type' in updates and updates['work_type'] not in WORK_TYPES:
+        return jsonify({'error': f'work_type must be one of {list(WORK_TYPES)}'}), 400
+    if 'work_arrangement' in updates and updates['work_arrangement'] not in WORK_ARRANGEMENTS:
+        return jsonify({'error': f'work_arrangement must be one of {list(WORK_ARRANGEMENTS)}'}), 400
     set_clause = ', '.join(f'{k} = ?' for k in updates)
     values = list(updates.values()) + [job_id]
     db = get_db()
@@ -1072,11 +1057,212 @@ def track_job_view(job_id):
 
 
 # ============ COMPANIES ============
+_COMPANY_AGG_SQL = """
+    SELECT j.company AS name,
+           COUNT(*) AS open_jobs,
+           MAX(j.created_at) AS latest_job_at,
+           GROUP_CONCAT(DISTINCT j.state) AS states,
+           GROUP_CONCAT(DISTINCT j.classification) AS classifications,
+           (SELECT ROUND(AVG(rating), 1) FROM company_reviews r WHERE LOWER(r.company) = LOWER(j.company)) AS review_rating,
+           (SELECT COUNT(*) FROM company_reviews r WHERE LOWER(r.company) = LOWER(j.company)) AS review_count,
+           (SELECT ROUND(AVG(rating), 1) FROM company_ratings r WHERE LOWER(r.company) = LOWER(j.company)) AS quick_rating
+    FROM jobs j
+    WHERE j.is_active = 1 AND j.company IS NOT NULL AND j.company != ''
+"""
+
+
+def _company_row(r) -> dict:
+    d = dict(r)
+    d['slug'] = make_slug(d['name'])
+    d['url'] = f"/companies/{d['slug']}"
+    d['rating'] = d.pop('review_rating') or d.pop('quick_rating', None) or 0
+    d.pop('quick_rating', None)
+    d['states'] = [s for s in (d.get('states') or '').split(',') if s]
+    d['classifications'] = [c for c in (d.get('classifications') or '').split(',') if c]
+    return d
+
+
+def _find_company_name(db, ident: str):
+    """Resolve a slug or exact name to the canonical company string used on job ads."""
+    if not ident:
+        return None
+    row = db.execute("SELECT company FROM jobs WHERE LOWER(company) = LOWER(?) LIMIT 1", (ident,)).fetchone()
+    if row:
+        return row['company']
+    target = make_slug(ident)
+    for r in db.execute("SELECT DISTINCT company FROM jobs WHERE company IS NOT NULL AND company != ''"):
+        if make_slug(r['company']) == target:
+            return r['company']
+    for r in db.execute("SELECT DISTINCT company FROM company_reviews"):
+        if make_slug(r['company']) == target:
+            return r['company']
+    return None
+
+
 @app.route('/api/companies', methods=['GET'])
 def get_companies():
+    """Companies that currently have live ads, with job counts and ratings (Seek 'Company profiles')."""
     db = get_db()
-    companies = db.execute("SELECT * FROM companies ORDER BY name").fetchall()
-    return jsonify([dict(c) for c in companies])
+    q = (request.args.get('q') or '').strip()
+    sort = request.args.get('sort', 'jobs')
+    limit = min(request.args.get('limit', 60, type=int), 200)
+    sql = _COMPANY_AGG_SQL
+    params = []
+    if q:
+        sql += " AND j.company LIKE ?"
+        params.append(f"%{q}%")
+    sql += " GROUP BY LOWER(j.company)"
+    sql += " ORDER BY " + {'name': 'LOWER(name) ASC', 'rating': 'review_rating DESC NULLS LAST, open_jobs DESC'}.get(sort, 'open_jobs DESC, name ASC')
+    sql += " LIMIT ?"
+    params.append(limit)
+    rows = db.execute(sql, params).fetchall()
+    return jsonify({'companies': [_company_row(r) for r in rows], 'total': len(rows)})
+
+
+@app.route('/api/companies/<ident>', methods=['GET'])
+def get_company(ident):
+    db = get_db()
+    name = _find_company_name(db, ident)
+    if not name:
+        return jsonify({'error': 'Company not found'}), 404
+    row = db.execute(_COMPANY_AGG_SQL + " AND LOWER(j.company) = LOWER(?) GROUP BY LOWER(j.company)", (name,)).fetchone()
+    company = _company_row(row) if row else {'name': name, 'slug': make_slug(name), 'url': f"/companies/{make_slug(name)}",
+                                             'open_jobs': 0, 'states': [], 'classifications': [], 'rating': 0, 'review_count': 0}
+    jobs = db.execute(
+        """SELECT id, title, company, location, state, salary_min, salary_max, salary_currency, work_type,
+                  work_arrangement, classification, created_at, is_featured, view_count
+           FROM jobs WHERE is_active = 1 AND LOWER(company) = LOWER(?) ORDER BY is_featured DESC, created_at DESC LIMIT 50""",
+        (name,)).fetchall()
+    reviews = db.execute(
+        """SELECT r.id, r.rating, r.title, r.pros, r.cons, r.role, r.is_current, r.created_at
+           FROM company_reviews r WHERE LOWER(r.company) = LOWER(?) ORDER BY r.created_at DESC LIMIT 50""",
+        (name,)).fetchall()
+    dist = {i: 0 for i in range(1, 6)}
+    for r in reviews:
+        dist[int(r['rating'])] = dist.get(int(r['rating']), 0) + 1
+    company['jobs'] = [_decorate_job(dict(j)) for j in jobs]
+    company['reviews'] = [dict(r) for r in reviews]
+    company['rating_distribution'] = dist
+    company['review_count'] = len(reviews)
+    company['rating'] = round(sum(r['rating'] for r in reviews) / len(reviews), 1) if reviews else company.get('rating', 0)
+    return jsonify(company)
+
+
+@app.route('/api/companies/<ident>/reviews', methods=['POST'])
+@require_auth
+@limiter.limit("10 per hour")
+def create_company_review(ident):
+    """One review per user per company. Anonymous to other users (only role/tenure shown)."""
+    data = request.json or {}
+    db = get_db()
+    name = _find_company_name(db, ident) or ident.strip()
+    try:
+        rating = int(data.get('rating', 0))
+    except (TypeError, ValueError):
+        rating = 0
+    if not (1 <= rating <= 5):
+        return jsonify({'error': 'rating must be an integer from 1 to 5'}), 400
+    title = (data.get('title') or '').strip()[:120]
+    pros = (data.get('pros') or '').strip()[:2000]
+    cons = (data.get('cons') or '').strip()[:2000]
+    if len(pros) < 10 and len(cons) < 10:
+        return jsonify({'error': 'Please write at least a sentence about the good and/or the challenges'}), 400
+    role = (data.get('role') or '').strip()[:80]
+    is_current = 1 if data.get('is_current') in (True, 'true', '1', 1) else 0
+    existing = db.execute("SELECT id FROM company_reviews WHERE LOWER(company) = LOWER(?) AND user_id = ?",
+                          (name, request.user_id)).fetchone()
+    if existing:
+        db.execute("""UPDATE company_reviews SET rating=?, title=?, pros=?, cons=?, role=?, is_current=?, created_at=?
+                      WHERE id=?""", (rating, title, pros, cons, role, is_current, datetime.datetime.now().isoformat(), existing['id']))
+    else:
+        db.execute("""INSERT INTO company_reviews (company, user_id, rating, title, pros, cons, role, is_current, created_at)
+                      VALUES (?,?,?,?,?,?,?,?,?)""",
+                   (name, request.user_id, rating, title, pros, cons, role, is_current, datetime.datetime.now().isoformat()))
+    avg = db.execute("SELECT AVG(rating) AS a FROM company_reviews WHERE LOWER(company) = LOWER(?)", (name,)).fetchone()['a']
+    db.execute("UPDATE jobs SET company_rating = ? WHERE LOWER(company) = LOWER(?)", (round(avg, 1), name))
+    db.commit()
+    return jsonify({'success': True, 'message': 'Review updated' if existing else 'Review submitted', 'rating': round(avg, 1)}), (200 if existing else 201)
+
+
+# ============ SAVED SEARCHES / JOB ALERTS ============
+_ALERT_FIELDS = ('name', 'keywords', 'location', 'classification', 'work_type', 'work_arrangement', 'salary_min', 'frequency')
+
+
+def _alert_row(a) -> dict:
+    d = dict(a)
+    params = {}
+    if d.get('keywords'): params['q'] = d['keywords']
+    for k in ('location', 'classification', 'work_type', 'work_arrangement', 'salary_min'):
+        if d.get(k): params[k] = d[k]
+    from urllib.parse import urlencode
+    d['search_url'] = '/jobs' + ('?' + urlencode(params) if params else '')
+    return d
+
+
+@app.route('/api/alerts', methods=['GET'])
+@require_auth
+def list_alerts():
+    db = get_db()
+    rows = db.execute("SELECT * FROM job_alerts WHERE user_id = ? ORDER BY created_at DESC", (request.user_id,)).fetchall()
+    return jsonify({'alerts': [_alert_row(a) for a in rows]})
+
+
+@app.route('/api/alerts', methods=['POST'])
+@require_auth
+def create_alert():
+    data = request.json or {}
+    keywords = (data.get('keywords') or data.get('q') or '').strip()[:200]
+    location = (data.get('location') or '').strip()[:120]
+    classification = normalize_classification(data.get('classification'))
+    work_type = data.get('work_type') if data.get('work_type') in WORK_TYPES else None
+    work_arrangement = data.get('work_arrangement') if data.get('work_arrangement') in WORK_ARRANGEMENTS else None
+    try:
+        salary_min = int(data.get('salary_min')) if data.get('salary_min') else None
+    except (TypeError, ValueError):
+        salary_min = None
+    if not any([keywords, location, classification, work_type, work_arrangement, salary_min]):
+        return jsonify({'error': 'An alert needs at least one of: keywords, location, classification, work type'}), 400
+    frequency = data.get('frequency') if data.get('frequency') in ('instant', 'daily') else 'daily'
+    name = (data.get('name') or '').strip()[:80] or ' · '.join(p for p in (keywords, classification, location) if p)
+    db = get_db()
+    count = db.execute("SELECT COUNT(*) FROM job_alerts WHERE user_id = ? AND is_active = 1", (request.user_id,)).fetchone()[0]
+    if count >= 20:
+        return jsonify({'error': 'You can have at most 20 active alerts'}), 400
+    cur = db.execute(
+        """INSERT INTO job_alerts (user_id, name, keywords, location, classification, work_type, work_arrangement,
+                                   salary_min, frequency, is_active, created_at) VALUES (?,?,?,?,?,?,?,?,?,1,?)""",
+        (request.user_id, name, keywords or None, location or None, classification, work_type, work_arrangement,
+         salary_min, frequency, datetime.datetime.now().isoformat()))
+    db.commit()
+    row = db.execute("SELECT * FROM job_alerts WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return jsonify({'success': True, 'alert': _alert_row(row)}), 201
+
+
+@app.route('/api/alerts/<int:alert_id>', methods=['PATCH', 'DELETE'])
+@require_auth
+def modify_alert(alert_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM job_alerts WHERE id = ? AND user_id = ?", (alert_id, request.user_id)).fetchone()
+    if not row:
+        return jsonify({'error': 'Alert not found'}), 404
+    if request.method == 'DELETE':
+        db.execute("DELETE FROM job_alerts WHERE id = ?", (alert_id,))
+        db.commit()
+        return jsonify({'success': True})
+    data = request.json or {}
+    updates = {}
+    if 'is_active' in data:
+        updates['is_active'] = 1 if data['is_active'] in (True, 'true', '1', 1) else 0
+    if data.get('frequency') in ('instant', 'daily'):
+        updates['frequency'] = data['frequency']
+    if 'name' in data:
+        updates['name'] = (data.get('name') or '').strip()[:80]
+    if not updates:
+        return jsonify({'error': 'Nothing to update'}), 400
+    db.execute(f"UPDATE job_alerts SET {', '.join(f'{k} = ?' for k in updates)} WHERE id = ?", list(updates.values()) + [alert_id])
+    db.commit()
+    row = db.execute("SELECT * FROM job_alerts WHERE id = ?", (alert_id,)).fetchone()
+    return jsonify({'success': True, 'alert': _alert_row(row)})
 
 # ============ SKILLS ============
 @app.route('/api/skills', methods=['GET'])
@@ -1585,14 +1771,26 @@ def sitemap_static():
 def sitemap_jobs():
     return get_sitemap_jobs()
 
+@app.route('/sitemap-companies.xml')
+def sitemap_companies():
+    return get_sitemap_companies()
+
+@app.route('/jobs')
+def jobs_search_page():
+    """Seek-style search results page (filters come from the query string, rendered client-side)."""
+    return _serve_template('search.html')
+
+
 @app.route('/job.html')
 @app.route('/job')
-def job_page():
-    """Serve job detail page — reads file, injects dynamic SEO values, returns raw HTML."""
-    from flask import make_response
-    from jinja2 import Template
+@app.route('/jobs/<slug>')
+def job_page(slug=None):
+    """Serve job detail page — reads file, injects dynamic SEO values, returns raw HTML.
+
+    Canonical form is /jobs/<title-slug>-<id>; /job?id= and /job?slug= are kept for old links.
+    """
     job_id = request.args.get('id', type=int)
-    slug   = request.args.get('slug', '')
+    slug = slug or request.args.get('slug', '')
     if slug:
         _, resolved_id = parse_job_slug(slug)
         if resolved_id:
@@ -1607,14 +1805,28 @@ def job_page():
         return _serve_job_html(None, canonical='', jsonld='', bc_jsonld='', noindex='', status=404)
     job = dict(row)
     canonical = job_canonical_url(job['id'], job['title'])
+    # A stale/foreign slug for a valid id gets a permanent redirect to the canonical URL
+    if slug and f"/jobs/{slug}" != canonical[canonical.index('/jobs/'):]:
+        return redirect(canonical[canonical.index('/jobs/'):], code=301)
     jsonld    = job_listing_jsonld(job, canonical)
     bc_jsonld = breadcrumbs_jsonld([
         {'name': 'Jobs',                'url': '/jobs'},
-        {'name': job.get('company',''), 'url': '/companies'},
+        {'name': job.get('company',''), 'url': f"/companies/{make_slug(job.get('company'))}"},
         {'name': job.get('title', ''),  'url': canonical},
     ])
     noindex = '<meta name="robots" content="noindex">' if should_noindex(request.path) else ''
     return _serve_job_html(job, canonical=canonical, jsonld=jsonld, bc_jsonld=bc_jsonld, noindex=noindex)
+
+
+def _serve_template(name, status=200):
+    from flask import make_response
+    path = os.path.join(TEMPLATES_DIR, name)
+    if not os.path.exists(path):
+        return jsonify({'error': 'Template not found'}), 404
+    with open(path, encoding='utf-8') as f:
+        resp = make_response(f.read(), status)
+    resp.content_type = 'text/html; charset=utf-8'
+    return resp
 
 def _serve_job_html(job, canonical, jsonld, bc_jsonld, noindex, status=200):
     """Read job.html and inject dynamic values, then return as HTTP response."""
@@ -1636,8 +1848,10 @@ def _serve_job_html(job, canonical, jsonld, bc_jsonld, noindex, status=200):
     return resp
 
 @app.route('/companies')
-def companies_page():
-    return open(os.path.join(TEMPLATES_DIR, 'company.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'company.html')) else jsonify({'companies':[]})
+@app.route('/companies/<slug>')
+def companies_page(slug=None):
+    """Company directory (/companies) and profile pages (/companies/<slug>); rendered client-side."""
+    return _serve_template('company.html')
 
 @app.route('/salary')
 def salary_page():
@@ -1723,12 +1937,14 @@ def search_all():
         return jsonify({'error': 'Query too short'}), 400
     
     db = get_db()
-    jobs = db.execute("SELECT id, title, company, location FROM jobs WHERE is_active = 1 AND (title LIKE ? OR description LIKE ?)", 
-                      (f'%{query}%', f'%{query}%')).fetchall()
-    companies = db.execute("SELECT id, name, industry FROM companies WHERE name LIKE ? OR industry LIKE ?",
-                            (f'%{query}%', f'%{query}%')).fetchall()
-    
-    return jsonify({'jobs': [dict(j) for j in jobs], 'companies': [dict(c) for c in companies], 'count': len(jobs) + len(companies)})
+    jobs = search_jobs(db, parse_filters({'q': query}), page=1, limit=20)['jobs']
+    companies = db.execute(
+        "SELECT company AS name, COUNT(*) AS open_jobs FROM jobs WHERE is_active = 1 AND company LIKE ? GROUP BY LOWER(company) ORDER BY 2 DESC LIMIT 10",
+        (f'%{query}%',)).fetchall()
+    companies = [{'name': c['name'], 'open_jobs': c['open_jobs'], 'url': f"/companies/{make_slug(c['name'])}"} for c in companies]
+    jobs = [{'id': j['id'], 'title': j['title'], 'company': j['company'], 'location': j['location'],
+             'url': f"/jobs/{make_job_slug(j['title'] or 'job', j['id'])}"} for j in jobs]
+    return jsonify({'jobs': jobs, 'companies': companies, 'count': len(jobs) + len(companies)})
 
 @app.route('/api/recommendations', methods=['GET'])
 @require_auth

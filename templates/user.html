@@ -208,6 +208,7 @@
     <button class="tab active" onclick="switchTab('overview')">📊 Overview</button>
     <button class="tab" onclick="switchTab('applications')">📋 Applications</button>
     <button class="tab" onclick="switchTab('saved')">⭐ Saved Jobs</button>
+    <button class="tab" onclick="switchTab('alerts')">🔔 Job Alerts</button>
     <button class="tab" onclick="switchTab('recommendations')">🎯 For You</button>
     <button class="tab" onclick="switchTab('profile')">👤 Profile</button>
   </div>
@@ -311,6 +312,15 @@
   <div class="tab-content" id="tab-saved">
     <div style="margin-bottom:1.5rem;font-weight:700;font-size:1rem;">⭐ Saved Jobs</div>
     <div class="rec-grid" id="savedJobsList"><div class="empty-state"><div class="emoji">⭐</div><h3>No saved jobs yet</h3><p>Save jobs you like from the browse page</p></div></div>
+  </div>
+
+  <!-- ── JOB ALERTS ── -->
+  <div class="tab-content" id="tab-alerts">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap;">
+      <div style="font-weight:700;font-size:1rem;">🔔 Job Alerts</div>
+      <a href="/jobs" style="padding:0.5rem 0.9rem;border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:0.8rem;text-decoration:none">+ New alert from a search</a>
+    </div>
+    <div class="card" id="alertsCard"><div id="alertsList"><div class="empty-state"><div class="emoji">⏳</div><h3>Loading…</h3></div></div></div>
   </div>
 
   <!-- ── RECOMMENDATIONS ── -->
@@ -574,7 +584,7 @@
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     // Activate clicked tab button
     const btns = document.querySelectorAll('.tab');
-    const names = ['overview','applications','saved','recommendations','profile'];
+    const names = ['overview','applications','saved','alerts','recommendations','profile'];
     const idx = names.indexOf(name);
     if (idx >= 0 && btns[idx]) btns[idx].classList.add('active');
     const content = document.getElementById('tab-' + name);
@@ -582,8 +592,54 @@
     window.scrollTo({top: 0, behavior: 'smooth'});
 
     if (name === 'saved') loadSavedJobs();
+    if (name === 'alerts') loadAlerts();
     if (name === 'applications') renderApplications();
   }
+
+  // ── JOB ALERTS (saved searches) ──
+  const escA = s => s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  async function loadAlerts() {
+    const el = document.getElementById('alertsList');
+    try {
+      const res = await fetch('/api/alerts', { headers: authHeaders() });
+      if (!res.ok) throw new Error();
+      const { alerts } = await res.json();
+      if (!alerts.length) {
+        el.innerHTML = '<div class="empty-state"><div class="emoji">🔔</div><h3>No job alerts yet</h3><p>Run a search on the <a href="/jobs" style="color:var(--primary)">jobs page</a> and click "Save search" to get new matches by email.</p></div>';
+        return;
+      }
+      el.innerHTML = alerts.map(a => `
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:0.9rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap;${a.is_active ? '' : 'opacity:.55'}">
+          <div style="min-width:0">
+            <a href="${escA(a.search_url)}" style="font-weight:600;color:var(--text);text-decoration:none">${escA(a.name || 'Job alert')}</a>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px">
+              ${[a.keywords && '“' + a.keywords + '”', a.classification, a.location, a.work_type, a.salary_min && '$' + Number(a.salary_min).toLocaleString() + '+'].filter(Boolean).map(escA).join(' · ') || 'All jobs'}
+              · ${a.frequency === 'instant' ? 'Instant' : 'Daily digest'}${a.last_sent_at ? ' · last sent ' + new Date(a.last_sent_at).toLocaleDateString() : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+            <select onchange="updateAlert(${a.id}, {frequency: this.value})" style="padding:0.35rem 0.6rem;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:0.78rem">
+              <option value="daily" ${a.frequency === 'daily' ? 'selected' : ''}>Daily</option>
+              <option value="instant" ${a.frequency === 'instant' ? 'selected' : ''}>Instant</option>
+            </select>
+            <button onclick="updateAlert(${a.id}, {is_active: ${a.is_active ? 'false' : 'true'}})" style="padding:0.35rem 0.7rem;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text-muted);font-size:0.78rem;cursor:pointer">${a.is_active ? 'Pause' : 'Resume'}</button>
+            <button onclick="deleteAlert(${a.id})" style="padding:0.35rem 0.7rem;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--error,#ef4444);font-size:0.78rem;cursor:pointer">Delete</button>
+          </div>
+        </div>`).join('');
+    } catch {
+      el.innerHTML = '<div class="empty-state"><div class="emoji">⚠️</div><h3>Could not load alerts</h3><p>Please sign in again.</p></div>';
+    }
+  }
+  async function updateAlert(id, patch) {
+    await fetch('/api/alerts/' + id, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    loadAlerts();
+  }
+  async function deleteAlert(id) {
+    if (!confirm('Delete this job alert?')) return;
+    await fetch('/api/alerts/' + id, { method: 'DELETE', headers: authHeaders() });
+    loadAlerts();
+  }
+  if (window.location.hash === '#alerts') document.addEventListener('DOMContentLoaded', () => switchTab('alerts'));
 
   async function loadSavedJobs() {
     try {

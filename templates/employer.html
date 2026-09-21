@@ -273,13 +273,15 @@
               <input type="text" class="form-input" id="jobLocation" placeholder="e.g. Sydney, NSW or Remote" required>
             </div>
             <div class="form-group">
-              <label class="form-label">Category *</label>
-              <select class="form-select" id="jobCategory" required>
-                <option value="">Select category...</option>
-                <option>Software Development</option><option>Engineering</option><option>Design</option>
-                <option>DevOps / Sysadmin</option><option>Fintech</option><option>Technology</option>
-                <option>Sales</option><option>Marketing</option><option>Data Science</option>
-                <option>Product</option><option>General</option>
+              <label class="form-label">Classification *</label>
+              <select class="form-select" id="jobClassification" required onchange="fillSubclassifications('jobClassification','jobSubclassification')">
+                <option value="">Select classification...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Sub-classification</label>
+              <select class="form-select" id="jobSubclassification">
+                <option value="">Select classification first</option>
               </select>
             </div>
             <div class="form-group">
@@ -415,13 +417,14 @@
           <input type="text" class="form-input" id="editLocation" required>
         </div>
         <div class="form-group">
-          <label class="form-label">Category</label>
-          <select class="form-select" id="editCategory">
-            <option>Software Development</option><option>Engineering</option><option>Design</option>
-            <option>DevOps / Sysadmin</option><option>Fintech</option><option>Technology</option>
-            <option>Sales</option><option>Marketing</option><option>Data Science</option>
-            <option>Product</option><option>General</option>
+          <label class="form-label">Classification</label>
+          <select class="form-select" id="editClassification" onchange="fillSubclassifications('editClassification','editSubclassification')">
+            <option value="">Select classification...</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sub-classification</label>
+          <select class="form-select" id="editSubclassification"><option value="">—</option></select>
         </div>
         <div class="form-group">
           <label class="form-label">Work Type</label>
@@ -770,11 +773,12 @@ async function handlePostJob(e) {
         title:            document.getElementById('jobTitle').value.trim(),
         company:          document.getElementById('jobCompany').value.trim(),
         location:         document.getElementById('jobLocation').value.trim(),
-        category:         document.getElementById('jobCategory').value,
+        classification:   document.getElementById('jobClassification').value,
+        subclassification: document.getElementById('jobSubclassification').value,
         work_type:        document.getElementById('jobWorkType').value,
         work_arrangement: document.getElementById('jobArrangement').value,
-        salary_min:       parseInt(document.getElementById('jobSalaryMin').value) || 0,
-        salary_max:       parseInt(document.getElementById('jobSalaryMax').value) || 0,
+        salary_min:       parseInt(document.getElementById('jobSalaryMin').value) || null,
+        salary_max:       parseInt(document.getElementById('jobSalaryMax').value) || null,
         salary_currency:  'AUD',
         description:      document.getElementById('jobDesc').value.trim(),
         skills:           document.getElementById('jobSkills').value.trim(),
@@ -811,6 +815,29 @@ async function handlePostJob(e) {
     btn.disabled = false; btn.textContent = '🚀 Publish Job →';
   }
 
+  // ── CLASSIFICATIONS (shared by post + edit forms) ─────────────────────────
+  let CLASSIFICATIONS = [];
+  const taxonomyReady = fetch('/api/classifications').then(r => r.json()).then(d => {
+    CLASSIFICATIONS = d.classifications || [];
+    ['jobClassification', 'editClassification'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      CLASSIFICATIONS.forEach(c => {
+        const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; sel.appendChild(o);
+      });
+    });
+  }).catch(() => {});
+
+  function fillSubclassifications(classId, subId) {
+    const cls = document.getElementById(classId).value;
+    const sub = document.getElementById(subId);
+    const entry = CLASSIFICATIONS.find(c => c.name === cls);
+    sub.innerHTML = '<option value="">' + (entry ? 'Any / not specified' : 'Select classification first') + '</option>';
+    (entry ? entry.subclassifications : []).forEach(s => {
+      const o = document.createElement('option'); o.value = s; o.textContent = s; sub.appendChild(o);
+    });
+  }
+
   // ── EDIT / DELETE ──────────────────────────────────────────────────────────
 
   async function openEditModal(jobId) {
@@ -818,18 +845,14 @@ async function handlePostJob(e) {
       const res = await fetch('/api/jobs/' + jobId);
       if (!res.ok) return;
       const j = await res.json();
-      document.getElementById('editJobId').value = job.id;
-    document.getElementById('editTitle').value = job.title || '';
-    document.getElementById('editCompany').value = job.company || '';
-    document.getElementById('editLocation').value = job.location || '';
-    document.getElementById('editCategory').value = job.category || 'General';
-    document.getElementById('editWorkType').value = job.work_type || 'full_time';
-    document.getElementById('editDescription').value = job.description || '';
-    document.getElementById('editModal').style.display = 'flex';
+      document.getElementById('editJobId').value = j.id;
       document.getElementById('editTitle').value = j.title || '';
       document.getElementById('editCompany').value = j.company || '';
       document.getElementById('editLocation').value = j.location || '';
-      document.getElementById('editCategory').value = j.category || '';
+      await taxonomyReady;
+      document.getElementById('editClassification').value = j.classification || '';
+      fillSubclassifications('editClassification', 'editSubclassification');
+      document.getElementById('editSubclassification').value = j.subclassification || '';
       document.getElementById('editWorkType').value = j.work_type || 'full_time';
       document.getElementById('editArrangement').value = j.work_arrangement || 'onsite';
       document.getElementById('editSalaryMin').value = j.salary_min || '';
@@ -849,11 +872,12 @@ async function handlePostJob(e) {
       title:            document.getElementById('editTitle').value.trim(),
       company:          document.getElementById('editCompany').value.trim(),
       location:         document.getElementById('editLocation').value.trim(),
-      category:         document.getElementById('editCategory').value,
+      classification:   document.getElementById('editClassification').value,
+      subclassification: document.getElementById('editSubclassification').value,
       work_type:        document.getElementById('editWorkType').value,
       work_arrangement: document.getElementById('editArrangement').value,
-      salary_min:       parseInt(document.getElementById('editSalaryMin').value) || 0,
-      salary_max:       parseInt(document.getElementById('editSalaryMax').value) || 0,
+      salary_min:       parseInt(document.getElementById('editSalaryMin').value) || null,
+      salary_max:       parseInt(document.getElementById('editSalaryMax').value) || null,
       salary_currency:  'AUD',
       description:      document.getElementById('editDesc').value.trim(),
       skills:           document.getElementById('editSkills').value.trim(),

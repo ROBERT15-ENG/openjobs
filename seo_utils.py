@@ -2,11 +2,19 @@
 """
 seo_utils.py — Slug generation, canonical URL helpers, structured data helpers.
 """
+import os
 import re
 from urllib.parse import urljoin
 
-# ── Your canonical base domain (configure once) ──────────────────────────────
-SITE_URL = "https://openjobs.com.au"   # ⚠️ change on deploy
+# ── Canonical base domain: APP_URL in .env, falls back to the production domain ──
+SITE_URL = (os.environ.get('APP_URL') or "https://openjobs.com.au").rstrip('/') + '/'
+
+
+def make_slug(*parts) -> str:
+    """Generic URL slug: make_slug('Atlassian Pty Ltd') -> 'atlassian-pty-ltd'."""
+    text = ' '.join(str(p) for p in parts if p)
+    return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-') or 'item'
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. SLUG GENERATION

@@ -97,13 +97,59 @@ def generate_jobs_sitemap(limit=5000):
     lines.append('</urlset>')
     return '\n'.join(lines)
 
+# ── Companies + classification landing pages sitemap ──────────────────────────
+
+def generate_companies_sitemap(limit=2000):
+    import sys
+    from urllib.parse import urlencode
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'api'))
+    from seo_utils import make_slug
+    from taxonomy import CLASSIFICATIONS, AU_STATES
+
+    rows = []
+    try:
+        con = sqlite3.connect(DB_PATH)
+        con.row_factory = sqlite3.Row
+        rows = con.execute("""
+            SELECT company, MAX(created_at) AS latest FROM jobs
+            WHERE is_active = 1 AND company IS NOT NULL AND company != ''
+            GROUP BY LOWER(company) ORDER BY latest DESC LIMIT ?
+        """, (limit,)).fetchall()
+        con.close()
+    except Exception as e:
+        print(f"[sitemap] DB error: {e}")
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    def add(loc, lm, freq, pri):
+        lines.append('  <url>')
+        lines.append(f'    <loc>{xml_escape(loc)}</loc>')
+        lines.append(f'    <lastmod>{lm}</lastmod>')
+        lines.append(f'    <changefreq>{freq}</changefreq>')
+        lines.append(f'    <priority>{pri}</priority>')
+        lines.append('  </url>')
+
+    today = datetime.now().strftime('%Y-%m-%d')
+    for name in CLASSIFICATIONS:
+        add(f"{SITE_URL}/jobs?{urlencode({'classification': name})}", today, 'daily', '0.8')
+    for abbr in AU_STATES:
+        add(f"{SITE_URL}/jobs?{urlencode({'state': abbr})}", today, 'daily', '0.7')
+    for r in rows:
+        add(f"{SITE_URL}/companies/{make_slug(r['company'])}", lastmod(r['latest'] or ''), 'weekly', '0.6')
+    lines.append('</urlset>')
+    return '\n'.join(lines)
+
 # ── Master sitemap index ───────────────────────────────────────────────────────
 
 def generate_sitemap_index():
     now = datetime.now().strftime('%Y-%m-%d')
     sub_maps = [
-        {'loc': f"{SITE_URL}/sitemap-static.xml", 'lastmod': now},
-        {'loc': f"{SITE_URL}/sitemap-jobs.xml",    'lastmod': now},
+        {'loc': f"{SITE_URL}/sitemap-static.xml",    'lastmod': now},
+        {'loc': f"{SITE_URL}/sitemap-jobs.xml",      'lastmod': now},
+        {'loc': f"{SITE_URL}/sitemap-companies.xml", 'lastmod': now},
     ]
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -133,3 +179,6 @@ def get_sitemap_static():
 
 def get_sitemap_jobs():
     return _make_response(generate_jobs_sitemap())
+
+def get_sitemap_companies():
+    return _make_response(generate_companies_sitemap())

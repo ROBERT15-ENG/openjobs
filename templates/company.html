@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Company profiles — OpenJobs</title>
+  <meta name="description" content="Explore companies hiring now: open roles, locations, employee ratings and reviews.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#09090f; --surface:#111119; --card:#18181f; --card-hover:#1e1e2e; --border:#2a2a3e; --border-soft:#1e1e2e; --text:#ededf0; --muted:#8b8ba3; --dim:#5a5a72; --primary:#00d4aa; --primary-dark:#00a88a; --primary-glow:rgba(0,212,170,.14); --warning:#f59e0b; --danger:#ef4444; --success:#22c55e; --radius:14px; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Inter',-apple-system,sans-serif; background:var(--bg); color:var(--text); line-height:1.55; min-height:100vh; }
+    a { color:inherit; text-decoration:none; } button { font-family:inherit; }
+    header { position:sticky; top:0; z-index:100; background:rgba(9,9,15,.9); backdrop-filter:blur(20px); border-bottom:1px solid var(--border-soft); }
+    .header-inner { max-width:1200px; margin:0 auto; padding:0 1.5rem; height:60px; display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+    .logo { font-size:1.25rem; font-weight:800; } .logo span { color:var(--primary); }
+    nav { display:flex; gap:.25rem; } nav a { color:var(--muted); font-size:.875rem; font-weight:500; padding:.45rem .8rem; border-radius:8px; } nav a:hover { color:var(--text); background:var(--card); } nav a.active { color:var(--primary); background:var(--primary-glow); }
+    .btn { border:none; padding:.55rem 1.1rem; border-radius:10px; font-size:.875rem; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+    .btn-primary { background:var(--primary); color:#000; } .btn-primary:hover { background:var(--primary-dark); }
+    .btn-ghost { background:transparent; color:var(--muted); border:1px solid var(--border); } .btn-ghost:hover { color:var(--text); border-color:var(--primary); }
+    .btn-sm { padding:.4rem .8rem; font-size:.8rem; border-radius:8px; }
+    .wrap { max-width:1200px; margin:0 auto; padding:1.5rem; }
+    .hero { padding:2.5rem 0 1.5rem; } .hero h1 { font-size:2rem; font-weight:800; letter-spacing:-.5px; } .hero p { color:var(--muted); margin-top:.4rem; }
+    .toolbar { display:flex; gap:.5rem; margin:1.25rem 0; flex-wrap:wrap; }
+    .toolbar input, .toolbar select { height:44px; background:var(--card); border:1px solid var(--border); border-radius:10px; color:var(--text); padding:0 14px; font-family:inherit; font-size:.9rem; }
+    .toolbar input { flex:1; min-width:220px; } .toolbar input:focus { outline:none; border-color:var(--primary); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:.9rem; }
+    .co-card { background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius); padding:1.1rem 1.2rem; display:block; transition:border-color .15s, transform .15s; }
+    .co-card:hover { border-color:var(--primary); transform:translateY(-2px); }
+    .co-card .avatar { width:44px; height:44px; border-radius:10px; background:linear-gradient(135deg,var(--primary),#c084fc); color:#000; font-weight:800; display:flex; align-items:center; justify-content:center; font-size:1.1rem; margin-bottom:.7rem; }
+    .co-card h3 { font-size:1rem; font-weight:700; } .co-card .sub { color:var(--muted); font-size:.82rem; margin-top:.2rem; }
+    .stars { color:var(--warning); letter-spacing:1px; } .rating-num { font-weight:700; }
+    .tags { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.6rem; } .tags span { font-size:.7rem; padding:.15rem .5rem; background:var(--card); border:1px solid var(--border-soft); border-radius:6px; color:var(--muted); }
+    .empty { text-align:center; padding:3rem; color:var(--muted); background:var(--surface); border:1px dashed var(--border); border-radius:var(--radius); }
+
+    /* profile */
+    .profile-head { background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius); padding:1.75rem; display:flex; gap:1.25rem; align-items:flex-start; flex-wrap:wrap; margin-top:1.5rem; }
+    .profile-head .avatar { width:72px; height:72px; border-radius:16px; background:linear-gradient(135deg,var(--primary),#c084fc); color:#000; font-weight:800; display:flex; align-items:center; justify-content:center; font-size:1.8rem; flex:none; }
+    .profile-head h1 { font-size:1.75rem; font-weight:800; } .profile-head .sub { color:var(--muted); margin-top:.3rem; display:flex; gap:1rem; flex-wrap:wrap; font-size:.9rem; }
+    .profile-head .spacer { flex:1; }
+    .tabs { display:flex; gap:.25rem; border-bottom:1px solid var(--border-soft); margin:1.5rem 0 1rem; }
+    .tabs button { border:none; background:none; color:var(--muted); padding:.7rem 1rem; font-weight:600; font-size:.9rem; cursor:pointer; border-bottom:2px solid transparent; }
+    .tabs button.active { color:var(--primary); border-bottom-color:var(--primary); }
+    .panel { display:none; } .panel.active { display:block; }
+    .job-row { background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius); padding:1rem 1.2rem; margin-bottom:.6rem; display:flex; justify-content:space-between; gap:1rem; align-items:center; flex-wrap:wrap; }
+    .job-row:hover { border-color:var(--primary); }
+    .job-row h3 { font-size:1rem; font-weight:700; } .job-row .meta { color:var(--muted); font-size:.83rem; margin-top:.2rem; display:flex; gap:1rem; flex-wrap:wrap; }
+    .job-row .salary { color:var(--text); font-weight:600; }
+    .review-summary { display:grid; grid-template-columns:180px 1fr; gap:1.5rem; background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius); padding:1.5rem; margin-bottom:1rem; align-items:center; }
+    .big-rating { font-size:3rem; font-weight:800; line-height:1; } .dist div { display:grid; grid-template-columns:20px 1fr 30px; gap:.5rem; align-items:center; font-size:.8rem; color:var(--muted); margin:.2rem 0; }
+    .bar { height:8px; background:var(--card); border-radius:4px; overflow:hidden; } .bar i { display:block; height:100%; background:var(--warning); }
+    .review { background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius); padding:1.2rem; margin-bottom:.6rem; }
+    .review .head { display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap; align-items:baseline; } .review h4 { font-size:1rem; } .review .who { color:var(--dim); font-size:.78rem; }
+    .review p { font-size:.88rem; margin-top:.5rem; color:#cfcfdb; } .review p b { color:var(--muted); font-weight:600; }
+    .form { background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius); padding:1.5rem; margin-top:1rem; }
+    .form h3 { margin-bottom:.25rem; } .form p { color:var(--muted); font-size:.85rem; }
+    .form label { display:block; font-size:.8rem; color:var(--muted); margin:.9rem 0 .3rem; }
+    .form input, .form textarea, .form select { width:100%; background:var(--card); border:1px solid var(--border); border-radius:8px; color:var(--text); padding:.6rem .8rem; font-family:inherit; font-size:.9rem; }
+    .form textarea { min-height:80px; resize:vertical; }
+    .star-input { display:flex; gap:.25rem; font-size:1.8rem; cursor:pointer; color:var(--dim); } .star-input span.on { color:var(--warning); }
+    .two { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; }
+    .toast { position:fixed; bottom:1.25rem; left:50%; transform:translateX(-50%); background:var(--card); border:1px solid var(--border); padding:.7rem 1.1rem; border-radius:10px; font-size:.88rem; opacity:0; transition:opacity .25s; z-index:300; pointer-events:none; }
+    .toast.show { opacity:1; } .toast.ok { border-color:var(--success); } .toast.err { border-color:var(--danger); }
+    @media (max-width:800px) { nav { display:none; } .review-summary { grid-template-columns:1fr; } .two { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <a class="logo" href="/">Open<span>Jobs</span></a>
+    <nav>
+      <a href="/jobs">Find Jobs</a>
+      <a href="/companies" class="active">Companies</a>
+      <a href="/salary">Salary Guide</a>
+      <a href="/employer">For Employers</a>
+    </nav>
+    <div id="headerActions" style="display:flex;gap:.5rem">
+      <a href="/login" class="btn btn-ghost btn-sm">Sign in</a>
+      <a href="/register" class="btn btn-primary btn-sm">Register</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="main"></main>
+<div class="toast" id="toast"></div>
+
+<script>
+const esc = s => s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const stars = r => { r = Math.round(Number(r) || 0); return r ? '★'.repeat(r) + '☆'.repeat(5 - r) : '☆☆☆☆☆'; };
+const initials = n => (n || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+const WT = {full_time:'Full time', part_time:'Part time', contract:'Contract/Temp', casual:'Casual', internship:'Internship'};
+const timeAgo = iso => { if (!iso) return ''; const d = Math.floor((Date.now() - new Date(iso)) / 86400000); return d < 1 ? 'Today' : d < 30 ? d + 'd ago' : '30+ days ago'; };
+const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+const authHeaders = () => { const h = {'Content-Type':'application/json'}; const t = getToken(); if (t) h['Authorization'] = 'Bearer ' + t; return h; };
+let toastTimer; const toast = (m, k) => { const t = document.getElementById('toast'); t.textContent = m; t.className = 'toast show ' + (k || ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = 'toast', 2800); };
+
+(function initHeader() {
+  const t = getToken(); if (!t) return;
+  let user = {}; try { user = JSON.parse(localStorage.getItem('user') || '{}'); } catch (e) {}
+  const dash = user.role === 'employer' ? '/employer' : user.role === 'admin' ? '/admin' : '/user';
+  document.getElementById('headerActions').innerHTML = `<a href="${dash}" class="btn btn-ghost btn-sm">${esc(user.name || 'My account')}</a>`;
+})();
+
+const slug = location.pathname.replace(/^\/companies\/?/, '').replace(/\/$/, '');
+if (slug) renderProfile(slug); else renderDirectory();
+
+// ───────── directory ─────────
+function renderDirectory() {
+  document.title = 'Company profiles — OpenJobs';
+  document.getElementById('main').innerHTML = `
+    <div class="hero"><h1>Companies hiring now</h1><p>Browse employers with live ads, see where they're hiring and what employees say.</p></div>
+    <div class="toolbar">
+      <input id="coQ" type="search" placeholder="Search companies…" oninput="debouncedLoad()">
+      <select id="coSort" onchange="loadCompanies()"><option value="jobs">Most open jobs</option><option value="rating">Highest rated</option><option value="name">A – Z</option></select>
+    </div>
+    <div class="grid" id="coGrid"></div>`;
+  loadCompanies();
+}
+let dt; function debouncedLoad() { clearTimeout(dt); dt = setTimeout(loadCompanies, 200); }
+function loadCompanies() {
+  const q = document.getElementById('coQ').value.trim(), sort = document.getElementById('coSort').value;
+  fetch(`/api/companies?sort=${sort}&q=${encodeURIComponent(q)}`).then(r => r.json()).then(d => {
+    const g = document.getElementById('coGrid');
+    if (!d.companies.length) { g.innerHTML = '<div class="empty" style="grid-column:1/-1">No companies found.</div>'; return; }
+    g.innerHTML = d.companies.map(c => `
+      <a class="co-card" href="${esc(c.url)}">
+        <div class="avatar">${esc(initials(c.name))}</div>
+        <h3>${esc(c.name)}</h3>
+        <div class="sub">${c.open_jobs} open job${c.open_jobs === 1 ? '' : 's'} · ${c.rating ? `<span class="stars">${stars(c.rating)}</span> ${c.rating} (${c.review_count})` : 'No reviews yet'}</div>
+        <div class="tags">${c.states.slice(0, 4).map(s => `<span>${esc(s)}</span>`).join('')}${c.classifications.slice(0, 2).map(s => `<span>${esc(s)}</span>`).join('')}</div>
+      </a>`).join('');
+  });
+}
+
+// ───────── profile ─────────
+let company = null;
+function renderProfile(slug) {
+  fetch('/api/companies/' + encodeURIComponent(slug)).then(r => r.ok ? r.json() : Promise.reject(r.status)).then(c => {
+    company = c;
+    document.title = `${c.name} — jobs, reviews & profile — OpenJobs`;
+    const dist = c.rating_distribution || {};
+    const total = c.review_count || 0;
+    document.getElementById('main').innerHTML = `
+      <nav style="font-size:.8rem;color:var(--dim);margin-top:1rem"><a href="/jobs">Jobs</a> › <a href="/companies">Companies</a> › ${esc(c.name)}</nav>
+      <div class="profile-head">
+        <div class="avatar">${esc(initials(c.name))}</div>
+        <div>
+          <h1>${esc(c.name)}</h1>
+          <div class="sub">
+            <span>${c.rating ? `<span class="stars">${stars(c.rating)}</span> <span class="rating-num">${c.rating}</span> · ${total} review${total === 1 ? '' : 's'}` : 'No reviews yet'}</span>
+            <span>${c.open_jobs} open job${c.open_jobs === 1 ? '' : 's'}</span>
+            ${c.states.length ? `<span>📍 ${esc(c.states.join(', '))}</span>` : ''}
+          </div>
+          <div class="tags">${c.classifications.map(s => `<span>${esc(s)}</span>`).join('')}</div>
+        </div>
+        <div class="spacer"></div>
+        <a class="btn btn-primary" href="/jobs?company=${encodeURIComponent(c.name)}">View all jobs</a>
+      </div>
+      <div class="tabs">
+        <button class="active" onclick="showTab('jobs', this)">Jobs (${c.open_jobs})</button>
+        <button onclick="showTab('reviews', this)">Reviews (${total})</button>
+      </div>
+      <div class="panel active" id="tab-jobs">
+        ${c.jobs.length ? c.jobs.map(j => `
+          <a class="job-row" href="${esc(j.url)}">
+            <div><h3>${esc(j.title)}</h3><div class="meta"><span>📍 ${esc(j.location)}</span>${j.salary ? `<span class="salary">${esc(j.salary)}</span>` : ''}<span>${esc(WT[j.work_type] || j.work_type || '')}</span>${j.classification ? `<span>${esc(j.classification)}</span>` : ''}</div></div>
+            <span style="color:var(--dim);font-size:.78rem">${timeAgo(j.created_at)}</span>
+          </a>`).join('') : '<div class="empty">No live ads right now.</div>'}
+      </div>
+      <div class="panel" id="tab-reviews">
+        <div class="review-summary">
+          <div><div class="big-rating">${c.rating || '–'}</div><div class="stars" style="font-size:1.1rem">${stars(c.rating)}</div><div style="color:var(--muted);font-size:.8rem">${total} rating${total === 1 ? '' : 's'}</div></div>
+          <div class="dist">${[5,4,3,2,1].map(n => `<div><span>${n}★</span><div class="bar"><i style="width:${total ? (dist[n] || 0) / total * 100 : 0}%"></i></div><span>${dist[n] || 0}</span></div>`).join('')}</div>
+        </div>
+        <div id="reviewList">${c.reviews.length ? c.reviews.map(r => `
+          <div class="review">
+            <div class="head"><div><span class="stars">${stars(r.rating)}</span> <h4 style="display:inline">${esc(r.title || 'Review')}</h4></div><span class="who">${esc(r.role || 'Employee')} · ${r.is_current ? 'Current' : 'Former'} · ${new Date(r.created_at).toLocaleDateString('en-AU', {month:'short', year:'numeric'})}</span></div>
+            ${r.pros ? `<p><b>The good things:</b> ${esc(r.pros)}</p>` : ''}
+            ${r.cons ? `<p><b>The challenges:</b> ${esc(r.cons)}</p>` : ''}
+          </div>`).join('') : '<div class="empty">No reviews yet — be the first to share your experience.</div>'}</div>
+        <div class="form">
+          <h3>Write a review</h3>
+          <p>Reviews are anonymous. Only your role and whether you still work here is shown.</p>
+          <label>Overall rating</label>
+          <div class="star-input" id="starInput">${[1,2,3,4,5].map(n => `<span data-n="${n}" onclick="setStars(${n})">★</span>`).join('')}</div>
+          <div class="two">
+            <div><label for="rvTitle">Headline</label><input id="rvTitle" maxlength="120" placeholder="Sum up your experience"></div>
+            <div><label for="rvRole">Your role</label><input id="rvRole" maxlength="80" placeholder="e.g. Software Engineer"></div>
+          </div>
+          <label for="rvPros">The good things</label><textarea id="rvPros" maxlength="2000"></textarea>
+          <label for="rvCons">The challenges</label><textarea id="rvCons" maxlength="2000"></textarea>
+          <label for="rvCurrent">Employment</label>
+          <select id="rvCurrent"><option value="0">Former employee</option><option value="1">Current employee</option></select>
+          <div style="margin-top:1rem;display:flex;justify-content:flex-end"><button class="btn btn-primary" onclick="submitReview()">Submit review</button></div>
+        </div>
+      </div>`;
+    if (location.hash === '#reviews') showTab('reviews', document.querySelectorAll('.tabs button')[1]);
+  }).catch(() => {
+    document.getElementById('main').innerHTML = `<div class="hero"><h1>Company not found</h1><p>We couldn't find that employer. <a href="/companies" style="color:var(--primary)">Browse all companies</a>.</p></div>`;
+  });
+}
+function showTab(name, btn) {
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+}
+let ratingVal = 0;
+function setStars(n) { ratingVal = n; document.querySelectorAll('#starInput span').forEach(s => s.classList.toggle('on', Number(s.dataset.n) <= n)); }
+function submitReview() {
+  if (!getToken()) { if (confirm('Sign in to write a review. Go to the login page now?')) location.href = '/login?next=' + encodeURIComponent(location.pathname + '#reviews'); return; }
+  if (!ratingVal) { toast('Pick a star rating first', 'err'); return; }
+  const body = { rating: ratingVal, title: document.getElementById('rvTitle').value, role: document.getElementById('rvRole').value,
+    pros: document.getElementById('rvPros').value, cons: document.getElementById('rvCons').value, is_current: document.getElementById('rvCurrent').value === '1' };
+  fetch('/api/companies/' + encodeURIComponent(company.slug) + '/reviews', {method: 'POST', headers: authHeaders(), body: JSON.stringify(body)})
+    .then(r => r.json()).then(d => { if (d.error) { toast(d.error, 'err'); return; } toast(d.message || 'Thanks for your review', 'ok'); location.hash = '#reviews'; renderProfile(company.slug); })
+    .catch(() => toast('Could not submit review', 'err'));
+}
+</script>
+</body>
+</html>
