@@ -86,9 +86,23 @@ ollama pull gemma3:4b   # or your chosen model
 
 # 5. Run the server (creates jobs.db and all tables on first start)
 python api/server.py
+
+# 6. (staging only) fill the database with realistic demo ads, companies and reviews
+python api/seed_demo.py            # idempotent; --force to reseed
 ```
 
-Open `http://localhost:5700` in your browser.
+Open `http://localhost:5700` in your browser. The seed script creates demo logins
+(`seeker@demo.openjobs.local`, `employer.atlassian@demo.openjobs.local`, ... — password `Demo1234!`).
+Never run it against a production database.
+
+### Job alert digests
+
+Instant alerts are sent as soon as a matching ad is posted. Daily digests are sent by a
+cron job (or Railway/Render scheduled task):
+
+```bash
+python api/alerts.py            # add --dry-run to see what would be sent
+```
 
 ---
 
@@ -157,15 +171,36 @@ TELEGRAM_BOT_TOKEN=123456:ABC...
 | `POST` | `/api/auth/logout` | Revoke token |
 | `GET` | `/api/auth/me` | Current user profile |
 
-### Jobs
+### Jobs & search
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/jobs` | Search/filter jobs |
-| `POST` | `/api/jobs` | Post job (auth required) |
-| `GET` | `/api/jobs/<id>` | Job detail |
+| `GET` | `/api/jobs` | Search. Params: `q` (FTS5 relevance-ranked, highlighted `snippet`), `location` (suburb/city/state/`Remote`), `state`, `classification`, `subclassification`, `work_type` & `work_arrangement` (csv), `salary_min`/`salary_max`, `date_listed` (days), `company`, `sort` (`relevance`\|`date`\|`salary_desc`\|`salary_asc`), `page`, `limit`, `facets=1` |
+| `GET` | `/api/jobs/<id>` | Job detail + `similar` jobs + canonical `url` |
+| `POST` | `/api/jobs` | Post job (employer/admin). Accepts `classification`/`subclassification`; `state` is derived from `location` |
 | `PATCH` | `/api/jobs/<id>` | Update job (owner or admin) |
 | `DELETE` | `/api/jobs/<id>` | Soft-delete job (owner or admin) |
 | `PATCH` | `/api/jobs/<id>/view` | Increment view count |
+| `GET` | `/api/classifications` | Seek-style classification taxonomy with live counts |
+| `GET` | `/api/suggest?q=` | Keyword autocomplete (titles, skills, companies) |
+| `GET` | `/api/locations/suggest?q=` | Location autocomplete |
+
+Pages: `/jobs` (search results with facets and split-view preview), `/jobs/<title-slug>-<id>`
+(canonical job URL; stale slugs 301), `/companies`, `/companies/<slug>`.
+
+### Saved searches / job alerts
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/alerts` | Signed-in user's alerts |
+| `POST` | `/api/alerts` | Create (`keywords`, `location`, `classification`, `work_type`, `work_arrangement`, `salary_min`, `frequency` = `daily`\|`instant`) |
+| `PATCH` | `/api/alerts/<id>` | Pause/resume (`is_active`), change `frequency`/`name` |
+| `DELETE` | `/api/alerts/<id>` | Delete |
+
+### Companies & reviews
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/companies` | Companies with live ads (`q`, `sort` = `jobs`\|`rating`\|`name`) |
+| `GET` | `/api/companies/<slug>` | Profile: open jobs, rating distribution, anonymous reviews |
+| `POST` | `/api/companies/<slug>/reviews` | Write/update your review (auth; one per company) |
 
 ### Applications & ATS
 | Method | Endpoint | Description |
@@ -201,11 +236,16 @@ and is applied automatically at startup: missing tables and columns are added, e
 is left untouched. Run it by hand with `python api/db_schema.py`. Key tables:
 
 **`users`** — job seekers and employers
-**`jobs`** — all job listings (soft delete: `is_active=0`)
+**`jobs`** — all job listings (soft delete: `is_active=0`); `classification`, `subclassification`, `state` power the facets
+**`jobs_fts`** — SQLite FTS5 index over jobs, kept in sync by triggers (falls back to `LIKE` if FTS5 is unavailable)
 **`applications`** — job applications with ATS scores
 **`saved_jobs`** — jobs saved by seekers
-**`job_alerts`** — email alert preferences
+**`job_alerts`** — saved searches (`instant` or `daily`), matched by `api/alerts.py`
+**`company_reviews`** — anonymous employee reviews (one per user per company)
 **`skills_taxonomy`** — 42 skills with aliases and demand scores
+
+The classification taxonomy and location normalisation live in `api/taxonomy.py`; the query
+builder and facet counting in `api/search.py`.
 
 Schema diagram: [OpenJobs_CodeSchematic.pdf](./OpenJobs_CodeSchematic.pdf)
 
