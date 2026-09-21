@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from search import parse_filters, search_jobs, job_matches_alert  # noqa: E402
+from taxonomy import format_salary  # noqa: E402
 from seo_utils import make_job_slug  # noqa: E402
 
 APP_URL = os.environ.get('APP_URL', 'http://localhost:5700').rstrip('/')
@@ -30,21 +31,10 @@ def _connect(db_path):
     return con
 
 
-def _fmt_salary(lo, hi, cur='AUD'):
-    cur = cur or 'AUD'
-    if lo and hi:
-        return f"{cur} {lo:,.0f} – {hi:,.0f}"
-    if lo:
-        return f"{cur} {lo:,.0f}+"
-    if hi:
-        return f"Up to {cur} {hi:,.0f}"
-    return 'Competitive'
-
-
 def _email_job(job) -> dict:
     return {
         'title': job['title'], 'company': job['company'], 'location': job['location'],
-        'salary': _fmt_salary(job['salary_min'], job['salary_max'], job['salary_currency']),
+        'salary': format_salary(job['salary_min'], job['salary_max'], job['salary_currency']) or 'Competitive',
         'link': f"{APP_URL}/jobs/{make_job_slug(job['title'] or 'job', job['id'])}",
     }
 

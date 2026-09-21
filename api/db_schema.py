@@ -60,7 +60,7 @@ SCHEMA = {
         ('salary',            'TEXT'),
         ('salary_min',        'INTEGER'),
         ('salary_max',        'INTEGER'),
-        ('salary_currency',   "TEXT DEFAULT 'AUD'"),
+        ('salary_currency',   "TEXT DEFAULT 'KES'"),
         ('category',          "TEXT DEFAULT 'General'"),
         ('work_type',         "TEXT DEFAULT 'full_time'"),
         ('work_arrangement',  "TEXT DEFAULT 'remote'"),

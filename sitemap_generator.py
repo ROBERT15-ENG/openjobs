@@ -7,7 +7,7 @@ import os
 import sqlite3
 from datetime import datetime
 
-SITE_URL = os.environ.get('APP_URL', 'https://openjobs.com.au').rstrip('/')
+SITE_URL = os.environ.get('APP_URL', 'https://openjobs.co.ke').rstrip('/')
 DB_PATH  = os.environ.get('DATABASE_URL',
            os.path.join(os.path.dirname(__file__), 'jobs.db'))
 
@@ -105,7 +105,7 @@ def generate_companies_sitemap(limit=2000):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'api'))
     from seo_utils import make_slug
-    from taxonomy import CLASSIFICATIONS, AU_STATES
+    from taxonomy import CLASSIFICATIONS, REGIONS
 
     rows = []
     try:
@@ -135,8 +135,8 @@ def generate_companies_sitemap(limit=2000):
     today = datetime.now().strftime('%Y-%m-%d')
     for name in CLASSIFICATIONS:
         add(f"{SITE_URL}/jobs?{urlencode({'classification': name})}", today, 'daily', '0.8')
-    for abbr in AU_STATES:
-        add(f"{SITE_URL}/jobs?{urlencode({'state': abbr})}", today, 'daily', '0.7')
+    for region in REGIONS:
+        add(f"{SITE_URL}/jobs?{urlencode({'state': region})}", today, 'daily', '0.7')
     for r in rows:
         add(f"{SITE_URL}/companies/{make_slug(r['company'])}", lastmod(r['latest'] or ''), 'weekly', '0.6')
     lines.append('</urlset>')

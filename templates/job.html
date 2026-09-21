@@ -6,11 +6,11 @@
   {# Rendered server-side by _serve_job_html (Jinja2, autoescape on). `job` is {} when not found. #}
   <meta name="description" content="{% if job.title %}{{ job.title }} at {{ job.company }} — {{ job.location }}. {% endif %}Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.">
   {{ noindex or '<meta name="robots" content="index, follow">'|safe }}
-  <link rel="canonical" href="{{ canonical or 'https://openjobs.com.au/job' }}">
+  <link rel="canonical" href="{{ canonical or 'https://openjobs.co.ke/job' }}">
   <meta property="og:title" content="{% if job.title %}{{ job.title }} at {{ job.company }} — OpenJobs{% else %}Apply for Job — OpenJobs{% endif %}">
   <meta property="og:description" content="{{ (job.description or 'Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.')[:160] }}">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="{{ canonical or 'https://openjobs.com.au/job' }}">
+  <meta property="og:url" content="{{ canonical or 'https://openjobs.co.ke/job' }}">
   <meta property="og:site_name" content="OpenJobs">
   <title>{% if job.title %}{{ job.title }} at {{ job.company }} — OpenJobs{% else %}Job Details — OpenJobs{% endif %}</title>
   {{ jsonld }}
@@ -509,7 +509,7 @@
 
   function getShareUrl() {
     const canonical = currentJob
-      ? 'https://openjobs.com.au/jobs/' + slugify(currentJob.title) + '-' + currentJob.id
+      ? window.location.origin + '/jobs/' + slugify(currentJob.title) + '-' + currentJob.id
       : window.location.href;
     return canonical;
   }
@@ -566,9 +566,11 @@
 
   // ── UTILITIES ──
   function formatSalary(job) {
-    const min = job.salary_min, max = job.salary_max, curr = job.salary_currency || 'AUD';
+    const min = job.salary_min, max = job.salary_max, curr = job.salary_currency || 'KES';
     if (!min && !max) return '';
-    const fmt = n => n >= 1000 ? curr + ' ' + Math.round(n/1000) + 'k' : '';
+    if (job.salary && typeof job.salary === 'string' && /\d/.test(job.salary)) return job.salary; // server-formatted
+    const sym = curr === 'KES' ? 'KSh' : curr;
+    const fmt = n => sym + ' ' + Number(n).toLocaleString('en-KE') + (curr === 'KES' ? ' /month' : '');
     if (min && max && min !== max) return fmt(min) + ' – ' + fmt(max);
     if (min) return 'From ' + fmt(min);
     return max ? 'Up to ' + fmt(max) : '';

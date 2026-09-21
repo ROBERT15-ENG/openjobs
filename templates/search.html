@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Jobs — OpenJobs</title>
-  <meta name="description" content="Search thousands of jobs across Australia by keyword, location, classification, salary and work type. Save your search and get new jobs by email.">
+  <title>Jobs in Kenya — OpenJobs</title>
+  <meta name="description" content="Search jobs across Kenya by keyword, town or county, classification, salary and work type. Save your search and get new jobs by email.">
   <meta name="robots" content="index, follow">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -200,7 +200,7 @@
       </div>
       <div class="field">
         <label for="location">Where</label>
-        <input id="location" name="location" type="text" placeholder="Suburb, city, state or 'Remote'" autocomplete="off" aria-controls="acLoc">
+        <input id="location" name="location" type="text" placeholder="Town, estate, county or 'Remote'" autocomplete="off" aria-controls="acLoc">
         <div class="ac" id="acLoc" role="listbox"></div>
       </div>
       <div class="field">
@@ -223,14 +223,14 @@
     <div class="facet" id="facetArrangement"><h3>Remote options <button type="button" onclick="clearFacet('work_arrangement')">Clear</button></h3><div class="opts"></div></div>
     <div class="facet" id="facetDate"><h3>Listed</h3><div class="opts"></div></div>
     <div class="facet" id="facetSalary">
-      <h3>Salary (AUD / year) <button type="button" onclick="clearSalary()">Clear</button></h3>
+      <h3 id="salaryHeading">Salary (KSh / month) <button type="button" onclick="clearSalary()">Clear</button></h3>
       <div class="salary-row">
         <select id="salaryMin" onchange="applySalary()"><option value="">Min</option></select>
         <select id="salaryMax" onchange="applySalary()"><option value="">Max</option></select>
       </div>
       <div class="opts" style="margin-top:.5rem"></div>
     </div>
-    <div class="facet" id="facetState"><h3>State <button type="button" onclick="clearFacet('state')">Clear</button></h3><div class="opts"></div></div>
+    <div class="facet" id="facetState"><h3><span id="regionHeading">County</span> <button type="button" onclick="clearFacet('state')">Clear</button></h3><div class="opts"></div></div>
     <div class="facet" id="facetClass" style="display:none"><h3>Classification</h3><div class="opts"></div></div>
   </aside>
 
@@ -289,9 +289,12 @@ let selectedJobId = null;
 let savedIds = new Set();
 const LIMIT = 20;
 
-const WORK_TYPE_LABELS = {full_time:'Full time', part_time:'Part time', contract:'Contract/Temp', casual:'Casual/Vacation', internship:'Internship'};
-const ARR_LABELS = {remote:'Remote', hybrid:'Hybrid', onsite:'On-site'};
-const STATE_LABELS = {NSW:'New South Wales', VIC:'Victoria', QLD:'Queensland', WA:'Western Australia', SA:'South Australia', TAS:'Tasmania', ACT:'ACT', NT:'Northern Territory', Remote:'Remote', International:'International', Other:'Other'};
+// Labels come from /api/classifications (country, currency, counties); these are fallbacks.
+let WORK_TYPE_LABELS = {full_time:'Full time', part_time:'Part time', contract:'Contract', casual:'Casual', internship:'Internship / Attachment'};
+let ARR_LABELS = {remote:'Remote', hybrid:'Hybrid', onsite:'On-site'};
+let STATE_LABELS = {Remote:'Remote', International:'International', Other:'Other'};
+let COUNTRY = 'Kenya', CURRENCY_SYMBOL = 'KSh', SALARY_PERIOD = 'month', REGION_LABEL = 'County';
+let SALARY_STEPS = [20000, 30000, 40000, 50000, 60000, 80000, 100000, 120000, 150000, 200000, 250000, 300000, 400000, 500000];
 
 function readUrl() {
   const p = new URLSearchParams(location.search);
@@ -340,7 +343,8 @@ function timeAgo(iso) {
   if (days < 30) return days + 'd ago';
   return '30+ days ago';
 }
-function fmtMoney(n) { return '$' + Number(n).toLocaleString('en-AU'); }
+function fmtMoney(n) { return CURRENCY_SYMBOL + ' ' + Number(n).toLocaleString('en-KE'); }
+function regionLabel(v) { return STATE_LABELS[v] || (v ? v + ' ' + REGION_LABEL : v); }
 function stars(r) { r = Math.round(Number(r) || 0); return r ? '★'.repeat(r) + '☆'.repeat(5 - r) : ''; }
 function getToken() { return localStorage.getItem('token') || sessionStorage.getItem('token') || ''; }
 function authHeaders() { const h = {'Content-Type': 'application/json'}; const t = getToken(); if (t) h['Authorization'] = 'Bearer ' + t; return h; }
@@ -422,11 +426,16 @@ bindAc('location', 'acLoc', '/api/locations/suggest');
 function loadTaxonomy() {
   return fetch('/api/classifications').then(r => r.json()).then(d => {
     taxonomy = d;
+    if (d.work_types) WORK_TYPE_LABELS = d.work_types;
+    if (d.work_arrangements) ARR_LABELS = d.work_arrangements;
+    if (d.regions) Object.keys(d.regions).forEach(k => STATE_LABELS[k] = d.regions[k] + ' ' + (d.region_label || REGION_LABEL));
+    COUNTRY = d.country || COUNTRY; CURRENCY_SYMBOL = d.currency_symbol || CURRENCY_SYMBOL; SALARY_PERIOD = d.salary_period || SALARY_PERIOD; REGION_LABEL = d.region_label || REGION_LABEL;
+    document.getElementById('regionHeading').textContent = REGION_LABEL;
+    document.getElementById('salaryHeading').firstChild.textContent = `Salary (${CURRENCY_SYMBOL} / ${SALARY_PERIOD}) `;
     const sel = document.getElementById('classification');
     d.classifications.forEach(c => { const o = document.createElement('option'); o.value = c.name; o.textContent = c.name + (c.count ? ` (${c.count})` : ''); sel.appendChild(o); });
-    const bands = [30000,40000,50000,60000,70000,80000,90000,100000,120000,150000,200000,250000];
     const mn = document.getElementById('salaryMin'), mx = document.getElementById('salaryMax');
-    bands.forEach(b => { mn.insertAdjacentHTML('beforeend', `<option value="${b}">${fmtMoney(b)}</option>`); mx.insertAdjacentHTML('beforeend', `<option value="${b}">${fmtMoney(b)}</option>`); });
+    SALARY_STEPS.forEach(b => { mn.insertAdjacentHTML('beforeend', `<option value="${b}">${fmtMoney(b)}</option>`); mx.insertAdjacentHTML('beforeend', `<option value="${b}">${fmtMoney(b)}</option>`); });
     syncForm();
   });
 }
@@ -455,7 +464,7 @@ function load() {
 function updateTitle(pg) {
   const n = pg.total.toLocaleString();
   const what = state.q ? `<span>${esc(state.q)}</span> jobs` : (state.classification ? `<span>${esc(state.classification)}</span> jobs` : 'jobs');
-  const where = state.location ? ` in <span>${esc(state.location)}</span>` : (state.state ? ` in <span>${esc(STATE_LABELS[state.state] || state.state)}</span>` : ' in Australia');
+  const where = state.location ? ` in <span>${esc(state.location)}</span>` : (state.state ? ` in <span>${esc(regionLabel(state.state))}</span>` : ` in ${esc(COUNTRY)}`);
   document.getElementById('resultsTitle').innerHTML = `${n} ${what}${where}`;
   document.getElementById('resultsSub').textContent = pg.total ? `Page ${pg.page} of ${pg.pages}` : '';
   const t = (state.q ? state.q + ' jobs' : 'Jobs') + (state.location ? ' in ' + state.location : '') + ' — OpenJobs';
@@ -511,7 +520,7 @@ function renderFacets(f) {
   const sel = k => new Set((state[k] || '').split(',').filter(Boolean));
   facetOpts(document.getElementById('facetWorkType'), f.work_type, 'work_type', sel('work_type'), v => WORK_TYPE_LABELS[v] || v);
   facetOpts(document.getElementById('facetArrangement'), f.work_arrangement, 'work_arrangement', sel('work_arrangement'), v => ARR_LABELS[v] || v);
-  facetOpts(document.getElementById('facetState'), f.state, 'state', sel('state'), v => STATE_LABELS[v] || v, true);
+  facetOpts(document.getElementById('facetState'), f.state, 'state', sel('state'), v => regionLabel(v), true);
   const dateItems = (f.date_listed || []).map(x => ({value: x.value, count: x.count, label: x.label}));
   const dateBox = document.getElementById('facetDate').querySelector('.opts');
   dateBox.innerHTML = `<label class="facet-opt"><input type="radio" name="dl" ${!state.date_listed ? 'checked' : ''} onchange="setParam('date_listed','',true)"><span class="lbl">Any time</span></label>` +
@@ -542,9 +551,9 @@ function renderActiveFilters() {
   if (state.subclassification) add(state.subclassification, "setParam('subclassification','',true)");
   (state.work_type || '').split(',').filter(Boolean).forEach(v => add(WORK_TYPE_LABELS[v] || v, `toggleMulti('work_type','${v}')`));
   (state.work_arrangement || '').split(',').filter(Boolean).forEach(v => add(ARR_LABELS[v] || v, `toggleMulti('work_arrangement','${v}')`));
-  if (state.state) add(STATE_LABELS[state.state] || state.state, "setParam('state','',true)");
+  if (state.state) add(regionLabel(state.state), "setParam('state','',true)");
   if (state.date_listed) add('Listed: last ' + state.date_listed + ' day' + (state.date_listed == 1 ? '' : 's'), "setParam('date_listed','',true)");
-  if (state.salary_min || state.salary_max) add('Salary ' + (state.salary_min ? fmtMoney(state.salary_min) : '$0') + ' – ' + (state.salary_max ? fmtMoney(state.salary_max) : 'any'), 'clearSalary()');
+  if (state.salary_min || state.salary_max) add('Salary ' + (state.salary_min ? fmtMoney(state.salary_min) : CURRENCY_SYMBOL + ' 0') + ' – ' + (state.salary_max ? fmtMoney(state.salary_max) : 'any'), 'clearSalary()');
   if (state.company) add('Company: ' + state.company, "setParam('company','',true)");
   const el = document.getElementById('activeFilters');
   el.innerHTML = chips.join('') + (chips.length ? `<span class="chip clear" onclick="clearAll()">Clear all filters</span>` : '');
@@ -615,7 +624,7 @@ function alertSummaryText() {
   const parts = [];
   if (state.q) parts.push(`"${state.q}"`);
   if (state.classification) parts.push(state.classification + (state.subclassification ? ' › ' + state.subclassification : ''));
-  if (state.location) parts.push('in ' + state.location); else if (state.state) parts.push('in ' + (STATE_LABELS[state.state] || state.state));
+  if (state.location) parts.push('in ' + state.location); else if (state.state) parts.push('in ' + (regionLabel(state.state)));
   const wt = (state.work_type || '').split(',').filter(Boolean).map(v => WORK_TYPE_LABELS[v] || v); if (wt.length) parts.push(wt.join('/'));
   const wa = (state.work_arrangement || '').split(',').filter(Boolean).map(v => ARR_LABELS[v] || v); if (wa.length) parts.push(wa.join('/'));
   if (state.salary_min) parts.push(fmtMoney(state.salary_min) + '+');

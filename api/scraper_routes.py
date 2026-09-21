@@ -24,7 +24,7 @@ def trigger_scrape():
     Request body (JSON):
         source: 'indeed', 'linkedin', or 'all' (default: 'all')
         query: Job search query (default: 'software engineer')
-        location: Location to search (default: 'Australia')
+        location: Location to search (default: 'Kenya')
         insert_db: Whether to insert into database (default: True)
     
     Returns:
@@ -37,7 +37,7 @@ def trigger_scrape():
         return jsonify({'error': 'Invalid source. Use: indeed, linkedin, or all'}), 400
     
     query = data.get('query', 'software engineer')
-    location = data.get('location', 'Australia')
+    location = data.get('location', 'Kenya')
     insert_db = data.get('insert_db', True)
     
     scheduler = get_scheduler()
@@ -68,14 +68,14 @@ def start_scheduled_scrape():
         interval_minutes: How often to run (default: 60)
         source: Which scraper (default: 'all')
         query: Search query (default: 'software engineer')
-        location: Location (default: 'Australia')
+        location: Location (default: 'Kenya')
     """
     data = request.json or {}
     
     interval = data.get('interval_minutes', 60)
     source = data.get('source', 'all')
     query = data.get('query', 'software engineer')
-    location = data.get('location', 'Australia')
+    location = data.get('location', 'Kenya')
     
     scheduler = get_scheduler()
     thread = scheduler.start_scheduled(interval, source, query, location)

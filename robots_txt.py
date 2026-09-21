@@ -5,12 +5,12 @@ SITE_URL is read at request time (not module load) so it respects env changes.
 """
 import os
 
-SITE_URL    = os.environ.get('APP_URL', 'https://openjobs.com.au').rstrip('/')
+SITE_URL    = os.environ.get('APP_URL', 'https://openjobs.co.ke').rstrip('/')
 SITEMAP_URL = f"{SITE_URL}/sitemap-index.xml"
 
 _ROBOTS_TXT = """\
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# robots.txt — OpenJobs.com.au
+# robots.txt — OpenJobs.co.ke
 # Generated dynamically — do not edit manually.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

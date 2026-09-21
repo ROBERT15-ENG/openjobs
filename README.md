@@ -1,4 +1,4 @@
-# OpenJobs — AI-Powered Australian Job Board
+# OpenJobs — AI-Powered Job Board for Kenya
 
 > The smarter job board that matches candidates to roles using semantic AI — not just keyword searches. Built with Flask, SQLite, and Ollama.
 
@@ -16,7 +16,7 @@
 - 📊 **ATS compatibility score** — know how well your skills match each role before applying
 
 ### For Employers
-- 📋 **Employer dashboard** — post, edit, and manage job listings with pricing (Standard $99 / Premium $199 AUD via Stripe)
+- 📋 **Employer dashboard** — post, edit, and manage job listings with pricing (Standard KSh 5,000 / Premium KSh 12,000 via Stripe; amounts configurable with `PLAN_PRICE_*_CENTS`)
 - 📥 **Application pipeline** — kanban board (Applied → Screening → Interview → Offer → Hired / Rejected) with drag-and-drop
 - 👀 **View tracking** — see how many times each job has been viewed
 - �✉️ **Email notifications** — applicants get confirmation, employers get alerts (SMTP/SendGrid)
@@ -174,13 +174,13 @@ TELEGRAM_BOT_TOKEN=123456:ABC...
 ### Jobs & search
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/jobs` | Search. Params: `q` (FTS5 relevance-ranked, highlighted `snippet`), `location` (suburb/city/state/`Remote`), `state`, `classification`, `subclassification`, `work_type` & `work_arrangement` (csv), `salary_min`/`salary_max`, `date_listed` (days), `company`, `sort` (`relevance`\|`date`\|`salary_desc`\|`salary_asc`), `page`, `limit`, `facets=1` |
+| `GET` | `/api/jobs` | Search. Params: `q` (FTS5 relevance-ranked, highlighted `snippet`), `location` (town/estate/county/`Remote`), `state` (county name, e.g. `Nairobi`, `Uasin Gishu`), `classification`, `subclassification`, `work_type` & `work_arrangement` (csv), `salary_min`/`salary_max`, `date_listed` (days), `company`, `sort` (`relevance`\|`date`\|`salary_desc`\|`salary_asc`), `page`, `limit`, `facets=1` |
 | `GET` | `/api/jobs/<id>` | Job detail + `similar` jobs + canonical `url` |
 | `POST` | `/api/jobs` | Post job (employer/admin). Accepts `classification`/`subclassification`; `state` is derived from `location` |
 | `PATCH` | `/api/jobs/<id>` | Update job (owner or admin) |
 | `DELETE` | `/api/jobs/<id>` | Soft-delete job (owner or admin) |
 | `PATCH` | `/api/jobs/<id>/view` | Increment view count |
-| `GET` | `/api/classifications` | Seek-style classification taxonomy with live counts |
+| `GET` | `/api/classifications` | Classification taxonomy with live counts, plus market metadata (`country`, `currency`/`currency_symbol`, `salary_period`, `regions` = 47 counties, `salary_bands`) |
 | `GET` | `/api/suggest?q=` | Keyword autocomplete (titles, skills, companies) |
 | `GET` | `/api/locations/suggest?q=` | Location autocomplete |
 
@@ -246,6 +246,25 @@ is left untouched. Run it by hand with `python api/db_schema.py`. Key tables:
 
 The classification taxonomy and location normalisation live in `api/taxonomy.py`; the query
 builder and facet counting in `api/search.py`.
+
+### Kenya launch market
+
+The board is Kenya-first. `api/taxonomy.py` is the single place that encodes the market:
+
+- **Locations** — the `jobs.state` column holds the **county** (one of the 47). `derive_state()` maps
+  free-text locations to a county (`"Westlands, Nairobi"` → `Nairobi`, `"Eldoret"` → `Uasin Gishu`,
+  `"Mombasa Road, Nairobi"` → `Nairobi`), or to `Remote` / `International` / `Other`. Searching by county
+  name (or `"Nairobi County"`) in the *where* box therefore also finds ads listed by town or estate.
+- **Salaries** — `salary_min` / `salary_max` are **KES per month** (`salary_currency` defaults to `KES`),
+  rendered as `KSh 80,000 – 120,000 /month`. Other currencies are kept and shown as-is.
+- **Classifications** — Seek-style list adapted for Kenya (NGO, Development & Humanitarian; Agriculture
+  incl. tea/coffee/floriculture; Mobile Money & Fintech; Clinical Officers; Security & Protective Services;
+  Boda Boda, Riders & Drivers; CBC/TVET teaching...).
+- **SEO** — JobPosting JSON-LD emits `addressCountry: KE`, `addressRegion: <county>`, `unitText: MONTH`;
+  the sitemap includes a landing URL per county and per classification. Default `APP_URL` is `https://openjobs.co.ke`.
+
+To launch in another market, change the constants and `REGIONS` / `TOWN_TO_REGION` tables in
+`api/taxonomy.py`; the API, search page, sitemap and seed script all read from there.
 
 Schema diagram: [OpenJobs_CodeSchematic.pdf](./OpenJobs_CodeSchematic.pdf)
 

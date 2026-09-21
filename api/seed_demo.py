@@ -6,7 +6,7 @@ profiles and alerts have something to show.
     python api/seed_demo.py [--db path/to/jobs.db] [--jobs 180] [--force]
 
 Creates demo employer + seeker accounts (password: Demo1234!), ~180 job ads spread
-across classifications, Australian cities, salary bands and the last 30 days, plus a
+across classifications, Kenyan towns/counties, KES monthly salary bands and the last 30 days, plus a
 handful of company reviews and one saved-search alert. Idempotent: re-running does
 nothing unless --force, which removes previously seeded demo data first.
 
@@ -30,133 +30,187 @@ DEMO_TAG = 'demo-seed'          # stored in jobs.video_url so demo rows can be i
 DEMO_PASSWORD = 'Demo1234!'
 
 COMPANIES = [
-    ('Atlassian', 'Sydney NSW'), ('Canva', 'Sydney NSW'), ('Afterpay', 'Melbourne VIC'), ('REA Group', 'Richmond VIC'),
-    ('Woolworths Group', 'Bella Vista NSW'), ('Telstra', 'Melbourne VIC'), ('Commonwealth Bank', 'Sydney NSW'),
-    ('BHP', 'Perth WA'), ('Rio Tinto', 'Perth WA'), ('Qantas', 'Mascot NSW'), ('Ramsay Health Care', 'Brisbane QLD'),
-    ('Bunnings', 'Hawthorn East VIC'), ('Flight Centre', 'Brisbane QLD'), ('Xero', 'Melbourne VIC'), ('Deloitte Australia', 'Sydney NSW'),
-    ('SA Health', 'Adelaide SA'), ('Tasmanian Government', 'Hobart TAS'), ('ACT Government', 'Canberra ACT'), ('Territory Generation', 'Darwin NT'),
-    ('Coles Group', 'Melbourne VIC'), ('Lendlease', 'Barangaroo NSW'), ('Domino\'s Pizza Enterprises', 'Brisbane QLD'),
-    ('Culture Amp', 'Remote'), ('SafetyCulture', 'Sydney NSW'), ('Linktree', 'Melbourne VIC'),
+    ('Safaricom', 'Westlands, Nairobi'), ('Equity Bank', 'Upper Hill, Nairobi'), ('KCB Group', 'Nairobi CBD'), ('M-KOPA', 'Kilimani, Nairobi'),
+    ('Twiga Foods', 'Industrial Area, Nairobi'), ('Kenya Airways', 'Embakasi, Nairobi'), ('Britam', 'Upper Hill, Nairobi'),
+    ('Jumia Kenya', 'Westlands, Nairobi'), ('Nation Media Group', 'Nairobi CBD'), ('East African Breweries (EABL)', 'Ruaraka, Nairobi'),
+    ('Co-operative Bank of Kenya', 'Nairobi CBD'), ('Cellulant', 'Westlands, Nairobi'), ('Kenya Power (KPLC)', 'Nairobi'),
+    ('Aga Khan University Hospital', 'Parklands, Nairobi'), ('Naivas Supermarkets', 'Nairobi'), ('Carrefour Kenya (Majid Al Futtaim)', 'Karen, Nairobi'),
+    ('Bamburi Cement', 'Mombasa'), ('Kenya Ports Authority', 'Mombasa'), ('Serena Hotels', 'Nyali, Mombasa'), ('Kisumu County Government', 'Kisumu'),
+    ('James Finlay Kenya', 'Kericho'), ('Kakuzi PLC', 'Thika, Kiambu'), ('Oserian Development Company', 'Naivasha, Nakuru'),
+    ('Moi Teaching & Referral Hospital', 'Eldoret'), ('Kenya Red Cross Society', 'South C, Nairobi'), ('Amref Health Africa', 'Lang\'ata, Nairobi'),
+    ('BURN Manufacturing', 'Ruiru, Kiambu'), ('Sanergy', 'Mukuru, Nairobi'), ('Andela', 'Remote'), ('Ajua', 'Remote'),
 ]
 
-LOCATIONS = ['Sydney NSW', 'North Sydney NSW', 'Parramatta NSW', 'Newcastle NSW', 'Melbourne VIC', 'Docklands VIC', 'Geelong VIC',
-             'Brisbane QLD', 'Gold Coast QLD', 'Sunshine Coast QLD', 'Perth WA', 'Fremantle WA', 'Adelaide SA', 'Hobart TAS',
-             'Canberra ACT', 'Darwin NT', 'Remote', 'Remote - Australia wide']
+LOCATIONS = ['Nairobi CBD', 'Westlands, Nairobi', 'Upper Hill, Nairobi', 'Kilimani, Nairobi', 'Karen, Nairobi', 'Industrial Area, Nairobi',
+             'Thika, Kiambu', 'Ruiru, Kiambu', 'Athi River, Machakos', 'Kitengela, Kajiado', 'Mombasa', 'Nyali, Mombasa', 'Malindi, Kilifi',
+             'Diani, Kwale', 'Kisumu', 'Nakuru', 'Naivasha, Nakuru', 'Eldoret', 'Kericho', 'Nyeri', 'Meru', 'Kakamega', 'Kitale',
+             'Nanyuki, Laikipia', 'Machakos', 'Garissa', 'Kakuma, Turkana', 'Remote', 'Remote - Kenya wide', 'Kampala, Uganda']
 
-# classification -> [(title, subclassification, skills, salary_lo, salary_hi)]
+# classification -> [(title, subclassification, skills, monthly KES lo, hi)]
 ROLES = {
     'Information & Communication Technology': [
-        ('Senior Python Developer', 'Developers/Programmers', 'Python, Django, PostgreSQL, AWS, Docker', 140000, 180000),
-        ('Full Stack Engineer (React/Node)', 'Engineering - Software', 'React, TypeScript, Node.js, GraphQL', 120000, 160000),
-        ('Data Engineer', 'Database Development & Administration', 'Python, Spark, Airflow, Snowflake, SQL', 130000, 170000),
-        ('DevOps Engineer', 'Networks & Systems Administration', 'Kubernetes, Terraform, AWS, CI/CD, Linux', 135000, 175000),
-        ('Cyber Security Analyst', 'Security', 'SIEM, Incident Response, ISO 27001, Splunk', 110000, 150000),
-        ('IT Support Officer', 'Help Desk & IT Support', 'Windows, Office 365, Active Directory, ServiceNow', 65000, 80000),
-        ('Product Manager', 'Product Management & Development', 'Roadmaps, Agile, Analytics, Stakeholder management', 140000, 185000),
-        ('QA Automation Engineer', 'Testing & Quality Assurance', 'Playwright, Selenium, Python, CI', 100000, 130000),
-        ('Business Analyst', 'Business/Systems Analysts', 'Requirements, UML, SQL, Jira, Agile', 105000, 135000),
-        ('Machine Learning Engineer', 'Engineering - Software', 'Python, PyTorch, MLOps, LLMs, AWS', 150000, 200000),
+        ('Senior Python Developer', 'Developers/Programmers', 'Python, Django, PostgreSQL, AWS, Docker', 250000, 400000),
+        ('Full Stack Engineer (React/Node)', 'Engineering - Software', 'React, TypeScript, Node.js, GraphQL', 180000, 320000),
+        ('Data Analyst', 'Data Science & Analytics', 'SQL, Power BI, Python, Excel, Dashboards', 90000, 160000),
+        ('DevOps Engineer', 'Networks & Systems Administration', 'Kubernetes, Terraform, AWS, CI/CD, Linux', 200000, 350000),
+        ('Cyber Security Analyst', 'Security', 'SIEM, Incident Response, ISO 27001, CEH', 150000, 280000),
+        ('IT Support Technician', 'Help Desk & IT Support', 'Windows, Office 365, Active Directory, Networking', 45000, 80000),
+        ('Product Manager', 'Product Management & Development', 'Roadmaps, Agile, Analytics, Stakeholder management', 220000, 400000),
+        ('Mobile Money Integration Engineer', 'Mobile & Payments Development', 'M-Pesa Daraja API, REST, Java, Payments, USSD', 180000, 320000),
+        ('Android Developer', 'Mobile & Payments Development', 'Kotlin, Android SDK, REST, Firebase', 150000, 280000),
+        ('QA Engineer', 'Testing & Quality Assurance', 'Selenium, Postman, Test plans, JIRA', 90000, 170000),
+        ('Business Analyst', 'Business/Systems Analysts', 'Requirements, UML, SQL, Jira, Agile', 120000, 220000),
+        ('Machine Learning Engineer', 'Engineering - Software', 'Python, PyTorch, MLOps, LLMs, AWS', 250000, 450000),
     ],
     'Healthcare & Medical': [
-        ('Registered Nurse - Emergency', 'Nursing - General', 'AHPRA registration, Triage, Patient care', 78000, 98000),
-        ('Aged Care Registered Nurse', 'Aged Care Nursing', 'AHPRA, Aged care, Medication management', 75000, 92000),
-        ('Physiotherapist', 'Physiotherapy', 'AHPRA, Musculoskeletal, Rehabilitation', 80000, 105000),
-        ('Pharmacist', 'Pharmacy', 'AHPRA, Dispensing, Community pharmacy', 85000, 110000),
-        ('Medical Receptionist', 'Medical Administration', 'Best Practice, Medicare billing, Customer service', 55000, 65000),
-        ('Psychologist', 'Psychology & Counselling', 'AHPRA, CBT, Assessment, Telehealth', 95000, 130000),
+        ('Registered Nurse (KRCHN)', 'Nursing', 'Nursing Council of Kenya licence, Triage, Patient care', 45000, 90000),
+        ('Clinical Officer', 'Clinical Officers', 'COC registration, Outpatient care, Minor procedures', 50000, 95000),
+        ('Medical Officer', 'Medical Officers & Doctors', 'KMPDC licence, Internship completed, Emergency care', 150000, 280000),
+        ('Pharmaceutical Technologist', 'Pharmacy', 'PPB registration, Dispensing, Inventory', 40000, 75000),
+        ('Laboratory Technologist', 'Laboratory & Diagnostics', 'KMLTTB registration, Haematology, Quality control', 45000, 85000),
+        ('Community Health Officer', 'Community Health', 'Community mobilisation, Health education, Reporting', 40000, 70000),
+        ('Medical Records Officer', 'Medical Administration', 'HMIS, Data entry, Filing, Confidentiality', 35000, 60000),
+        ('Nutritionist', 'Nutrition & Dietetics', 'KNDI registration, Clinical nutrition, Counselling', 45000, 80000),
     ],
-    'Trades & Services': [
-        ('Electrician', 'Electricians', 'A-Grade licence, Commercial, Fault finding', 85000, 110000),
-        ('Plumber', 'Plumbers', 'Plumbing licence, Maintenance, Gas fitting', 80000, 105000),
-        ('Carpenter', 'Carpentry & Cabinet Making', 'Framing, Fit-out, White card', 75000, 95000),
-        ('Diesel Mechanic', 'Automotive Trades', 'Heavy vehicle, Diagnostics, Hydraulics', 90000, 120000),
-        ('Commercial Cleaner', 'Cleaning Services', 'Police check, Reliability, Night shift', 50000, 60000),
-    ],
-    'Accounting': [
-        ('Senior Accountant', 'Financial Accounting', 'CA/CPA, IFRS, Month-end, Xero', 100000, 130000),
-        ('Accounts Payable Officer', 'Accounts Payable/Receivable', 'AP processing, Reconciliations, SAP', 65000, 78000),
-        ('Payroll Officer', 'Payroll', 'Payroll, Awards, Superannuation, Chris21', 75000, 90000),
-        ('Tax Accountant', 'Taxation', 'CA, Tax compliance, BAS, Trusts', 90000, 120000),
-    ],
-    'Sales': [
-        ('Business Development Manager', 'New Business Development', 'B2B sales, Pipeline, Salesforce, Negotiation', 110000, 150000),
-        ('Account Manager', 'Account & Relationship Management', 'Client management, Renewals, CRM', 90000, 120000),
-        ('Sales Representative', 'Sales Representatives/Consultants', 'Retail, Customer service, Targets', 60000, 80000),
-    ],
-    'Marketing & Communications': [
-        ('Digital Marketing Manager', 'Digital & Search Marketing', 'SEO, SEM, Google Ads, HubSpot, Analytics', 110000, 140000),
-        ('Marketing Coordinator', 'Marketing Assistants/Coordinators', 'Content, Social media, Canva, Campaigns', 65000, 80000),
-        ('Content Writer', 'Marketing Communications', 'Copywriting, SEO, CMS, Editing', 70000, 90000),
-    ],
-    'Administration & Office Support': [
-        ('Executive Assistant', 'Personal Assistants', 'Diary management, Travel, Board papers', 85000, 105000),
-        ('Office Administrator', 'Administrative Assistants', 'Reception, MS Office, Scheduling', 60000, 72000),
-        ('Data Entry Officer', 'Data Entry', 'Accuracy, Excel, Typing 60wpm', 52000, 60000),
-    ],
-    'Engineering': [
-        ('Civil Engineer', 'Civil/Structural Engineering', 'Civil design, 12d, AutoCAD, RPEQ', 100000, 140000),
-        ('Mechanical Engineer', 'Mechanical Engineering', 'SolidWorks, FEA, Manufacturing', 95000, 130000),
-        ('Electrical Engineer', 'Electrical/Electronic Engineering', 'Power systems, PLC, HV design', 105000, 145000),
-        ('Project Engineer', 'Project Engineering', 'Project delivery, Scheduling, Contracts', 110000, 150000),
-    ],
-    'Construction': [
-        ('Site Supervisor', 'Foreperson/Supervisors', 'Residential construction, WHS, Scheduling', 110000, 140000),
-        ('Estimator', 'Estimating', 'Take-offs, Buildsoft, Tendering', 100000, 130000),
-        ('Construction Project Manager', 'Project Management', 'Commercial construction, Contracts, Procore', 150000, 200000),
-    ],
-    'Hospitality & Tourism': [
-        ('Head Chef', 'Chefs/Cooks', 'Menu design, Kitchen management, Food safety', 80000, 100000),
-        ('Barista', 'Bar & Beverage Staff', 'Coffee, Customer service, Speed', 50000, 60000),
-        ('Hotel Front Office Manager', 'Front Office & Guest Services', 'Opera PMS, Guest relations, Rostering', 70000, 85000),
-    ],
-    'Education & Training': [
-        ('Primary School Teacher', 'Teaching - Primary', 'Teaching registration, Curriculum, Classroom management', 78000, 115000),
-        ('Early Childhood Educator', 'Childcare & Outside School Hours Care', 'Diploma ECE, EYLF, First aid', 60000, 75000),
-        ('Secondary Maths Teacher', 'Teaching - Secondary', 'Teaching registration, Mathematics, VCE/HSC', 80000, 118000),
+    'NGO, Development & Humanitarian': [
+        ('Programme Manager', 'Programme/Project Management', 'Programme design, Donor reporting, Budgets, Logframes', 250000, 450000),
+        ('Monitoring & Evaluation Officer', 'Monitoring, Evaluation & Learning (MEL)', 'M&E frameworks, Data collection, Kobo, Reporting', 120000, 220000),
+        ('Grants & Partnerships Officer', 'Grants & Fundraising', 'Proposal writing, Donor compliance, USAID/EU rules', 130000, 230000),
+        ('Field Officer - WASH', 'Humanitarian & Emergency Response', 'WASH, Community engagement, Field reporting', 70000, 120000),
+        ('Protection Officer (Refugee Camp)', 'Refugee & Migration Services', 'Protection principles, Case management, Field work', 110000, 190000),
+        ('Advocacy & Communications Officer', 'Advocacy & Policy', 'Policy briefs, Media relations, Campaigns', 120000, 200000),
     ],
     'Banking & Financial Services': [
-        ('Financial Planner', 'Financial Planning', 'FASEA, Advice, Xplan, Compliance', 100000, 140000),
-        ('Credit Analyst', 'Analysis & Reporting', 'Credit risk, Financial analysis, Excel', 85000, 110000),
-        ('Mortgage Broker', 'Mortgages', 'Cert IV Finance, Lending, Client acquisition', 80000, 150000),
+        ('Relationship Manager - SME Banking', 'Banking - Retail', 'SME lending, Portfolio growth, Credit appraisal', 150000, 280000),
+        ('Credit Analyst', 'Credit & Lending', 'Credit risk, Financial analysis, Excel', 90000, 160000),
+        ('Mobile Money Product Lead', 'Mobile Money & Fintech', 'Mobile payments, Product strategy, Partnerships, Agent networks', 250000, 450000),
+        ('Loan Officer (Microfinance)', 'Microfinance & SACCOs', 'Group lending, Field collections, Client onboarding', 40000, 80000),
+        ('Compliance Officer', 'Compliance & Risk', 'AML/CFT, CBK prudential guidelines, Reporting', 120000, 220000),
+        ('Bank Teller', 'Banking - Retail', 'Cash handling, Customer service, Core banking', 40000, 65000),
+    ],
+    'Trades & Services': [
+        ('Electrician', 'Electricians', 'EPRA licence, Commercial wiring, Fault finding', 40000, 80000),
+        ('Plumber', 'Plumbers', 'Plumbing certificate, Maintenance, Installations', 35000, 70000),
+        ('Motor Vehicle Mechanic', 'Mechanics & Auto Technicians', 'Diagnostics, Toyota/Isuzu, Fleet servicing', 40000, 85000),
+        ('Solar PV Installer', 'Solar & Electrical Installers', 'EPRA T3 licence, Solar design, Installation', 45000, 90000),
+        ('Welder & Fabricator', 'Welders & Fabricators', 'Arc/MIG welding, Fabrication drawings, Safety', 35000, 70000),
+        ('Housekeeper', 'Cleaning & Domestic Services', 'Cleaning, Laundry, Reliability, References', 18000, 30000),
+    ],
+    'Accounting': [
+        ('Senior Accountant', 'Financial Accounting', 'CPA(K), IFRS, Month-end, QuickBooks/SAP', 120000, 220000),
+        ('Accounts Assistant', 'Accounts Payable/Receivable', 'Reconciliations, Petty cash, ERP, CPA Part II', 40000, 70000),
+        ('Payroll Officer', 'Payroll', 'Payroll, PAYE, NSSF, SHA/NHIF, iTax', 60000, 110000),
+        ('Tax Accountant', 'Tax & KRA Compliance', 'CPA(K), iTax filing, VAT, Withholding tax', 90000, 180000),
+        ('Internal Auditor', 'Audit & Assurance', 'CIA/CPA, Risk-based audit, Controls, Reporting', 120000, 220000),
+    ],
+    'Sales': [
+        ('Business Development Manager', 'New Business Development', 'B2B sales, Pipeline, CRM, Negotiation', 120000, 250000),
+        ('Key Account Manager', 'Account & Relationship Management', 'Client management, Renewals, Upselling', 100000, 200000),
+        ('Field Sales Agent', 'Field Sales & Agents', 'Direct sales, Route planning, Targets, Commission', 25000, 60000),
+        ('Telesales Executive', 'Telesales', 'Outbound calls, Lead conversion, CRM', 30000, 60000),
+    ],
+    'Marketing & Communications': [
+        ('Digital Marketing Manager', 'Digital & Search Marketing', 'SEO, Google Ads, Meta Ads, Analytics, Email', 150000, 280000),
+        ('Marketing Coordinator', 'Marketing Assistants/Coordinators', 'Content, Social media, Canva, Campaigns', 50000, 90000),
+        ('Corporate Communications Officer', 'Public Relations & Corporate Affairs', 'Media relations, Press releases, Events', 90000, 170000),
+        ('Content Creator', 'Marketing Communications', 'Copywriting, Video, TikTok/Instagram, Editing', 40000, 90000),
+    ],
+    'Administration & Office Support': [
+        ('Executive Assistant', 'Personal & Executive Assistants', 'Diary management, Travel, Board papers, Discretion', 80000, 150000),
+        ('Office Administrator', 'Office Management', 'Front office, MS Office, Procurement, Scheduling', 40000, 75000),
+        ('Receptionist', 'Front Office & Receptionists', 'Switchboard, Visitor management, Customer service', 30000, 50000),
+        ('Data Entry Clerk', 'Data Entry', 'Accuracy, Excel, Typing 50wpm', 25000, 40000),
+    ],
+    'Engineering': [
+        ('Civil Engineer', 'Civil/Structural Engineering', 'EBK registration, Structural design, AutoCAD, Roads', 100000, 220000),
+        ('Mechanical Engineer', 'Mechanical Engineering', 'SolidWorks, Plant maintenance, HVAC', 90000, 200000),
+        ('Electrical Engineer', 'Electrical/Electronic Engineering', 'Power systems, PLC, Substation design, EBK', 100000, 220000),
+        ('Water & Sanitation Engineer', 'Water & Sanitation Engineering', 'Hydraulic design, EPANET, Borehole projects', 90000, 180000),
+        ('Telecoms Field Engineer', 'Telecommunications Engineering', 'Fibre, RF, Site surveys, Ericsson/Huawei', 80000, 160000),
+    ],
+    'Construction': [
+        ('Site Supervisor', 'Foreperson/Supervisors', 'Residential construction, OSH, Scheduling', 60000, 120000),
+        ('Quantity Surveyor', 'Estimating & Quantity Surveying', 'BOQs, Take-offs, Tendering, BORAQS', 90000, 180000),
+        ('Construction Project Manager', 'Project Management', 'Commercial construction, Contracts, Procurement', 200000, 400000),
+    ],
+    'Hospitality & Tourism': [
+        ('Head Chef', 'Chefs/Cooks', 'Menu design, Kitchen management, Food safety', 90000, 180000),
+        ('Barista', 'Bar & Beverage Staff', 'Coffee, Customer service, Speed', 25000, 40000),
+        ('Front Office Manager', 'Front Office & Guest Services', 'Opera PMS, Guest relations, Rostering', 70000, 130000),
+        ('Safari Guide', 'Tour Guides & Safari', 'KPSGA silver/bronze, Driving licence, Wildlife knowledge', 40000, 90000),
+        ('Cabin Crew', 'Airline & Cabin Crew', 'Customer service, Safety training, Swahili & English', 80000, 150000),
+    ],
+    'Education & Training': [
+        ('Primary School Teacher (CBC)', 'Teaching - Primary (CBC)', 'TSC registration, CBC curriculum, Classroom management', 35000, 70000),
+        ('Secondary Mathematics & Physics Teacher', 'Teaching - Secondary', 'TSC registration, Mathematics, Physics, KCSE prep', 40000, 90000),
+        ('ECDE Teacher', 'Early Childhood (ECDE)', 'ECDE certificate/diploma, Play-based learning, First aid', 20000, 40000),
+        ('TVET Instructor - Electrical', 'TVET & Vocational Training', 'TVETA licence, Curriculum delivery, Practicals', 45000, 85000),
+        ('University Lecturer', 'University & Tertiary', 'PhD/Masters, Research, Publications, Supervision', 120000, 250000),
+    ],
+    'Agriculture, Animals & Conservation': [
+        ('Farm Manager', 'Farm Management', 'Crop planning, Team supervision, Budgets, Irrigation', 70000, 150000),
+        ('Agronomist', 'Agronomy & Farm Services', 'Soil science, Crop protection, Farmer training', 60000, 120000),
+        ('Flower Farm Quality Supervisor', 'Horticulture & Floriculture', 'Post-harvest, Cold chain, GlobalGAP, Grading', 40000, 80000),
+        ('Tea Estate Assistant Manager', 'Tea, Coffee & Sugar', 'Estate operations, Labour management, Yield reporting', 80000, 150000),
+        ('Veterinary Officer', 'Veterinary Services', 'KVB registration, Livestock health, Extension', 60000, 120000),
+        ('Dairy Extension Officer', 'Livestock & Dairy', 'Dairy husbandry, Cooperative engagement, Training', 40000, 80000),
     ],
     'Human Resources & Recruitment': [
-        ('HR Business Partner', 'Consulting & Generalist HR', 'ER/IR, Workday, Coaching, Change', 120000, 150000),
-        ('Recruitment Consultant', 'Recruitment - Agency', 'Sourcing, LinkedIn Recruiter, Business development', 70000, 110000),
-        ('WHS Advisor', 'Occupational Health & Safety', 'WHS legislation, Audits, Incident investigation', 95000, 120000),
+        ('HR Business Partner', 'Consulting & Generalist HR', 'Employment Act, IHRM, Performance management', 150000, 280000),
+        ('Recruitment Consultant', 'Recruitment - Agency', 'Sourcing, LinkedIn, Interviewing, Business development', 60000, 130000),
+        ('HR Assistant', 'Consulting & Generalist HR', 'HRIS, Onboarding, Leave management, CHRP', 40000, 70000),
     ],
     'Retail & Consumer Products': [
-        ('Store Manager', 'Management - Store', 'Retail leadership, P&L, Visual merchandising', 65000, 85000),
-        ('Retail Assistant', 'Retail Assistants', 'Customer service, POS, Stock', 48000, 58000),
+        ('Branch Manager', 'Management - Store', 'Retail leadership, P&L, Shrinkage control, Merchandising', 80000, 160000),
+        ('Cashier', 'Retail Assistants & Cashiers', 'POS, Cash handling, Customer service', 20000, 35000),
+        ('FMCG Distribution Supervisor', 'FMCG Distribution', 'Route to market, Distributors, Sales targets, Van sales', 60000, 120000),
     ],
     'Manufacturing, Transport & Logistics': [
-        ('Warehouse Storeperson', 'Warehousing, Storage & Distribution', 'Forklift licence, RF scanning, Pick/pack', 55000, 65000),
-        ('HC Truck Driver', 'Road Transport', 'HC licence, Linehaul, Fatigue management', 80000, 100000),
-        ('Procurement Specialist', 'Purchasing, Procurement & Inventory', 'Sourcing, Contracts, SAP Ariba', 100000, 130000),
+        ('Warehouse Assistant', 'Warehousing & Distribution', 'Stock counts, Forklift, Pick/pack, ERP', 25000, 45000),
+        ('Truck Driver (Long Distance)', 'Boda Boda, Riders & Drivers', 'Class CE licence, Nairobi–Mombasa route, PSV/NTSA compliant', 40000, 70000),
+        ('Delivery Rider', 'Boda Boda, Riders & Drivers', 'Motorbike licence, Smartphone, Nairobi routes, Customer service', 25000, 45000),
+        ('Procurement Officer', 'Procurement & Supply Chain', 'Tendering, PPADA, Supplier management, KISM', 80000, 160000),
+        ('Production Supervisor', 'Production & Machine Operators', 'Shift management, Line efficiency, ISO 22000', 60000, 120000),
+        ('Clearing & Forwarding Agent', 'Freight, Clearing & Forwarding', 'KRA iCMS, Customs documentation, KPA processes', 45000, 90000),
     ],
     'Legal': [
-        ('Commercial Lawyer', 'Corporate & Commercial Law', 'Contracts, M&A, Admitted in Australia', 130000, 190000),
-        ('Paralegal', 'Law Clerks & Paralegals', 'Legal research, Document management, Litigation support', 65000, 85000),
+        ('Corporate Lawyer', 'Corporate & Commercial Law', 'Advocate of the High Court, Contracts, M&A, LSK', 180000, 350000),
+        ('Legal Officer', 'Advocates & Litigation', 'Litigation, Legal drafting, Compliance, Advocate', 100000, 200000),
+        ('Paralegal', 'Law Clerks & Paralegals', 'Legal research, Court filing, Document management', 40000, 80000),
     ],
     'Design & Architecture': [
-        ('UX/UI Designer', 'UX/UI Design', 'Figma, Design systems, User research, Prototyping', 110000, 145000),
-        ('Architect', 'Architecture', 'Revit, Registration, Residential/Commercial', 95000, 130000),
-        ('Graphic Designer', 'Graphic Design', 'Adobe CC, Branding, Print & digital', 65000, 85000),
+        ('UX/UI Designer', 'UX/UI Design', 'Figma, Design systems, User research, Prototyping', 120000, 250000),
+        ('Architect', 'Architecture', 'BORAQS registration, Revit, ArchiCAD, Residential/Commercial', 100000, 220000),
+        ('Graphic Designer', 'Graphic Design', 'Adobe CC, Branding, Print & digital, Social media', 45000, 90000),
     ],
-    'Mining, Resources & Energy': [
-        ('Mining Engineer', 'Mining - Engineering & Maintenance', 'Mine planning, Deswik, FIFO', 150000, 210000),
-        ('Plant Operator (FIFO)', 'Mining - Operations', 'Heavy machinery, FIFO 2:1, Safety', 110000, 140000),
+    'Energy, Oil & Gas': [
+        ('Solar Project Engineer', 'Renewable & Solar Energy', 'PV design, PVsyst, Mini-grids, EPRA', 120000, 250000),
+        ('Power Line Technician', 'Power Generation & Distribution', 'HV/LV lines, Live-line, Safety, Field work', 45000, 90000),
+        ('HSE Officer', 'Health, Safety & Environment', 'NEBOSH, DOSH registration, Audits, Incident investigation', 80000, 160000),
     ],
     'Call Centre & Customer Service': [
-        ('Customer Service Consultant', 'Customer Service - Call Centre', 'Inbound calls, CRM, Problem solving', 55000, 68000),
-        ('Team Leader - Contact Centre', 'Supervisors/Team Leaders', 'Coaching, KPIs, Workforce planning', 80000, 95000),
+        ('Customer Care Representative', 'Customer Service - Call Centre', 'Inbound calls, CRM, Swahili & English, Problem solving', 30000, 55000),
+        ('Team Leader - Contact Centre', 'Supervisors/Team Leaders', 'Coaching, KPIs, Workforce planning', 70000, 120000),
+        ('BPO Chat Support Agent (Night Shift)', 'BPO & Outsourcing', 'Written English, Zendesk, Typing speed, US hours', 35000, 60000),
     ],
-    'Community Services & Development': [
-        ('Disability Support Worker', 'Aged & Disability Support', 'NDIS, Cert III, Manual handling', 55000, 70000),
-        ('Case Manager', 'Housing & Homelessness', 'Case management, Trauma-informed, Reporting', 80000, 95000),
+    'Community & Social Services': [
+        ('Social Worker', 'Social Work', 'Case management, Child protection, Counselling, Reporting', 50000, 100000),
+        ('Youth Programme Coordinator', 'Youth Development', 'Youth engagement, Life skills, Facilitation, M&E', 60000, 110000),
     ],
-    'Government & Defence': [
-        ('Policy Officer (APS6)', 'Policy, Planning & Regulation', 'Policy analysis, Briefings, Stakeholder engagement', 95000, 108000),
-        ('Compliance Officer', 'Government - State', 'Regulation, Investigations, Report writing', 85000, 100000),
+    'Government & Public Sector': [
+        ('County Revenue Officer', 'County Government', 'Revenue collection, Public finance, Reporting, Integrity', 50000, 90000),
+        ('Policy Analyst', 'Policy, Planning & Regulation', 'Policy analysis, Briefs, Stakeholder engagement, Research', 100000, 180000),
+        ('Public Health Officer', 'County Government', 'Public health inspections, Health promotion, Reporting', 45000, 85000),
+    ],
+    'Security & Protective Services': [
+        ('Security Guard', 'Security Guards', 'PSRA registration, Certificate of good conduct, Access control', 15000, 25000),
+        ('Security Supervisor', 'Security Supervisors & Managers', 'Team supervision, Incident reporting, CCTV, Patrols', 30000, 55000),
+        ('Loss Prevention Officer', 'Investigations & Loss Prevention', 'Investigations, Stock audits, CCTV review, Reporting', 40000, 75000),
+    ],
+    'Insurance': [
+        ('Underwriter', 'Underwriting', 'Motor & medical underwriting, Risk assessment, IRA compliance', 70000, 140000),
+        ('Claims Officer', 'Claims', 'Claims assessment, Customer service, Documentation', 50000, 95000),
+        ('Insurance Sales Agent', 'Brokerage & Agents', 'COP certificate, Prospecting, Commission, Life & general', 25000, 80000),
     ],
 }
 
@@ -183,18 +237,18 @@ What we offer
 DUTIES = ['own key deliverables end to end', 'partner with stakeholders across the business', 'drive continuous improvement',
           'mentor junior team members', 'contribute to planning and reporting', 'deliver high-quality outcomes on time',
           'keep safety and compliance front of mind', 'help shape how the team works']
-PERKS = ['Flexible / hybrid working arrangements', 'Additional leave and wellbeing days', 'Salary packaging and novated leasing',
-         'Paid parental leave (18 weeks)', 'Employee share plan', 'Free onsite parking', 'Health insurance discounts',
-         'Modern CBD office close to public transport', 'Tools of trade and vehicle allowance']
-EXTRAS = ['Full Australian working rights', 'Relevant tertiary qualification or equivalent experience', 'Current driver\'s licence',
-          'Ability to obtain a National Police Check', 'Experience in a fast-paced environment']
+PERKS = ['Flexible / hybrid working arrangements', 'Comprehensive medical cover for you and your dependants', 'Pension scheme above statutory NSSF',
+         'Paid maternity/paternity leave above the statutory minimum', 'Annual performance bonus', 'Staff transport / commuter allowance',
+         'Airtime and data allowance', 'Modern office in Westlands/Upper Hill close to matatu routes', 'Lunch provided on site', 'Learning & certification sponsorship']
+EXTRAS = ['Valid Certificate of Good Conduct', 'Relevant degree/diploma or equivalent experience', 'Valid driving licence',
+          'KRA PIN, NSSF and SHA registration (or willingness to register)', 'Fluency in English and Kiswahili', 'Experience in a fast-paced environment']
 TEAMS = ['Technology', 'Operations', 'Customer', 'People & Culture', 'Finance', 'Growth', 'Delivery', 'Clinical', 'Projects']
 
 REVIEWS = [
     (5, 'Great culture and genuine flexibility', 'Supportive leaders, real hybrid working and interesting problems to solve.', 'Can be a lot going on at once during peak periods.'),
     (4, 'Good place to grow your career', 'Plenty of internal mobility and training budget. Pay is fair for the market.', 'Some legacy systems slow things down.'),
-    (3, 'Solid but very corporate', 'Stable, good benefits, nice offices.', 'Decisions take time and there are many layers of approval.'),
-    (4, 'Friendly team, decent pay', 'The people are the best part. Managers listen.', 'Parking is expensive and the commute is long.'),
+    (3, 'Solid but very corporate', 'Stable, good medical cover, nice offices.', 'Decisions take time and there are many layers of approval.'),
+    (4, 'Friendly team, decent pay', 'The people are the best part. Managers listen and salaries are paid on time.', 'Nairobi traffic makes the commute long; limited parking.'),
     (2, 'High workload, low recognition', 'Learned a lot quickly.', 'Understaffed teams and unrealistic deadlines at times.'),
     (5, 'Best employer I have had', 'Transparent leadership, excellent onboarding, strong values that are lived day to day.', 'Not much — occasional travel required.'),
 ]
@@ -262,7 +316,7 @@ def seed(db_path, n_jobs=180, seed=42):
             # bias towards recent ads so "Listed" facets look alive
             age_days = random.choice([0, 0, 1, 1, 2, 3, 4, 5, 6, 8, 10, 13, 16, 20, 24, 28])
             created_at = (now - datetime.timedelta(days=age_days, hours=random.randint(0, 23), minutes=random.randint(0, 59))).isoformat()
-            salary_text = (f"AUD {salary_min:,} – {salary_max:,} + super" if salary_min else 'Competitive hourly rate + super')
+            salary_text = (f"KSh {salary_min:,} – {salary_max:,} per month" if salary_min else 'Competitive, commensurate with experience')
             duties = random.sample(DUTIES, 3)
             perks = random.sample(PERKS, 2)
             description = DESCRIPTION.format(
@@ -274,7 +328,7 @@ def seed(db_path, n_jobs=180, seed=42):
                        category, classification, subclassification, work_type, work_arrangement, skills, search_summary,
                        selling_points, video_url, is_active, is_featured, created_at, expires_at, employer_id, view_count, application_count)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)""",
-                (title, company, location, derive_state(location), description, salary_text if salary_min else '', salary_min, salary_max, 'AUD',
+                (title, company, location, derive_state(location), description, salary_text if salary_min else '', salary_min, salary_max, 'KES',
                  cls, cls, sub, work_type, arrangement, skills,
                  f"{title} at {company}, {location}. {salary_text}. {skills}."[:300],
                  '["' + '","'.join(perks) + '"]', DEMO_TAG, 1 if random.random() < 0.08 else 0, created_at,
@@ -298,7 +352,7 @@ def seed(db_path, n_jobs=180, seed=42):
 
         con.execute(
             """INSERT INTO job_alerts (user_id, name, keywords, location, frequency, is_active, created_at)
-               VALUES (?, 'Python jobs in Sydney', 'python', 'Sydney', 'daily', 1, ?)""", (seeker_id, now.isoformat()))
+               VALUES (?, 'Python jobs in Nairobi', 'python', 'Nairobi', 'daily', 1, ?)""", (seeker_id, now.isoformat()))
         con.commit()
         return created
     finally:
@@ -323,4 +377,4 @@ if __name__ == '__main__':
     con.close()
     n = seed(a.db, a.jobs)
     print(f"[seed] created {n} jobs across {len(COMPANIES)} companies")
-    print(f"[seed] demo logins (password {DEMO_PASSWORD}): seeker@demo.openjobs.local, employer.atlassian@demo.openjobs.local, ...")
+    print(f"[seed] demo logins (password {DEMO_PASSWORD}): seeker@demo.openjobs.local, employer.safaricom@demo.openjobs.local, ...")

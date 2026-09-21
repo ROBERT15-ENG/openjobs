@@ -380,7 +380,7 @@
           <input type="text" class="profile-input" id="prefRole" placeholder="e.g. Senior Engineer">
         </div>
         <div class="profile-field">
-          <div class="profile-label">Expected Salary (AUD)</div>
+          <div class="profile-label">Expected Salary (KSh / month)</div>
           <input type="text" class="profile-input" id="prefSalary" placeholder="e.g. 120,000">
         </div>
         <div class="profile-field">
@@ -440,14 +440,14 @@
         recent_applications: [
           { id: 1, job_id: 71, title: 'Systems Administrator', company: 'OpenJobs', location: 'Remote', salary_min: 80000, salary_max: 120000, status: 'interview', applied_at: '2026-06-28T10:00:00', notes: 'Technical round scheduled Jul 8' },
           { id: 2, job_id: 70, title: 'Software Engineering Intern', company: 'OpenJobs', location: 'Remote', salary_min: 0, salary_max: 0, status: 'pending', applied_at: '2026-06-25T09:00:00', notes: '' },
-          { id: 3, job_id: 63, title: 'AutoCAD Drafter', company: 'Engineering Co', location: 'Sydney NSW', salary_min: 90000, salary_max: 90000, status: 'rejected', applied_at: '2026-06-20T14:00:00', notes: 'Position filled' },
+          { id: 3, job_id: 63, title: 'AutoCAD Drafter', company: 'Engineering Co', location: 'Westlands, Nairobi', salary_min: 90000, salary_max: 90000, status: 'rejected', applied_at: '2026-06-20T14:00:00', notes: 'Position filled' },
           { id: 4, job_id: 64, title: 'Fusion 360 Designer', company: 'TechFlow Australia', location: 'Melbourne VIC', salary_min: 95000, salary_max: 95000, status: 'screening', applied_at: '2026-07-01T11:00:00', notes: 'Recruiter call went well' },
           { id: 5, job_id: 65, title: 'SolidWorks Engineer', company: 'MechTech', location: 'Brisbane QLD', salary_min: 110000, salary_max: 110000, status: 'applied', applied_at: '2026-06-30T08:00:00', notes: '' }
         ],
         recommended: [
           { id: 72, title: 'DevOps Engineer', company: 'CloudScale', location: 'Remote', salary_min: 130000, salary_max: 160000, category: 'DevOps' },
           { id: 73, title: 'AI Engineer', company: 'Neural Labs', location: 'Nairobi', salary_min: 180000, salary_max: 220000, category: 'AI/ML' },
-          { id: 74, title: 'Frontend Developer', company: 'Designify', location: 'Sydney NSW', salary_min: 95000, salary_max: 120000, category: 'Development' },
+          { id: 74, title: 'Frontend Developer', company: 'Designify', location: 'Nairobi', salary_min: 95000, salary_max: 120000, category: 'Development' },
           { id: 75, title: 'Data Scientist', company: 'DataFlow', location: 'Melbourne VIC', salary_min: 110000, salary_max: 140000, category: 'Data Science' }
         ]
       };
@@ -696,7 +696,7 @@
   // ── UTILITIES ──
   function formatSalaryRange(min, max) {
     if (!min && !max) return '';
-    const fmt = n => n >= 1000 ? 'AUD ' + Math.round(n/1000) + 'k' : '';
+    const fmt = n => 'KSh ' + Number(n).toLocaleString('en-KE');
     if (min && max && min !== max) return fmt(min) + ' – ' + fmt(max);
     if (min) return 'From ' + fmt(min);
     if (max) return 'Up to ' + fmt(max);

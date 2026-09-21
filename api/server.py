@@ -19,8 +19,9 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from semantic_matcher import rank_jobs_for_resume
 from db_schema import init_db
-from taxonomy import (CLASSIFICATIONS, WORK_TYPES, WORK_ARRANGEMENTS, AU_STATES, derive_state, state_label,
-                      normalize_classification, normalize_subclassification)
+from taxonomy import (CLASSIFICATIONS, WORK_TYPES, WORK_ARRANGEMENTS, REGIONS, REGION_LABEL, COUNTRY, COUNTRY_CODE,
+                      CURRENCY, CURRENCY_SYMBOL, SALARY_PERIOD, SALARY_BANDS, derive_state, state_label,
+                      normalize_classification, normalize_subclassification, format_salary)
 from search import parse_filters, search_jobs, suggest_keywords, suggest_locations
 from alerts import dispatch_instant_alerts
 
@@ -801,24 +802,15 @@ def _force_https():
 
 # ============ JOBS ============
 
-def _fmt_salary(salary_min, salary_max, currency='AUD'):
-    """Human-readable salary range, e.g. 'AUD 80,000 – 120,000'. Empty string if unknown."""
-    currency = currency or 'AUD'
-    if salary_min and salary_max:
-        if salary_min == salary_max:
-            return f"{currency} {salary_min:,.0f}"
-        return f"{currency} {salary_min:,.0f} – {salary_max:,.0f}"
-    if salary_min:
-        return f"{currency} {salary_min:,.0f}+"
-    if salary_max:
-        return f"Up to {currency} {salary_max:,.0f}"
-    return ''
+def _fmt_salary(salary_min, salary_max, currency=None):
+    """Human-readable salary range, e.g. 'KSh 80,000 – 120,000 /month'. Empty string if unknown."""
+    return format_salary(salary_min, salary_max, currency)
 
 
 def _decorate_job(row: dict) -> dict:
     """Presentation fields shared by list/detail responses."""
     row['views'] = row.pop('view_count', 0) if 'view_count' in row else row.get('views', 0)
-    row['salary'] = _fmt_salary(row.get('salary_min'), row.get('salary_max'), row.get('salary_currency') or 'AUD') or row.get('salary') or ''
+    row['salary'] = _fmt_salary(row.get('salary_min'), row.get('salary_max'), row.get('salary_currency')) or row.get('salary') or ''
     row['url'] = f"/jobs/{make_job_slug(row.get('title') or 'job', row['id'])}"
     row['company_url'] = f"/companies/{make_slug(row.get('company'))}" if row.get('company') else None
     row['work_type_label'] = WORK_TYPES.get(row.get('work_type'), row.get('work_type'))
@@ -882,7 +874,14 @@ def get_classifications():
         ],
         'work_types': WORK_TYPES,
         'work_arrangements': WORK_ARRANGEMENTS,
-        'states': AU_STATES,
+        'regions': REGIONS,
+        'region_label': REGION_LABEL,
+        'country': COUNTRY,
+        'country_code': COUNTRY_CODE,
+        'currency': CURRENCY,
+        'currency_symbol': CURRENCY_SYMBOL,
+        'salary_period': SALARY_PERIOD,
+        'salary_bands': [{'min': lo, 'max': hi, 'label': label} for lo, hi, label in SALARY_BANDS],
     })
 
 
@@ -943,7 +942,7 @@ def create_job():
             work_arrangement,
             data.get('salary_min'),
             data.get('salary_max'),
-            data.get('salary_currency', 'AUD'),
+            (data.get('salary_currency') or CURRENCY).upper()[:3],
             (data.get('search_summary') or '')[:300],
             json.dumps(data.get('selling_points', []))[:500],
             data.get('video_url', ''),
@@ -1484,16 +1483,24 @@ def predict_salary():
 
 
 # ============ PRICING & PAYMENT ============
+# Listing prices in the smallest currency unit (KES cents). Override per environment.
+PLAN_PRICES = {
+    'standard': int(os.environ.get('PLAN_PRICE_STANDARD_CENTS', 500000)),   # KSh 5,000
+    'premium':  int(os.environ.get('PLAN_PRICE_PREMIUM_CENTS', 1200000)),   # KSh 12,000
+}
+
+
 @app.route('/api/pricing', methods=['GET'])
 def get_pricing():
     "Return pricing tiers (no auth needed)."
     return jsonify({
-        'currency': 'AUD',
+        'currency': CURRENCY,
+        'currency_symbol': CURRENCY_SYMBOL,
         'plans': [
             {
                 'id': 'standard',
                 'name': 'Standard Job Post',
-                'price': 99,
+                'price': PLAN_PRICES['standard'] // 100,
                 'description': 'Post your job listing for 30 days',
                 'features': ['30-day listing', 'AI-matched candidates', 'Email applications'],
                 'featured': False
@@ -1501,14 +1508,15 @@ def get_pricing():
             {
                 'id': 'premium',
                 'name': 'Premium Job Post',
-                'price': 199,
-                'description': 'Top placement + featured badge + email to matched seekers',
-                'features': ['Top of search results', 'Featured badge', 'Email to matched seekers', 'Priority support'],
+                'price': PLAN_PRICES['premium'] // 100,
+                'description': 'Top placement + featured badge + instant alerts to matched seekers',
+                'features': ['Top of search results', 'Featured badge', 'Instant alerts to matched seekers', 'Priority support'],
                 'featured': True
             }
         ],
         'stripe_configured': bool(os.environ.get('STRIPE_SECRET_KEY')),
-        'paypal_configured': bool(os.environ.get('PAYPAL_CLIENT_ID'))
+        'paypal_configured': bool(os.environ.get('PAYPAL_CLIENT_ID')),
+        'mpesa_configured': False,   # M-Pesa (Daraja STK push) is the planned local payment method
     })
 
 
@@ -1539,7 +1547,7 @@ def create_checkout():
     data = request.json or {}
     job_id = data.get('job_id')
     plan   = data.get('plan', 'standard')
-    prices = {'standard': 9900, 'premium': 19900}  # AUD cents
+    prices = PLAN_PRICES
     if plan not in prices:
         return jsonify({'error': f'Unknown plan {plan!r}'}), 400
 
@@ -1549,9 +1557,9 @@ def create_checkout():
             'payment_method_types': ['card'],
             'line_items': [{
                 'price_data': {
-                    'currency': 'aud',
+                    'currency': CURRENCY.lower(),
                     'product_data': {'name': f'OpenJobs {plan.title()} Posting'},
-                    'unit_amount': prices.get(plan, 9900)
+                    'unit_amount': prices[plan]
                 },
                 'quantity': 1
             }],

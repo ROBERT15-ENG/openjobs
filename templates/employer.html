@@ -234,7 +234,7 @@
           <input type="radio" name="plan" value="standard" id="planStandard" checked style="display:none">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
             <div style="font-weight:700;font-size:0.95rem;">Standard</div>
-            <div style="background:var(--primary);color:#000;font-weight:800;font-size:0.85rem;padding:0.2rem 0.6rem;border-radius:6px;">$99 AUD</div>
+            <div style="background:var(--primary);color:#000;font-weight:800;font-size:0.85rem;padding:0.2rem 0.6rem;border-radius:6px;" id="priceStandard">KSh 5,000</div>
           </div>
           <div style="font-size:0.8rem;color:var(--text-muted);">30-day listing · AI-matched candidates · Email applications</div>
         </div>
@@ -242,9 +242,9 @@
           <input type="radio" name="plan" value="premium" id="planPremium" style="display:none">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
             <div style="font-weight:700;font-size:0.95rem;">⭐ Premium</div>
-            <div style="background:var(--primary);color:#000;font-weight:800;font-size:0.85rem;padding:0.2rem 0.6rem;border-radius:6px;">$199 AUD</div>
+            <div style="background:var(--primary);color:#000;font-weight:800;font-size:0.85rem;padding:0.2rem 0.6rem;border-radius:6px;" id="pricePremium">KSh 12,000</div>
           </div>
-          <div style="font-size:0.8rem;color:var(--text-muted);">Top placement · Featured badge · Email to matched seekers</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);">Top placement · Featured badge · Instant alerts to matched seekers</div>
         </div>
       </div>
       <div id="paymentNotice" style="display:none;background:rgba(0,212,170,0.08);border:1px solid rgba(0,212,170,0.25);border-radius:10px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:var(--primary);">
@@ -270,7 +270,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">Location *</label>
-              <input type="text" class="form-input" id="jobLocation" placeholder="e.g. Sydney, NSW or Remote" required>
+              <input type="text" class="form-input" id="jobLocation" placeholder="e.g. Westlands, Nairobi or Remote" required>
             </div>
             <div class="form-group">
               <label class="form-label">Classification *</label>
@@ -303,11 +303,11 @@
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Salary Min (AUD)</label>
+              <label class="form-label">Salary Min (KSh / month)</label>
               <input type="number" class="form-input" id="jobSalaryMin" placeholder="80000">
             </div>
             <div class="form-group">
-              <label class="form-label">Salary Max (AUD)</label>
+              <label class="form-label">Salary Max (KSh / month)</label>
               <input type="number" class="form-input" id="jobSalaryMax" placeholder="120000">
             </div>
             <div class="form-group full">
@@ -375,7 +375,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Primary Location</label>
-            <input type="text" class="form-input" id="settingsLocation" placeholder="e.g. Sydney, NSW or Remote">
+            <input type="text" class="form-input" id="settingsLocation" placeholder="e.g. Westlands, Nairobi or Remote">
           </div>
           <div class="form-group full">
             <label class="form-label">Company Name</label>
@@ -441,11 +441,11 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Salary Min (AUD)</label>
+          <label class="form-label">Salary Min (KSh / month)</label>
           <input type="number" class="form-input" id="editSalaryMin">
         </div>
         <div class="form-group">
-          <label class="form-label">Salary Max (AUD)</label>
+          <label class="form-label">Salary Max (KSh / month)</label>
           <input type="number" class="form-input" id="editSalaryMax">
         </div>
         <div class="form-group full">
@@ -742,6 +742,18 @@
 
   // ── POST JOB ───────────────────────────────────────────────────────────────
 
+  // Prices come from the API (KES; configurable per environment)
+  window.PRICE_LABELS = {};
+  fetch('/api/pricing').then(r => r.json()).then(p => {
+    const sym = p.currency_symbol || p.currency || '';
+    (p.plans || []).forEach(pl => {
+      const label = sym + ' ' + Number(pl.price).toLocaleString('en-KE');
+      window.PRICE_LABELS[pl.id] = label;
+      const el = document.getElementById(pl.id === 'premium' ? 'pricePremium' : 'priceStandard');
+      if (el) el.textContent = label;
+    });
+  }).catch(() => {});
+
   function selectPlan(plan, el) {
     document.querySelectorAll('[name="plan"]').forEach(r => { r.checked = false; });
     document.querySelectorAll('#pricingPlans .card').forEach(c => {
@@ -779,7 +791,7 @@ async function handlePostJob(e) {
         work_arrangement: document.getElementById('jobArrangement').value,
         salary_min:       parseInt(document.getElementById('jobSalaryMin').value) || null,
         salary_max:       parseInt(document.getElementById('jobSalaryMax').value) || null,
-        salary_currency:  'AUD',
+        salary_currency:  'KES',
         description:      document.getElementById('jobDesc').value.trim(),
         skills:           document.getElementById('jobSkills').value.trim(),
         is_active:        1
@@ -795,7 +807,7 @@ async function handlePostJob(e) {
           // No Stripe — post free in demo mode
           document.getElementById('freeNotice').textContent = '🧪 Demo: Stripe not configured. Posting free.';
         } else if (ck.checkout_url) {
-          if (confirm('Redirect to Stripe to complete payment for $199 AUD?')) {
+          if (confirm('Redirect to Stripe to complete payment for ' + (window.PRICE_LABELS?.premium || 'the Premium listing') + '?')) {
             window.location.href = ck.checkout_url;
           }
           btn.disabled = false; btn.textContent = '🚀 Publish Job →';
@@ -878,7 +890,7 @@ async function handlePostJob(e) {
       work_arrangement: document.getElementById('editArrangement').value,
       salary_min:       parseInt(document.getElementById('editSalaryMin').value) || null,
       salary_max:       parseInt(document.getElementById('editSalaryMax').value) || null,
-      salary_currency:  'AUD',
+      salary_currency:  'KES',
       description:      document.getElementById('editDesc').value.trim(),
       skills:           document.getElementById('editSkills').value.trim(),
     };

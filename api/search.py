@@ -9,7 +9,7 @@ import datetime
 import re
 import sqlite3
 
-from taxonomy import (AU_STATES, SALARY_BANDS, DATE_LISTED_OPTIONS,
+from taxonomy import (REGIONS, COUNTRY, SALARY_BANDS, DATE_LISTED_OPTIONS,
                       normalize_classification, normalize_subclassification)
 from db_schema import fts_available
 
@@ -46,7 +46,7 @@ def parse_filters(args) -> dict:
     f = {
         'q': (args.get('q') or '').strip(),
         'location': (args.get('location') or '').strip(),
-        'state': (args.get('state') or '').strip().upper() or None,
+        'state': _normalize_region(args.get('state')),
         'classification': normalize_classification(args.get('classification')),
         'subclassification': None,
         'work_type': _csv(args.get('work_type')),
@@ -60,9 +60,22 @@ def parse_filters(args) -> dict:
         'since': args.get('since'),  # ISO timestamp, used by alerts
     }
     f['subclassification'] = normalize_subclassification(f['classification'], args.get('subclassification'))
-    if f['state'] == 'REMOTE':
-        f['state'] = 'Remote'
     return f
+
+
+def _normalize_region(value):
+    """Case-insensitive county lookup; also accepts 'Nairobi County', 'remote', 'international'."""
+    v = (value or '').strip()
+    if not v:
+        return None
+    v = re.sub(r'\s+county$', '', v, flags=re.IGNORECASE)
+    for name in REGIONS:
+        if name.lower() == v.lower():
+            return name
+    for special in ('Remote', 'International', 'Other'):
+        if special.lower() == v.lower():
+            return special
+    return None
 
 
 def fts_query(q: str) -> str:
@@ -72,20 +85,20 @@ def fts_query(q: str) -> str:
 
 
 def _location_clause(location: str):
-    """Free-text 'where' box: exact state/'Remote' -> state filter, otherwise substring match."""
+    """Free-text 'where' box: a county name (or 'Nairobi County') -> county filter, which also
+    catches ads listed by town/estate; 'Remote' -> remote; otherwise substring match."""
     loc = location.strip()
     if loc.lower().startswith('all '):
         loc = loc[4:]
-    upper = loc.upper()
-    if upper in AU_STATES:
-        return "jobs.state = ?", [upper]
-    for abbr, name in AU_STATES.items():
-        if name.lower() == loc.lower():
-            return "jobs.state = ?", [abbr]
-    if loc.lower() in ('remote', 'work from home', 'wfh'):
+    region = _normalize_region(loc)
+    if region in REGIONS:
+        return "jobs.state = ?", [region]
+    if loc.lower() in ('remote', 'work from home', 'wfh') or region == 'Remote':
         return "(jobs.state = 'Remote' OR jobs.work_arrangement = 'remote')", []
-    if loc.lower() in ('australia',):
+    if loc.lower() == COUNTRY.lower():
         return "jobs.state != 'International'", []
+    if region == 'International':
+        return "jobs.state = 'International'", []
     return "jobs.location LIKE ?", [f"%{loc}%"]
 
 
