@@ -50,6 +50,9 @@ SCHEMA = {
         ('county',             'TEXT'),
         ('address',            'TEXT'),
         ('visa_status',        'TEXT'),
+        ('is_suspended',       'INTEGER NOT NULL DEFAULT 0'),
+        ('suspended_reason',   'TEXT'),
+        ('last_login_at',      'TEXT'),
     ],
     'jobs': [
         ('id',                'INTEGER PRIMARY KEY AUTOINCREMENT'),
@@ -147,6 +150,7 @@ SCHEMA = {
         ('cons',       'TEXT'),
         ('role',       'TEXT'),
         ('is_current', 'INTEGER DEFAULT 0'),
+        ('is_hidden',  'INTEGER NOT NULL DEFAULT 0'),   # moderated out by an admin
         ('created_at', 'TEXT DEFAULT CURRENT_TIMESTAMP'),
     ],
     'kyc_documents': [
@@ -187,6 +191,25 @@ SCHEMA = {
         ('model',       'TEXT'),
         ('created_at',  'TEXT DEFAULT CURRENT_TIMESTAMP'),
     ],
+    # Every admin mutation is recorded here (who, what, on which record).
+    'admin_audit_log': [
+        ('id',          'INTEGER PRIMARY KEY AUTOINCREMENT'),
+        ('admin_id',    'INTEGER REFERENCES users(id)'),
+        ('admin_email', 'TEXT'),
+        ('action',      'TEXT NOT NULL'),
+        ('target_type', 'TEXT'),
+        ('target_id',   'TEXT'),
+        ('detail',      'TEXT'),
+        ('ip',          'TEXT'),
+        ('created_at',  'TEXT DEFAULT CURRENT_TIMESTAMP'),
+    ],
+    # Runtime-editable switches (maintenance mode, announcement banner, posting rules).
+    'site_settings': [
+        ('key',        'TEXT PRIMARY KEY'),
+        ('value',      'TEXT'),
+        ('updated_at', 'TEXT DEFAULT CURRENT_TIMESTAMP'),
+        ('updated_by', 'TEXT'),
+    ],
 }
 
 # Constraints that cannot be expressed as a column declaration.
@@ -206,6 +229,7 @@ INDEXES = [
     ('idx_applications_job',      'applications', ['job_id']),
     ('idx_applications_user',     'applications', ['user_id']),
     ('idx_job_alerts_user',       'job_alerts',   ['user_id']),
+    ('idx_audit_created',         'admin_audit_log', ['created_at']),
 ]
 
 # Full-text index over jobs (SQLite FTS5, external-content table kept in sync by triggers).
@@ -272,7 +296,7 @@ def init_db(db_path):
                 if name in existing:
                     continue
                 # ALTER TABLE cannot add PRIMARY KEY / UNIQUE constraints; strip them.
-                safe_decl = decl.replace('PRIMARY KEY AUTOINCREMENT', '').replace('UNIQUE', '')
+                safe_decl = decl.replace('PRIMARY KEY AUTOINCREMENT', '').replace('PRIMARY KEY', '').replace('UNIQUE', '')
                 if 'NOT NULL' in safe_decl and 'DEFAULT' not in safe_decl:
                     safe_decl = safe_decl.replace('NOT NULL', '')
                 con.execute(f'ALTER TABLE {table} ADD COLUMN {name} {safe_decl.strip()}')

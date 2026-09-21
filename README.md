@@ -121,6 +121,26 @@ python api/db_schema.py --admin you@example.com
 
 Then sign in at `/login` and open `/admin`.
 
+### Admin dashboard (`/admin`)
+
+Everything needed to run the board day to day, backed by `api/admin_routes.py`:
+
+| Tab | What you can do |
+|-----|-----------------|
+| **Overview** | KPIs (live ads, seekers, employers, applications, alerts, reviews), 30-day trend chart, live ads by classification and county, top employers, recent sign-ups/reviews, and an *attention* list (expired ads still live, unclassified ads, pending KYC, SMTP not configured…) with one-click fixes |
+| **Jobs** | Every ad including inactive/expired; search by title/company/employer/#id; activate, deactivate, feature, extend (+7/30/90 days), reclassify, delete; bulk actions on selected rows |
+| **Users** | Search/filter seekers, employers and admins; change role, confirm email, set KYC status and posting plan; **suspend** (signs the user out everywhere, blocks login, takes their ads offline) and delete |
+| **KYC review** | Approve or reject identity submissions |
+| **Reviews** | Moderate company reviews — hide (excluded from public profiles and ratings) or delete |
+| **Job alerts** | See all saved searches, pause/resume/delete, trigger the daily digest |
+| **System health** | Runtime + DB info, which integrations are configured (SMTP, Stripe, M-Pesa, Google, Redis, Telegram — never the values), a maintenance checklist, and tasks: deactivate expired ads, backfill county/classification, rebuild the FTS index, purge orphans / stale unconfirmed accounts, integrity check, vacuum, seed/remove demo data (non-production only) |
+| **Settings** | Runtime switches, no restart: maintenance mode (non-admin writes get 503 + site banner), announcement banner, allow free posting, require KYC to post, default ad lifetime, max live ads per employer |
+| **Audit log** | Who did what, to which record, from which IP — every admin mutation is recorded |
+
+Role and suspension are checked against the database on every authenticated request, so
+demoting or suspending a user takes effect immediately even if they hold a valid token.
+Admin endpoints are exempt from the public per-IP rate limits.
+
 ### Creating an Employer Account (UI)
 1. Go to `http://localhost:5700/employer`
 2. Click **Register** → fill in your details
@@ -227,6 +247,23 @@ Pages: `/jobs` (search results with facets and split-view preview), `/jobs/<titl
 | `GET` | `/api/pricing` | Pricing plans |
 | `POST` | `/api/payment/checkout` | Stripe checkout session |
 
+### Admin (role `admin`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/admin/overview` | KPIs, trends, breakdowns, recent activity, attention items |
+| `GET` | `/api/admin/users` | `q`, `role`, `status` (active/suspended/unconfirmed/kyc_pending), `sort`, `page` |
+| `PATCH` `DELETE` | `/api/admin/users/<id>` | `role`, `is_suspended`, `suspended_reason`, `email_confirmed`, `kyc_status`, `plan` / delete |
+| `GET` | `/api/admin/jobs` | `q`, `status` (active/inactive/expired/featured/unclassified), `employer_id`, `sort`, `page` |
+| `PATCH` | `/api/admin/jobs/<id>` | `action`: activate, deactivate, feature, unfeature, extend (`days`), reclassify, delete |
+| `POST` | `/api/admin/jobs/bulk` | Same actions over `ids[]` |
+| `GET` `PATCH` `DELETE` | `/api/admin/reviews[/<id>]` | Moderation queue; `is_hidden` |
+| `GET` `PATCH` `DELETE` | `/api/admin/alerts[/<id>]` | All saved searches; `is_active` |
+| `GET` | `/api/admin/system` | Runtime, database, integrations, maintenance checks |
+| `POST` | `/api/admin/system/tasks` | `task`: expire_jobs, backfill_jobs, rebuild_fts, purge_unconfirmed, run_digests, purge_orphans, vacuum, integrity_check, seed_demo, purge_demo |
+| `GET` `PUT` | `/api/admin/settings` | Runtime switches (see Settings tab) |
+| `GET` | `/api/admin/audit` | Audit log, `action` / `admin` filters |
+| `GET` | `/api/settings/public` | *(no auth)* announcement + maintenance flag for the frontends |
+
 ---
 
 ## 🗄️ Database
@@ -241,8 +278,10 @@ is left untouched. Run it by hand with `python api/db_schema.py`. Key tables:
 **`applications`** — job applications with ATS scores
 **`saved_jobs`** — jobs saved by seekers
 **`job_alerts`** — saved searches (`instant` or `daily`), matched by `api/alerts.py`
-**`company_reviews`** — anonymous employee reviews (one per user per company)
+**`company_reviews`** — anonymous employee reviews (one per user per company); `is_hidden` = moderated out
 **`skills_taxonomy`** — 42 skills with aliases and demand scores
+**`admin_audit_log`** — every admin mutation (admin, action, target, detail, IP)
+**`site_settings`** — runtime switches edited from the admin dashboard
 
 The classification taxonomy and location normalisation live in `api/taxonomy.py`; the query
 builder and facet counting in `api/search.py`.
@@ -298,12 +337,14 @@ jobseek/
 ├── api/
 │   ├── server.py            # Flask app — all routes
 │   ├── db_schema.py         # Declarative schema + startup migration + --admin
+│   ├── admin_routes.py      # Admin API: users, jobs, reviews, alerts, system tasks, settings, audit
 │   └── semantic_matcher.py  # AI matching engine
 ├── templates/               # HTML pages (served manually)
 │   ├── index.html           # Public job search
 │   ├── job.html             # Job detail + apply
 │   ├── user.html            # Seeker dashboard
-│   └── employer.html        # Employer dashboard + ATS
+│   ├── employer.html        # Employer dashboard + ATS
+│   └── admin.html           # Admin dashboard
 ├── bot/
 │   ├── telegram_bot.py      # Telegram bot (/search /remote /visa /top)
 │   └── bot_config.py        # Reads TELEGRAM_BOT_TOKEN from the environment

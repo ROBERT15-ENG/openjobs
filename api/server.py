@@ -24,6 +24,7 @@ from taxonomy import (CLASSIFICATIONS, WORK_TYPES, WORK_ARRANGEMENTS, REGIONS, R
                       normalize_classification, normalize_subclassification, format_salary)
 from search import parse_filters, search_jobs, suggest_keywords, suggest_locations
 from alerts import dispatch_instant_alerts
+import admin_routes
 
 # SEO infrastructure
 from seo_utils import parse_job_slug, job_canonical_url, should_noindex, make_slug, make_job_slug
@@ -202,6 +203,13 @@ def require_auth(f):
         request.user_role  = payload.get('role', 'user')
         request.user_email = payload.get('email', '')
         request.employer_id = payload.get('employer_id') or payload.get('user_id')
+        # Role and suspension are read live so admin actions take effect without waiting for the token to expire.
+        live = get_db().execute("SELECT role, is_suspended FROM users WHERE id = ?", (request.user_id,)).fetchone()
+        if not live:
+            return jsonify({'error': 'Account no longer exists'}), 401
+        if live['is_suspended']:
+            return jsonify({'error': 'account_suspended', 'message': 'This account has been suspended. Contact support.'}), 403
+        request.user_role = live['role']
         return f(*args, **kwargs)
     return decorated
 
@@ -323,10 +331,13 @@ def login():
     password = data.get('password', '')
 
     db = get_db()
-    user = db.execute("SELECT id, name, email, password_hash, role, email_confirmed FROM users WHERE LOWER(email) = ?", (email,)).fetchone()
+    user = db.execute("SELECT id, name, email, password_hash, role, email_confirmed, is_suspended FROM users WHERE LOWER(email) = ?", (email,)).fetchone()
 
     if not user or not verify_password(password, user['password_hash']):
         return jsonify({'error': 'Invalid credentials'}), 401
+
+    if user['is_suspended']:
+        return jsonify({'error': 'account_suspended', 'message': 'This account has been suspended. Contact support.'}), 403
 
     if not user['email_confirmed']:
         return jsonify({
@@ -334,6 +345,8 @@ def login():
             'message': 'Please confirm your email before logging in. Check your inbox or spam folder.'
         }), 403
 
+    db.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (datetime.datetime.now().isoformat(), user['id']))
+    db.commit()
     token = _create_token(user['id'], user['email'], user['role'],
                            user['id'] if user['role'] == 'employer' else None)
     return jsonify({'success': True, 'token': token, 'user': _user_payload(user)})
@@ -911,11 +924,24 @@ def create_job():
         return jsonify({'error': f'Missing required fields: {", ".join(missing)}'}), 400
     
     db = get_db()
-    
-    # Default expires_at to 30 days from now (SEEK style)
-    expires_at = data.get('expires_at') or (datetime.datetime.now() + datetime.timedelta(days=30)).isoformat()
-    
     employer_id = getattr(request, 'employer_id', None)
+
+    # Posting rules set from the admin dashboard
+    if not _is_admin():
+        poster = db.execute("SELECT kyc_status, plan FROM users WHERE id = ?", (request.user_id,)).fetchone()
+        if admin_routes.get_setting(db, 'require_kyc_to_post') == 'on':
+            if not poster or poster['kyc_status'] != 'verified':
+                return jsonify({'error': 'kyc_required', 'message': 'Complete identity verification before posting jobs.'}), 403
+        if admin_routes.get_setting(db, 'allow_free_posting') != 'on' and (not poster or (poster['plan'] or 'free') == 'free'):
+            return jsonify({'error': 'payment_required', 'message': 'Choose a posting plan before publishing an ad.'}), 402
+        cap = int(admin_routes.get_setting(db, 'max_active_jobs_per_employer') or 50)
+        live = db.execute("SELECT COUNT(*) FROM jobs WHERE employer_id = ? AND is_active = 1", (employer_id,)).fetchone()[0]
+        if live >= cap:
+            return jsonify({'error': 'job_limit', 'message': f'You already have {live} active ads (limit {cap}). Close some before posting more.'}), 403
+
+    default_days = int(admin_routes.get_setting(db, 'default_expiry_days') or 30)
+    expires_at = data.get('expires_at') or (datetime.datetime.now() + datetime.timedelta(days=default_days)).isoformat()
+
     classification = normalize_classification(data.get('classification')) or normalize_classification(data.get('category'))
     subclassification = normalize_subclassification(classification, data.get('subclassification'))
     work_type = data.get('work_type') if data.get('work_type') in WORK_TYPES else 'full_time'
@@ -1062,8 +1088,8 @@ _COMPANY_AGG_SQL = """
            MAX(j.created_at) AS latest_job_at,
            GROUP_CONCAT(DISTINCT j.state || char(31)) AS states,
            GROUP_CONCAT(DISTINCT j.classification || char(31)) AS classifications,
-           (SELECT ROUND(AVG(rating), 1) FROM company_reviews r WHERE LOWER(r.company) = LOWER(j.company)) AS review_rating,
-           (SELECT COUNT(*) FROM company_reviews r WHERE LOWER(r.company) = LOWER(j.company)) AS review_count,
+           (SELECT ROUND(AVG(rating), 1) FROM company_reviews r WHERE LOWER(r.company) = LOWER(j.company) AND r.is_hidden = 0) AS review_rating,
+           (SELECT COUNT(*) FROM company_reviews r WHERE LOWER(r.company) = LOWER(j.company) AND r.is_hidden = 0) AS review_count,
            (SELECT ROUND(AVG(rating), 1) FROM company_ratings r WHERE LOWER(r.company) = LOWER(j.company)) AS quick_rating
     FROM jobs j
     WHERE j.is_active = 1 AND j.company IS NOT NULL AND j.company != ''
@@ -1141,7 +1167,7 @@ def get_company(ident):
         (name,)).fetchall()
     reviews = db.execute(
         """SELECT r.id, r.rating, r.title, r.pros, r.cons, r.role, r.is_current, r.created_at
-           FROM company_reviews r WHERE LOWER(r.company) = LOWER(?) ORDER BY r.created_at DESC LIMIT 50""",
+           FROM company_reviews r WHERE LOWER(r.company) = LOWER(?) AND r.is_hidden = 0 ORDER BY r.created_at DESC LIMIT 50""",
         (name,)).fetchall()
     dist = {i: 0 for i in range(1, 6)}
     for r in reviews:
@@ -1184,7 +1210,7 @@ def create_company_review(ident):
         db.execute("""INSERT INTO company_reviews (company, user_id, rating, title, pros, cons, role, is_current, created_at)
                       VALUES (?,?,?,?,?,?,?,?,?)""",
                    (name, request.user_id, rating, title, pros, cons, role, is_current, datetime.datetime.now().isoformat()))
-    avg = db.execute("SELECT AVG(rating) AS a FROM company_reviews WHERE LOWER(company) = LOWER(?)", (name,)).fetchone()['a']
+    avg = db.execute("SELECT AVG(rating) AS a FROM company_reviews WHERE LOWER(company) = LOWER(?) AND is_hidden = 0", (name,)).fetchone()['a']
     db.execute("UPDATE jobs SET company_rating = ? WHERE LOWER(company) = LOWER(?)", (round(avg, 1), name))
     db.commit()
     return jsonify({'success': True, 'message': 'Review updated' if existing else 'Review submitted', 'rating': round(avg, 1)}), (200 if existing else 201)
@@ -1690,6 +1716,11 @@ def get_crm_pipeline():
     return jsonify({'success': True, 'deals': [dict(d) for d in deals]})
 
 # ============ ADMIN ============
+# Users, jobs, reviews, alerts, system health, maintenance tasks, settings, audit log: api/admin_routes.py
+admin_routes.init_admin(app, get_db=get_db, require_auth=require_auth, require_role=require_role,
+                        decode_token=_decode_token, db_path=DB_PATH, is_production=IS_PRODUCTION, limiter=limiter)
+
+
 @app.route('/api/admin/stats', methods=['GET'])
 @require_auth
 @require_role('admin')
