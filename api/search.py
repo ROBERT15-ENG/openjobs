@@ -234,11 +234,12 @@ def facets(db, f: dict, match: str = ''):
     row = _facet_query(db, f, 'date_listed', cases, group=False, match=match)[0]
     out['date_listed'] = [{'value': d, 'label': label, 'count': row[f'd{d}'] or 0} for d, label in DATE_LISTED_OPTIONS]
 
+    # Same overlap rule as the salary_min/salary_max filter, so counts match what a click returns
     band_cases = []
     for i, (lo, hi, _) in enumerate(SALARY_BANDS):
         cond = f"COALESCE(jobs.salary_max, jobs.salary_min) >= {lo}"
         if hi is not None:
-            cond += f" AND COALESCE(jobs.salary_max, jobs.salary_min) < {hi}"
+            cond += f" AND COALESCE(jobs.salary_min, jobs.salary_max) <= {hi}"
         band_cases.append(f"SUM(CASE WHEN {cond} THEN 1 ELSE 0 END) AS b{i}")
     row = _facet_query(db, f, 'salary', ', '.join(band_cases), group=False, match=match)[0]
     out['salary'] = [{'min': lo, 'max': hi, 'label': label, 'count': row[f'b{i}'] or 0}

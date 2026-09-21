@@ -463,7 +463,8 @@ function load() {
 
 function updateTitle(pg) {
   const n = pg.total.toLocaleString();
-  const what = state.q ? `<span>${esc(state.q)}</span> jobs` : (state.classification ? `<span>${esc(state.classification)}</span> jobs` : 'jobs');
+  const noun = pg.total === 1 ? 'job' : 'jobs';
+  const what = state.q ? `<span>${esc(state.q)}</span> ${noun}` : (state.classification ? `<span>${esc(state.classification)}</span> ${noun}` : noun);
   const where = state.location ? ` in <span>${esc(state.location)}</span>` : (state.state ? ` in <span>${esc(regionLabel(state.state))}</span>` : ` in ${esc(COUNTRY)}`);
   document.getElementById('resultsTitle').innerHTML = `${n} ${what}${where}`;
   document.getElementById('resultsSub').textContent = pg.total ? `Page ${pg.page} of ${pg.pages}` : '';
