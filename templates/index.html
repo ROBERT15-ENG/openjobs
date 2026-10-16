@@ -819,7 +819,7 @@
   <div class="oj-chat-messages" id="ojChatMessages"></div>
   <div class="oj-chat-suggestions" id="ojChatSuggestions"></div>
   <div class="oj-chat-input-row">
-    <input type="text" id="ojChatInput" placeholder="Ask about jobs, remote work, visa…" autocomplete="off" />
+    <input type="text" id="ojChatInput" placeholder="Ask about jobs, remote work, visa…" autocomplete="off" maxlength="500" />
     <button type="button" id="ojChatSend">Send</button>
   </div>
 </div>
@@ -1376,6 +1376,8 @@ function setQuickFilter(btn, value) {
 
 // ── OpenJobs chat assistant ─────────────────────────────────────────
 let ojChatHistory = [];
+const OJ_CHAT_MAX_HISTORY = 6;
+const OJ_CHAT_MAX_LEN = 500;
 
 function initOpenJobsChat() {
   const panel = document.getElementById('oj-chat-panel');
@@ -1439,11 +1441,14 @@ function renderOjSuggestions(items) {
 
 async function sendOjChat() {
   const input = document.getElementById('ojChatInput');
-  const text = (input.value || '').trim();
+  const text = (input.value || '').trim().slice(0, OJ_CHAT_MAX_LEN);
   if (!text) return;
   input.value = '';
   appendOjChatMessage('user', text);
   ojChatHistory.push({ role: 'user', content: text });
+  if (ojChatHistory.length > OJ_CHAT_MAX_HISTORY * 2) {
+    ojChatHistory = ojChatHistory.slice(-OJ_CHAT_MAX_HISTORY * 2);
+  }
 
   const sendBtn = document.getElementById('ojChatSend');
   if (sendBtn) sendBtn.disabled = true;

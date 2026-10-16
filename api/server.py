@@ -18,6 +18,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from semantic_matcher import rank_jobs_for_resume, keyword_score
 from openjobs_chatbot import handle_message as chatbot_handle_message, fmt_salary as _fmt_salary
+from chatbot_security import client_may_use_ai, safe_refusal_reply, sanitize_history, sanitize_user_message
 
 # SEO infrastructure
 from seo_utils import make_job_slug, parse_job_slug, job_canonical_url, should_noindex
@@ -1547,40 +1548,57 @@ def list_ollama_models():
         return jsonify({'error': str(e)})
 
 @app.route('/api/chatbot', methods=['POST'])
-@limiter.limit('30 per minute')
+@limiter.limit('20 per minute')
 def openjobs_chatbot():
     """OpenJobs site + Telegram assistant."""
     data = request.json or {}
-    message = (data.get('message') or '').strip()
-    if not message:
+    message, block_reason = sanitize_user_message(data.get('message') or '')
+    if block_reason == 'empty':
         return jsonify({'error': 'message is required'}), 400
-    history = data.get('history') or []
-    use_ai = data.get('use_ai', True)
+    if block_reason == 'injection':
+        return jsonify({'success': True, **safe_refusal_reply()})
+
+    history = sanitize_history(data.get('history') or [])
+    use_ai = bool(data.get('use_ai')) and client_may_use_ai(request.headers)
     try:
         result = chatbot_handle_message(get_db(), message, history=history, use_ai=use_ai)
         return jsonify({'success': True, **result})
-    except sqlite3.OperationalError as e:
+    except sqlite3.OperationalError:
         return jsonify({
             'success': True,
             'reply': 'Job listings are still loading on this server. Please try again shortly or browse the home page.',
             'jobs': [],
             'suggestions': ['Help', 'Remote jobs'],
-            'detail': str(e),
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return jsonify({'error': 'Assistant unavailable. Please try again later.'}), 500
 
 @app.route('/api/ai/ollama/chat', methods=['POST'])
+@limiter.limit('10 per minute')
 def ollama_chat():
     if not OLLAMA_AVAILABLE:
         return jsonify({'error': 'Ollama not running'}), 500
-    data = request.json
+    data = request.json or {}
+    message, block_reason = sanitize_user_message(data.get('message') or '')
+    if block_reason == 'empty':
+        return jsonify({'error': 'message is required'}), 400
+    if block_reason == 'injection':
+        return jsonify({'error': 'Message not allowed'}), 400
     try:
         import requests
-        resp = requests.post(f'{OLLAMA_URL}/api/chat', json={'model': data.get('model', 'llama3.2'), 'messages': [{'role': 'user', 'content': data.get('message')}], 'stream': False}, timeout=30)
+        from chatbot_security import redact_pii
+        resp = requests.post(
+            f'{OLLAMA_URL}/api/chat',
+            json={
+                'model': data.get('model', 'llama3.2'),
+                'messages': [{'role': 'user', 'content': redact_pii(message)}],
+                'stream': False,
+            },
+            timeout=30,
+        )
         return jsonify({'success': True, 'response': resp.json()['message']['content']})
-    except Exception as e:
-        return jsonify({'error': str(e)})
+    except Exception:
+        return jsonify({'error': 'AI request failed'}), 500
 
 # ============ WHITE-LABEL ============
 @app.route('/api/whitelabel/config', methods=['GET'])

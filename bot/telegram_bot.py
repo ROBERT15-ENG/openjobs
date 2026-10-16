@@ -10,6 +10,15 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 API_BASE = os.environ.get("JOBSEEK_API", os.environ.get("OPENJOBS_API", "http://localhost:5700"))
+CHATBOT_SECRET = os.environ.get("CHATBOT_INTERNAL_SECRET", "").strip()
+MAX_USER_MESSAGE = 500
+
+
+def _chatbot_headers() -> dict:
+    headers = {"Content-Type": "application/json"}
+    if CHATBOT_SECRET:
+        headers["X-Chatbot-Secret"] = CHATBOT_SECRET
+    return headers
 
 
 def _get_jobs(params: dict) -> list:
@@ -22,9 +31,11 @@ def _get_jobs(params: dict) -> list:
 
 
 def _chatbot_reply(text: str) -> str:
+    text = (text or "").strip()[:MAX_USER_MESSAGE]
     resp = requests.post(
         f"{API_BASE}/api/chatbot",
         json={"message": text, "use_ai": False},
+        headers=_chatbot_headers(),
         timeout=20,
     )
     resp.raise_for_status()
