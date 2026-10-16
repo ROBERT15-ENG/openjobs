@@ -6,8 +6,9 @@ Last checked: 2026-10-16
 
 | Source | Status | Notes |
 |--------|--------|--------|
-| **SEEK (seek.com.au)** | **Working** | Public `jobsearch/v5/search` API; used by `scrapers/sources/seek_au.py` |
-| **Teaching + sponsorship profile** | **Working** | `scrapers/teaching_au.py` runs multiple AU queries and filters education roles that mention visa/sponsorship |
+| **NSW JobFeed (education.nsw.gov.au)** | **Default** | Official weekly NSW public school vacancies; includes **“Current as at”** date |
+| **SEEK (seek.com.au)** | Opt-in only | Set `SCRAPER_ALLOW_SEEK=true` or pass `sources: ['seek']`; not used for routine checks |
+| **Teaching profile** | **Working** | `teaching_au` → NSW JobFeed first; optional SEEK |
 | **Indeed AU** | Not implemented | Bot protection; no stable public API in this repo |
 | **LinkedIn** | Not implemented | Requires official API / partnership |
 | **SEEK (state DET portals)** | Not implemented | e.g. teach.nsw.edu.au — separate HTML sites; future adapter |
@@ -23,7 +24,11 @@ Last checked: 2026-10-16
 ## How to check live (no DB write)
 
 ```bash
+# Official NSW feed only (no SEEK)
 PYTHONPATH=. python scripts/check_teaching_scrapers.py
+
+# All NSW roles (not only relocation/visa-related text)
+PYTHONPATH=. python scripts/check_teaching_scrapers.py --all-nsw
 ```
 
 ## How to ingest into OpenJobs (admin JWT)
