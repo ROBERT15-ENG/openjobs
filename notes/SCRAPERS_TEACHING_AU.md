@@ -39,9 +39,12 @@ Requires a populated `jobs` table in `jobs.db`.
 
 ## Filtering logic
 
+- **Australia only (default):** location must include an AU state/territory or “Australia”; titles/teasers advertising **England/UK/overseas placement** are removed (recruiter may still list Sydney/Melbourne).
 - **Teaching:** title/teaser/classification matches education roles (teacher, ECT, principal, etc.).
 - **Sponsorship:** description/teaser mentions visa, sponsorship, 482/186, relocation, etc.
-- SEEK search already uses sponsorship-oriented keywords; the filter avoids non-education hits.
+- SEEK queries include **“Australia”** in the keyword set where possible.
+
+Set `australia_only: false` on `POST /api/scrape` only if you intentionally want overseas-placement ads from seek.com.au.
 
 ## Compliance
 

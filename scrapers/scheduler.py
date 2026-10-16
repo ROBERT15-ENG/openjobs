@@ -40,6 +40,7 @@ class ScrapeScheduler:
         insert_db: bool = True,
         profile: str | None = None,
         require_sponsorship: bool = True,
+        australia_only: bool = True,
         max_pages: int = 2,
     ) -> Dict[str, Any]:
         with _lock:
@@ -56,7 +57,7 @@ class ScrapeScheduler:
 
         try:
             jobs = self._collect(
-                source, query, location, profile, require_sponsorship, max_pages
+                source, query, location, profile, require_sponsorship, australia_only, max_pages
             )
             db_stats = {"inserted": 0, "skipped": 0}
             if insert_db and jobs:
@@ -91,6 +92,7 @@ class ScrapeScheduler:
         location: str,
         profile: str | None,
         require_sponsorship: bool,
+        australia_only: bool,
         max_pages: int,
     ):
         if profile == "teaching_sponsorship" or source == "teaching_au":
@@ -98,6 +100,7 @@ class ScrapeScheduler:
                 location=location,
                 max_pages_per_query=max_pages,
                 require_sponsorship=require_sponsorship,
+                australia_only=australia_only,
                 extra_query=query if query != "software engineer" else None,
             )
 
@@ -135,7 +138,11 @@ class ScrapeScheduler:
             jobs = [
                 j
                 for j in jobs
-                if is_teaching_with_sponsorship(j, require_sponsorship=require_sponsorship)
+                if is_teaching_with_sponsorship(
+                    j,
+                    require_sponsorship=require_sponsorship,
+                    australia_only=australia_only,
+                )
             ]
         return jobs
 

@@ -33,6 +33,7 @@ def trigger_scrape():
         location: Location to search (default: 'Australia')
         insert_db: Whether to insert into database (default: True)
         require_sponsorship: Filter to roles mentioning visa/sponsorship (default: True)
+        australia_only: Drop overseas-placement listings (default: True)
         max_pages: Pages per query/source (default: 2)
     
     Returns:
@@ -51,6 +52,7 @@ def trigger_scrape():
     location = data.get('location', 'Australia')
     insert_db = data.get('insert_db', True)
     require_sponsorship = data.get('require_sponsorship', True)
+    australia_only = data.get('australia_only', True)
     max_pages = int(data.get('max_pages', 2))
     
     scheduler = get_scheduler()
@@ -61,6 +63,7 @@ def trigger_scrape():
         insert_db=insert_db,
         profile=profile,
         require_sponsorship=require_sponsorship,
+        australia_only=australia_only,
         max_pages=max_pages,
     )
     

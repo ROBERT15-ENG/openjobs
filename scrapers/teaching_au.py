@@ -11,11 +11,12 @@ from scrapers.teaching_filters import is_teaching_with_sponsorship
 
 # Queries tuned for AU education + migration-friendly wording on SEEK
 DEFAULT_QUERIES = [
-    "teacher visa sponsorship",
-    "education visa sponsorship",
-    "teacher 482 visa",
-    "early childhood teacher sponsorship",
-    "secondary teacher visa Australia",
+    "teacher visa sponsorship Australia",
+    "education visa sponsorship Australia",
+    "teacher 482 visa Australia",
+    "early childhood teacher sponsorship Australia",
+    "secondary teacher visa sponsorship",
+    "regional teacher visa Australia",
 ]
 
 
@@ -23,6 +24,7 @@ def fetch_teaching_sponsorship_jobs(
     location: str = "Australia",
     max_pages_per_query: int = 2,
     require_sponsorship: bool = True,
+    australia_only: bool = True,
     extra_query: str | None = None,
 ) -> List[Dict[str, Any]]:
     queries = list(DEFAULT_QUERIES)
@@ -41,7 +43,11 @@ def fetch_teaching_sponsorship_jobs(
             ext = job.get("external_id") or ""
             if ext and ext in seen:
                 continue
-            if is_teaching_with_sponsorship(job, require_sponsorship=require_sponsorship):
+            if is_teaching_with_sponsorship(
+                job,
+                require_sponsorship=require_sponsorship,
+                australia_only=australia_only,
+            ):
                 job["scrape_query"] = q
                 matched.append(job)
                 if ext:
