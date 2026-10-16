@@ -2740,6 +2740,13 @@ def kyc_admin_verify(user_id):
 
 
 
+try:
+    from scraper_routes import scraper_bp
+    app.register_blueprint(scraper_bp)
+except ImportError as _scraper_err:
+    import warnings
+    warnings.warn(f"Scraper routes not loaded: {_scraper_err}")
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5700))
     app.run(host='0.0.0.0', port=port, debug=False)

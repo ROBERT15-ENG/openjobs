@@ -1,0 +1,50 @@
+# Australian teaching jobs (visa sponsorship) — scraper status
+
+Last checked: 2026-10-16
+
+## Summary
+
+| Source | Status | Notes |
+|--------|--------|--------|
+| **SEEK (seek.com.au)** | **Working** | Public `jobsearch/v5/search` API; used by `scrapers/sources/seek_au.py` |
+| **Teaching + sponsorship profile** | **Working** | `scrapers/teaching_au.py` runs multiple AU queries and filters education roles that mention visa/sponsorship |
+| **Indeed AU** | Not implemented | Bot protection; no stable public API in this repo |
+| **LinkedIn** | Not implemented | Requires official API / partnership |
+| **SEEK (state DET portals)** | Not implemented | e.g. teach.nsw.edu.au — separate HTML sites; future adapter |
+| **jobsearch.gov.au** | Not implemented | Site returned empty responses from this environment; revisit with official API docs |
+
+## What was wrong before
+
+- `api/scraper_routes.py` imported `scrapers.scheduler`, but the **`scrapers/` package did not exist** in the repo.
+- The blueprint was **never registered** on the Flask app.
+- Default scrape query was **software engineer**, not education or sponsorship.
+- **Indeed / LinkedIn** were advertised in the API but had **no implementation**.
+
+## How to check live (no DB write)
+
+```bash
+PYTHONPATH=. python scripts/check_teaching_scrapers.py
+```
+
+## How to ingest into OpenJobs (admin JWT)
+
+```bash
+curl -X POST http://localhost:5700/api/scrape \
+  -H "Authorization: Bearer <admin-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"source":"teaching_au","insert_db":true,"max_pages":2}'
+```
+
+Requires a populated `jobs` table in `jobs.db`.
+
+## Filtering logic
+
+- **Teaching:** title/teaser/classification matches education roles (teacher, ECT, principal, etc.).
+- **Sponsorship:** description/teaser mentions visa, sponsorship, 482/186, relocation, etc.
+- SEEK search already uses sponsorship-oriented keywords; the filter avoids non-education hits.
+
+## Compliance
+
+- Rate-limit scrapes (scheduler default 60 min).
+- Set `ALLOWED_EGRESS_HOSTS=www.seek.com.au` in production if using egress allowlists.
+- Review SEEK terms before high-volume production use; link out to SEEK job URLs (`external_url`).
