@@ -757,6 +757,73 @@
   </div>
 </div>
 
+<!-- OpenJobs Assistant -->
+<style>
+  #oj-chat-launcher {
+    position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 1200;
+    width: 3.25rem; height: 3.25rem; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(135deg, var(--primary), #00ff88);
+    color: #04120e; font-size: 1.35rem; box-shadow: 0 8px 28px rgba(0,212,170,0.35);
+  }
+  #oj-chat-panel {
+    position: fixed; right: 1.25rem; bottom: 5rem; z-index: 1200;
+    width: min(22rem, calc(100vw - 2rem)); max-height: min(28rem, 70vh);
+    display: none; flex-direction: column;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.45); overflow: hidden;
+  }
+  #oj-chat-panel.open { display: flex; }
+  .oj-chat-head {
+    padding: 0.85rem 1rem; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    background: rgba(0,212,170,0.06);
+  }
+  .oj-chat-head strong { font-size: 0.95rem; }
+  .oj-chat-messages {
+    flex: 1; overflow-y: auto; padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.65rem;
+    font-size: 0.88rem; line-height: 1.45;
+  }
+  .oj-msg { padding: 0.55rem 0.7rem; border-radius: 10px; max-width: 95%; white-space: pre-wrap; }
+  .oj-msg.bot { background: #15151f; border: 1px solid var(--border); align-self: flex-start; }
+  .oj-msg.user { background: rgba(0,212,170,0.15); border: 1px solid rgba(0,212,170,0.35); align-self: flex-end; }
+  .oj-chat-jobs { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.35rem; }
+  .oj-chat-job-btn {
+    text-align: left; background: #0d0d14; border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 0.45rem 0.55rem; cursor: pointer; font-size: 0.8rem;
+  }
+  .oj-chat-job-btn:hover { border-color: var(--primary); }
+  .oj-chat-suggestions { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0 1rem 0.5rem; }
+  .oj-chat-chip {
+    font-size: 0.72rem; padding: 0.25rem 0.5rem; border-radius: 999px;
+    border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer;
+  }
+  .oj-chat-chip:hover { border-color: var(--primary); color: var(--primary); }
+  .oj-chat-input-row {
+    display: flex; gap: 0.4rem; padding: 0.65rem; border-top: 1px solid var(--border);
+  }
+  .oj-chat-input-row input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.55rem 0.65rem; color: var(--text); font-size: 0.88rem;
+  }
+  .oj-chat-input-row button {
+    background: var(--primary); border: none; border-radius: 8px; padding: 0 0.85rem;
+    font-weight: 600; cursor: pointer; color: #04120e;
+  }
+</style>
+<button type="button" id="oj-chat-launcher" aria-label="Open OpenJobs assistant" title="Ask OpenJobs">💬</button>
+<div id="oj-chat-panel" role="dialog" aria-label="OpenJobs assistant">
+  <div class="oj-chat-head">
+    <strong>⚡ OpenJobs Assistant</strong>
+    <button type="button" id="oj-chat-close" aria-label="Close" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem;">×</button>
+  </div>
+  <div class="oj-chat-messages" id="ojChatMessages"></div>
+  <div class="oj-chat-suggestions" id="ojChatSuggestions"></div>
+  <div class="oj-chat-input-row">
+    <input type="text" id="ojChatInput" placeholder="Ask about jobs, remote work, visa…" autocomplete="off" />
+    <button type="button" id="ojChatSend">Send</button>
+  </div>
+</div>
+
 <!-- FOOTER -->
 <footer>
   <p>OpenJobs — AI-Powered Job Matching · © 2026 · Built by Alex ⚡</p>
@@ -773,6 +840,7 @@
     fetchJobs();
     document.getElementById('searchInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
     document.getElementById('locationInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
+    initOpenJobsChat();
   });
 
   // ── FETCH JOBS ────────────────────────────────────────────────────
@@ -1304,6 +1372,98 @@ function setQuickFilter(btn, value) {
   if (sub) sub.style.display = 'none';
   document.getElementById('cityChips').innerHTML = '';
   fetchJobs();
+}
+
+// ── OpenJobs chat assistant ─────────────────────────────────────────
+let ojChatHistory = [];
+
+function initOpenJobsChat() {
+  const panel = document.getElementById('oj-chat-panel');
+  const launcher = document.getElementById('oj-chat-launcher');
+  const closeBtn = document.getElementById('oj-chat-close');
+  const input = document.getElementById('ojChatInput');
+  const sendBtn = document.getElementById('ojChatSend');
+  if (!panel || !launcher) return;
+
+  const welcome = "Hi! I can search OpenJobs listings — try “remote Python in Sydney” or tap a suggestion below.";
+  appendOjChatMessage('bot', welcome);
+
+  launcher.addEventListener('click', () => {
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) input.focus();
+  });
+  closeBtn.addEventListener('click', () => panel.classList.remove('open'));
+  sendBtn.addEventListener('click', () => sendOjChat());
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') sendOjChat(); });
+}
+
+function appendOjChatMessage(role, text, jobs) {
+  const box = document.getElementById('ojChatMessages');
+  if (!box) return;
+  const div = document.createElement('div');
+  div.className = 'oj-msg ' + (role === 'user' ? 'user' : 'bot');
+  div.textContent = text.replace(/\*\*/g, '');
+  if (jobs && jobs.length) {
+    const list = document.createElement('div');
+    list.className = 'oj-chat-jobs';
+    jobs.forEach(j => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'oj-chat-job-btn';
+      btn.textContent = (j.title || 'Role') + ' · ' + (j.company || '');
+      btn.addEventListener('click', () => { if (typeof openJob === 'function') openJob(j.id); });
+      list.appendChild(btn);
+    });
+    div.appendChild(list);
+  }
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderOjSuggestions(items) {
+  const row = document.getElementById('ojChatSuggestions');
+  if (!row) return;
+  row.innerHTML = '';
+  (items || []).slice(0, 4).forEach(label => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'oj-chat-chip';
+    chip.textContent = label;
+    chip.addEventListener('click', () => {
+      document.getElementById('ojChatInput').value = label;
+      sendOjChat();
+    });
+    row.appendChild(chip);
+  });
+}
+
+async function sendOjChat() {
+  const input = document.getElementById('ojChatInput');
+  const text = (input.value || '').trim();
+  if (!text) return;
+  input.value = '';
+  appendOjChatMessage('user', text);
+  ojChatHistory.push({ role: 'user', content: text });
+
+  const sendBtn = document.getElementById('ojChatSend');
+  if (sendBtn) sendBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/chatbot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, history: ojChatHistory, use_ai: false }),
+    });
+    const data = await res.json();
+    const reply = data.reply || data.error || 'Something went wrong. Please try again.';
+    appendOjChatMessage('bot', reply, data.jobs || []);
+    ojChatHistory.push({ role: 'assistant', content: reply });
+    renderOjSuggestions(data.suggestions);
+  } catch (err) {
+    appendOjChatMessage('bot', 'Could not reach the assistant. Check your connection and try again.');
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
+  }
 }
 
 </script>

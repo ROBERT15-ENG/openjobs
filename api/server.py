@@ -17,6 +17,7 @@ import re
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from semantic_matcher import rank_jobs_for_resume, keyword_score
+from openjobs_chatbot import handle_message as chatbot_handle_message, fmt_salary as _fmt_salary
 
 # SEO infrastructure
 from seo_utils import make_job_slug, parse_job_slug, job_canonical_url, should_noindex
@@ -891,11 +892,8 @@ def require_auth(f):
     return decorated
 
 
-secrets = __import__('secrets')
-
-@app.route('/api/auth/google', methods=['POST'])
-@limiter.limit('10 per minute')
-
+@app.route('/api/jobs', methods=['GET'])
+@limiter.limit('60 per minute')
 def get_jobs():
     db = get_db()
     
@@ -960,6 +958,14 @@ def get_jobs():
     if search:
         where.append("(title LIKE ? OR company LIKE ? OR description LIKE ? OR search_summary LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
+
+    if request.args.get('remote') in ('1', 'true', 'yes'):
+        where.append("work_arrangement = ?")
+        params.append('remote')
+
+    if request.args.get('visa') in ('1', 'true', 'yes'):
+        where.append("(description LIKE ? OR search_summary LIKE ? OR title LIKE ?)")
+        params.extend(['%visa%', '%visa%', '%visa%'])
 
     where_clause = " AND ".join(where) if where else "1=1"
     
@@ -1539,6 +1545,30 @@ def list_ollama_models():
         return jsonify({'success': True, 'models': [m['name'] for m in resp.json().get('models', [])]})
     except Exception as e:
         return jsonify({'error': str(e)})
+
+@app.route('/api/chatbot', methods=['POST'])
+@limiter.limit('30 per minute')
+def openjobs_chatbot():
+    """OpenJobs site + Telegram assistant."""
+    data = request.json or {}
+    message = (data.get('message') or '').strip()
+    if not message:
+        return jsonify({'error': 'message is required'}), 400
+    history = data.get('history') or []
+    use_ai = data.get('use_ai', True)
+    try:
+        result = chatbot_handle_message(get_db(), message, history=history, use_ai=use_ai)
+        return jsonify({'success': True, **result})
+    except sqlite3.OperationalError as e:
+        return jsonify({
+            'success': True,
+            'reply': 'Job listings are still loading on this server. Please try again shortly or browse the home page.',
+            'jobs': [],
+            'suggestions': ['Help', 'Remote jobs'],
+            'detail': str(e),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/ai/ollama/chat', methods=['POST'])
 def ollama_chat():
