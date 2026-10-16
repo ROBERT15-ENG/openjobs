@@ -6,7 +6,7 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), '..', 'templates')
 load_dotenv()
 import sqlite3, os, json, datetime, base64
 from functools import wraps
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, make_response
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -20,6 +20,9 @@ from semantic_matcher import rank_jobs_for_resume, keyword_score
 from openjobs_chatbot import handle_message as chatbot_handle_message, fmt_salary as _fmt_salary
 from chatbot_security import client_may_use_ai, safe_refusal_reply, sanitize_history, sanitize_user_message
 from ads_catalog import ads_for_page as guest_ads_for_page
+from platform_db import apply_pending_migrations, check_db_ready
+from platform_flags import feature_enabled, all_flags
+from platform_idempotency import get_idempotency_key, load_stored_response, store_response
 
 # SEO infrastructure
 from seo_utils import make_job_slug, parse_job_slug, job_canonical_url, should_noindex
@@ -68,10 +71,33 @@ except ImportError:
 limiter.init_app(app)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev_secret_key_change_in_production')
 
+@app.after_request
+def _platform_security_headers(response):
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'DENY')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    if request.path.startswith('/api/') and 'Cache-Control' not in response.headers:
+        response.headers.setdefault('Cache-Control', 'no-store')
+    if not request.path.startswith('/api/'):
+        response.headers.setdefault(
+            'Content-Security-Policy',
+            "default-src 'self'; script-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'",
+        )
+    return response
+
 APP_URL = os.environ.get('APP_URL', 'http://localhost:5700')
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
 
 DB_PATH = os.environ.get('DATABASE_URL', os.path.join(os.path.dirname(__file__), '..', 'jobs.db'))
+
+try:
+    _applied = apply_pending_migrations(DB_PATH)
+    if _applied:
+        print(f"[platform] migrations applied: {', '.join(_applied)}")
+except Exception as _mig_err:
+    print(f"[platform] migration skipped: {_mig_err}")
 
 def get_db():
     if 'db' not in g:
@@ -990,7 +1016,7 @@ def get_jobs():
         row['salary'] = _fmt_salary(row.get('salary_min'), row.get('salary_max'), row.get('salary_currency', 'AUD'))
         result.append(row)
 
-    return jsonify({
+    payload = {
         'jobs': result,
         'pagination': {
             'page': page,
@@ -998,7 +1024,11 @@ def get_jobs():
             'total': total,
             'pages': (total + limit - 1) // limit
         }
-    })
+    }
+    resp = make_response(jsonify(payload))
+    if not request.headers.get('Authorization') and feature_enabled('GUEST_JOB_CACHE', default=True):
+        resp.headers['Cache-Control'] = 'public, max-age=60, stale-while-revalidate=120'
+    return resp
 
 @app.route('/api/jobs/<int:job_id>', methods=['GET'])
 def get_job(job_id):
@@ -1251,6 +1281,13 @@ def submit_application():
 @require_auth
 def quick_apply(job_id):
     db = get_db()
+    route = f"apply:{job_id}"
+    idem_key = get_idempotency_key(request)
+    cached = load_stored_response(db, idem_key, request.user_id, route)
+    if cached:
+        db.close()
+        return cached
+
     user = db.execute("SELECT name, email, resume_text, kyc_status, cv_link FROM users WHERE id = ?",
                       (request.user_id,)).fetchone()
     job = db.execute("SELECT title, company FROM jobs WHERE id = ?", (job_id,)).fetchone()
@@ -1270,13 +1307,18 @@ def quick_apply(job_id):
     db.execute("INSERT INTO applications (job_id, user_id, status, applied_at, cover_note) VALUES (?, ?, 'pending', ?, ?)",
                (job_id, request.user_id, datetime.datetime.now().isoformat(), cover))
     db.execute("UPDATE jobs SET application_count = application_count + 1 WHERE id = ?", (job_id,))
-    db.commit()
 
-    # Get employer info before closing db
     employer = db.execute(
         "SELECT u.name, u.email FROM users u JOIN jobs j ON j.employer_id = u.id WHERE j.id = ?",
         (job_id,)
     ).fetchone()
+
+    body = {
+        'success': True,
+        'message': 'Applied for ' + str(job['title']) + ' at ' + str(job['company'])
+    }
+    store_response(db, idem_key, request.user_id, route, 200, body)
+    db.commit()
     db.close()
 
     # Send confirmation to seeker
@@ -1301,10 +1343,7 @@ def quick_apply(job_id):
     except Exception as e:
         print(f"[apply] employer notification error: {e}")
 
-    return jsonify({
-        'success': True,
-        'message': 'Applied for ' + str(job['title']) + ' at ' + str(job['company'])
-    })
+    return jsonify(body)
 
 
 @require_auth
@@ -1615,6 +1654,9 @@ def get_guest_ads():
         if token and _decode_token(token):
             return jsonify({'logged_in': True, 'ads': []})
 
+    if not feature_enabled('ADS', default=True):
+        return jsonify({'logged_in': False, 'ads': [], 'disabled': True})
+
     page = request.args.get('page', 1, type=int)
     slot = request.args.get('slot', 'feed', type=str)
     per_kind = 1 if slot == 'sidebar' else 2
@@ -1904,8 +1946,30 @@ def cad_page():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
-    return jsonify({'status': 'healthy', 'timestamp': datetime.datetime.now().isoformat()})
+    """Liveness — process is up (P1)."""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+        'service': 'openjobs-api',
+    })
+
+
+@app.route('/api/ready', methods=['GET'])
+def readiness_check():
+    """Readiness — DB reachable (P1)."""
+    ok = check_db_ready(DB_PATH)
+    body = {
+        'ready': ok,
+        'database': 'ok' if ok else 'unavailable',
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+    }
+    return jsonify(body), 200 if ok else 503
+
+
+@app.route('/api/platform/flags', methods=['GET'])
+def platform_flags():
+    """Feature flags for clients / ops (P2)."""
+    return jsonify({'flags': all_flags()})
 
 @app.route('/api/search', methods=['GET'])
 @limiter.limit("10 per minute")
