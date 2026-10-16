@@ -17,6 +17,9 @@ import re
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from semantic_matcher import rank_jobs_for_resume, keyword_score
+from openjobs_chatbot import handle_message as chatbot_handle_message, fmt_salary as _fmt_salary
+from chatbot_security import client_may_use_ai, safe_refusal_reply, sanitize_history, sanitize_user_message
+from ads_catalog import ads_for_page as guest_ads_for_page
 
 # SEO infrastructure
 from seo_utils import make_job_slug, parse_job_slug, job_canonical_url, should_noindex
@@ -891,11 +894,8 @@ def require_auth(f):
     return decorated
 
 
-secrets = __import__('secrets')
-
-@app.route('/api/auth/google', methods=['POST'])
-@limiter.limit('10 per minute')
-
+@app.route('/api/jobs', methods=['GET'])
+@limiter.limit('60 per minute')
 def get_jobs():
     db = get_db()
     
@@ -960,6 +960,14 @@ def get_jobs():
     if search:
         where.append("(title LIKE ? OR company LIKE ? OR description LIKE ? OR search_summary LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
+
+    if request.args.get('remote') in ('1', 'true', 'yes'):
+        where.append("work_arrangement = ?")
+        params.append('remote')
+
+    if request.args.get('visa') in ('1', 'true', 'yes'):
+        where.append("(description LIKE ? OR search_summary LIKE ? OR title LIKE ?)")
+        params.extend(['%visa%', '%visa%', '%visa%'])
 
     where_clause = " AND ".join(where) if where else "1=1"
     
@@ -1540,17 +1548,79 @@ def list_ollama_models():
     except Exception as e:
         return jsonify({'error': str(e)})
 
+@app.route('/api/chatbot', methods=['POST'])
+@limiter.limit('20 per minute')
+def openjobs_chatbot():
+    """OpenJobs site + Telegram assistant."""
+    data = request.json or {}
+    message, block_reason = sanitize_user_message(data.get('message') or '')
+    if block_reason == 'empty':
+        return jsonify({'error': 'message is required'}), 400
+    if block_reason == 'injection':
+        return jsonify({'success': True, **safe_refusal_reply()})
+
+    history = sanitize_history(data.get('history') or [])
+    use_ai = bool(data.get('use_ai')) and client_may_use_ai(request.headers)
+    try:
+        result = chatbot_handle_message(get_db(), message, history=history, use_ai=use_ai)
+        return jsonify({'success': True, **result})
+    except sqlite3.OperationalError:
+        return jsonify({
+            'success': True,
+            'reply': 'Job listings are still loading on this server. Please try again shortly or browse the home page.',
+            'jobs': [],
+            'suggestions': ['Help', 'Remote jobs'],
+        })
+    except Exception:
+        return jsonify({'error': 'Assistant unavailable. Please try again later.'}), 500
+
 @app.route('/api/ai/ollama/chat', methods=['POST'])
+@limiter.limit('10 per minute')
 def ollama_chat():
     if not OLLAMA_AVAILABLE:
         return jsonify({'error': 'Ollama not running'}), 500
-    data = request.json
+    data = request.json or {}
+    message, block_reason = sanitize_user_message(data.get('message') or '')
+    if block_reason == 'empty':
+        return jsonify({'error': 'message is required'}), 400
+    if block_reason == 'injection':
+        return jsonify({'error': 'Message not allowed'}), 400
     try:
         import requests
-        resp = requests.post(f'{OLLAMA_URL}/api/chat', json={'model': data.get('model', 'llama3.2'), 'messages': [{'role': 'user', 'content': data.get('message')}], 'stream': False}, timeout=30)
+        from chatbot_security import redact_pii
+        resp = requests.post(
+            f'{OLLAMA_URL}/api/chat',
+            json={
+                'model': data.get('model', 'llama3.2'),
+                'messages': [{'role': 'user', 'content': redact_pii(message)}],
+                'stream': False,
+            },
+            timeout=30,
+        )
         return jsonify({'success': True, 'response': resp.json()['message']['content']})
-    except Exception as e:
-        return jsonify({'error': str(e)})
+    except Exception:
+        return jsonify({'error': 'AI request failed'}), 500
+
+# ============ GUEST ADS (pre-login only) ============
+@app.route('/api/ads', methods=['GET'])
+@limiter.limit('120 per minute')
+def get_guest_ads():
+    """
+    Sponsored / display ads for the public job feed.
+    Returns an empty list when the request includes a valid session token.
+    """
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        token = auth.split(' ', 1)[1].strip()
+        if token and _decode_token(token):
+            return jsonify({'logged_in': True, 'ads': []})
+
+    page = request.args.get('page', 1, type=int)
+    slot = request.args.get('slot', 'feed', type=str)
+    per_kind = 1 if slot == 'sidebar' else 2
+    ads = guest_ads_for_page(page=page, per_kind=per_kind)
+    return jsonify({'logged_in': False, 'ads': ads})
+
 
 # ============ WHITE-LABEL ============
 @app.route('/api/whitelabel/config', methods=['GET'])
