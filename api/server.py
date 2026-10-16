@@ -23,6 +23,7 @@ from ads_catalog import ads_for_page as guest_ads_for_page
 from platform_db import apply_pending_migrations, check_db_ready
 from platform_flags import feature_enabled, all_flags
 from platform_idempotency import get_idempotency_key, load_stored_response, store_response
+from platform_cache import bump_jobs_list_cache, jobs_list_generation
 
 # SEO infrastructure
 from seo_utils import make_job_slug, parse_job_slug, job_canonical_url, should_noindex
@@ -1026,8 +1027,11 @@ def get_jobs():
         }
     }
     resp = make_response(jsonify(payload))
+    gen = jobs_list_generation()
+    resp.headers['X-OpenJobs-Jobs-Gen'] = str(gen)
     if not request.headers.get('Authorization') and feature_enabled('GUEST_JOB_CACHE', default=True):
         resp.headers['Cache-Control'] = 'public, max-age=60, stale-while-revalidate=120'
+        resp.headers['Vary'] = 'Authorization'
     return resp
 
 @app.route('/api/jobs/<int:job_id>', methods=['GET'])
@@ -1108,6 +1112,7 @@ def create_job():
     except Exception as e:
         print(f"[create_job] alert error: {e}")
 
+    bump_jobs_list_cache()
     return jsonify({'success': True, 'message': 'Job created', 'job_id': job_id}), 201
 
 @app.route('/api/jobs/<int:job_id>/feature', methods=['POST'])
@@ -1124,6 +1129,7 @@ def feature_job(job_id):
     db.execute("UPDATE jobs SET is_featured = ? WHERE id = ?", (featured, job_id))
     db.commit()
     db.close()
+    bump_jobs_list_cache()
     return jsonify({'success': True, 'is_featured': bool(featured)})
 
 
@@ -1153,6 +1159,7 @@ def update_job(job_id):
     db.commit()
     updated = db.execute('SELECT * FROM jobs WHERE id = ?', (job_id,)).fetchone()
     db.close()
+    bump_jobs_list_cache()
     return jsonify({'success': True, 'job': dict(updated)})
 
 
@@ -1170,6 +1177,7 @@ def delete_job(job_id):
     db.execute('UPDATE jobs SET is_active = 0 WHERE id = ?', (job_id,))
     db.commit()
     db.close()
+    bump_jobs_list_cache()
     return jsonify({'success': True, 'message': 'Job removed'})
 
 

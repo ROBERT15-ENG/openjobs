@@ -5,6 +5,7 @@ All notable changes to OpenJobs follow [Semantic Versioning](https://semver.org/
 ## [Unreleased]
 
 ### Added
+- Job list cache generation header and bump on job writes (`platform_cache.py`, items 49–50)
 - Platform P1: SQL migrations, idempotency keys, DB indexes (when tables exist)
 - `/api/ready` readiness probe and enhanced `/api/health`
 - `/api/platform/flags` feature flag endpoint

@@ -3,7 +3,25 @@
 Living notes for the 111-item backend/SRE checklist.  
 **Status:** `done` · `started` · `planned` · `n/a` (defer)
 
-Last updated: 2026-10-16
+Last updated: 2026-10-16 (items 45–53 corrected per @nataindata screenshot)
+
+---
+
+## Canonical checklist slice (items 45–53)
+
+| # | Topic | OpenJobs plan | Status |
+|---|--------|---------------|--------|
+| **45** | Autoscaling | Railway/replica count or K8s HPA on CPU + p95 latency; min 1 instance to avoid cold starts | planned |
+| **46** | Horizontal scaling | Stateless Flask + shared Postgres/Redis; multiple Gunicorn workers per instance | started (`WEB_CONCURRENCY`, Docker) |
+| **47** | Vertical scaling | Larger Railway plan / more RAM for AI workers before adding regions | planned |
+| **48** | CDN | Cloudflare in front of `openjobs.com.au`; cache static + anonymous API at edge | planned |
+| **49** | Edge caching | Cache `GET /api/jobs` at CDN with short TTL; respect `Vary: Authorization` | started (`Cache-Control` + gen header) |
+| **50** | Cache invalidation | Bump `X-OpenJobs-Jobs-Gen` on job create/update/delete; CDN purge by surrogate key later | started (`api/platform_cache.py`) |
+| **51** | Feature flags | `FEATURE_*` env + `/api/platform/flags` | started |
+| **52** | Blue-green deployment | Two Railway services; switch router after `/api/ready` green | planned |
+| **53** | Canary releases | Route 5% traffic to new revision; compare 5xx vs stable | planned |
+
+*Graceful shutdown* is not item 45 on this list; keep using Gunicorn `graceful_timeout` as a general deploy practice (pairs with **54** rolling deployments).
 
 ---
 
@@ -20,7 +38,7 @@ Last updated: 2026-10-16
 | DB indexes | 25–27 | started | `migrations/`, `platform_db._apply_optional_indexes` |
 | Race / dup apply | 39 | started | unique index `applications(job_id,user_id)` |
 | Backpressure | 44 | started | rate limits + gunicorn workers |
-| Graceful shutdown | 45 | started | `graceful_timeout` in Gunicorn |
+| Edge cache + invalidation | 49–50 | started | `Cache-Control`, `X-OpenJobs-Jobs-Gen`, `platform_cache.py` |
 | Health / readiness | 56–57 | done | `/api/health`, `/api/ready` |
 | Secrets | 67 | started | `.env` only; rotate tokens in prod |
 | TLS | 71 | started | `_force_https` when `FLASK_ENV=production` |
@@ -50,7 +68,6 @@ Prod server: `gunicorn -c gunicorn.conf.py api.server:app`
 | 25–27 | Indexes / queries | started | Run app against real `jobs.db`; EXPLAIN slow paths |
 | 39 | Race conditions | started | Verify unique index applied after seed |
 | 44 | Backpressure | started | 503 when DB pool saturated (Postgres phase) |
-| 45 | Graceful shutdown | started | Deploy with Gunicorn; drain on Railway |
 | 56–57 | Health / readiness | done | Wire Railway health check to `/api/ready` |
 | 67 | Secrets | started | Document rotation; remove any committed secrets |
 | 69 | OAuth | started | Set `GOOGLE_CLIENT_ID` in prod |
@@ -75,6 +92,8 @@ Prod server: `gunicorn -c gunicorn.conf.py api.server:app`
 | # | Topic | Status | Next action |
 |---|--------|--------|-------------|
 | 2 | Caching | started | Redis cache for job list keys |
+| 45–47 | Autoscaling / H+V scale | planned | Railway autoscale rules; document worker vs web tiers |
+| 48–50 | CDN / edge / invalidation | started | Cloudflare proxy; purge on `Jobs-Gen` change |
 | 3–5 | LB / proxy / gateway | planned | Nginx or Cloudflare in front of Railway |
 | 6 | CI/CD | started | Add lint (ruff), migration gate, staging deploy |
 | 7 | Docker | started | Push image to registry; use in Railway |
@@ -83,6 +102,7 @@ Prod server: `gunicorn -c gunicorn.conf.py api.server:app`
 | 15–21 | Queues / cron | planned | Redis RQ for email + resume parse |
 | 28 | Connection pooling | planned | SQLAlchemy + pgbouncer with Postgres |
 | 51 | Feature flags | started | Use flags in UI for ads / chatbot |
+| 52–53 | Blue-green / canary | planned | Document in deploy runbook after staging exists |
 | 54–55 | Rolling / rollback | planned | Railway rollback procedure in runbook |
 | 58–62 | Monitoring / alerts | planned | OTEL or Datadog; alert on 5xx |
 | 70 | JWT rotation | planned | Dual signing keys |
