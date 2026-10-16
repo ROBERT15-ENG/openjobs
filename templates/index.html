@@ -343,6 +343,36 @@
     .badge-contract { background: rgba(251,146,60,0.12); color: #fb923c; }
     .badge-internship { background: rgba(236,72,153,0.12); color: #f472b6; }
     .badge-featured { background: rgba(251,191,36,0.15); color: #fbbf24; }
+    .badge-ad-promoted { background: rgba(0,212,170,0.18); color: var(--color-primary); border: 1px solid rgba(0,212,170,0.35); }
+    .badge-ad-standard { background: rgba(107,107,128,0.2); color: var(--color-text-muted); }
+    .job-card.ad-card {
+      cursor: pointer;
+      position: relative;
+    }
+    .job-card.ad-card.promoted {
+      border-color: rgba(0,212,170,0.35);
+      background: linear-gradient(135deg, rgba(0,212,170,0.06), var(--color-card) 55%);
+    }
+    .job-card.ad-card.standard {
+      border-color: rgba(107,107,128,0.35);
+      border-style: dashed;
+    }
+    .job-card.ad-card .ad-disclosure {
+      font-size: var(--type-caption);
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+    .job-card.ad-card .match-badge.ad-cta-pill {
+      background: rgba(0,212,170,0.12);
+      color: var(--color-primary);
+      border: 1px solid rgba(0,212,170,0.25);
+    }
+    .job-card.ad-card .job-actions .btn-apply {
+      background: var(--color-primary);
+      color: #04120e;
+    }
     .job-rating { display: flex; align-items: center; gap: 2px; font-size: var(--type-caption); color: #fbbf24; }
     .job-rating .empty { color: var(--color-border); }
     .job-applicants { font-size: var(--type-caption); color: var(--color-text-muted); }
@@ -869,27 +899,116 @@
     if (workTypes.length)  url += `&work_type=${workTypes.join(',')}`;
     if (workArr.length)    url += `&work_arrangement=${workArr.join(',')}`;
 
-    fetch(url)
-      .then(r => r.json())
-      .then(data => {
+    const token = localStorage.getItem('token');
+    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    const adsUrl = `/api/ads?page=${currentPage}&slot=feed`;
+
+    const jobsPromise = fetch(url, { headers }).then(r => r.json());
+    const adsPromise = token
+      ? Promise.resolve({ ads: [] })
+      : fetch(adsUrl).then(r => r.json()).catch(() => ({ ads: [] }));
+
+    Promise.all([jobsPromise, adsPromise])
+      .then(([data, adPayload]) => {
         let jobs = data.jobs || [];
         if (sort === 'salary_high') jobs.sort((a,b) => (b.salary_max||0) - (a.salary_max||0));
         if (sort === 'salary_low') jobs.sort((a,b) => (a.salary_min||0) - (b.salary_min||0));
-        renderJobs(jobs);
+        renderJobs(jobs, adPayload.ads || []);
         document.getElementById('resultsCount').textContent = data.pagination?.total || jobs.length;
         renderPagination(data.pagination);
       })
       .catch(() => renderError());
   }
 
+  function isUserLoggedIn() {
+    return !!localStorage.getItem('token');
+  }
+
+  function interleaveGuestAds(jobs, ads) {
+    if (!ads?.length || isUserLoggedIn()) return jobs.map(j => ({ type: 'job', job: j }));
+    const queue = [...ads].sort((a, b) => {
+      const rank = k => (k === 'promoted' ? 0 : 1);
+      return rank(a.kind) - rank(b.kind);
+    });
+    const out = [];
+    let adPtr = 0;
+    const firstAdAt = 2;
+    const adEvery = 6;
+    jobs.forEach((job, idx) => {
+      if (idx === firstAdAt || (idx > firstAdAt && (idx - firstAdAt) % adEvery === 0)) {
+        if (adPtr < queue.length) {
+          out.push({ type: 'ad', ad: queue[adPtr++] });
+        }
+      }
+      out.push({ type: 'job', job });
+    });
+    return out;
+  }
+
+  function renderAdCard(ad, i) {
+    const promoted = ad.kind === 'promoted';
+    const cardClass = promoted ? 'promoted' : 'standard';
+    const badge = promoted
+      ? '<span class="badge badge-ad-promoted">⭐ Promoted</span>'
+      : '<span class="badge badge-ad-standard">Ad</span>';
+    const tags = (ad.tags || []).slice(0, 3).map(t =>
+      `<span class="skill-tag">${escHtml(t)}</span>`
+    ).join('');
+    const letter = escHtml((ad.logo_letter || (ad.advertiser || 'A')[0] || 'A').toUpperCase());
+    const external = /^https?:\/\//i.test(ad.cta_url || '');
+    const href = escHtml(ad.cta_url || '/');
+    const target = external ? ' target="_blank" rel="noopener noreferrer sponsored"' : '';
+    return `
+      <article class="job-card ad-card ${cardClass} animate-in" style="animation-delay:${i*40}ms"
+        data-ad-id="${escHtml(ad.id)}" role="listitem" aria-label="Sponsored listing"
+        data-ad-url="${href}" data-ad-external="${external ? '1' : '0'}">
+        <div class="job-logo">${letter}</div>
+        <div class="job-content">
+          <div class="job-top">
+            <div>
+              <div class="job-title">${escHtml(ad.title)}</div>
+              <div class="job-company">${escHtml(ad.advertiser)} · ${escHtml(ad.location || '')}</div>
+            </div>
+            <div class="match-badge ad-cta-pill ad-disclosure">${promoted ? 'Promoted' : 'Sponsored'}</div>
+          </div>
+          <div class="badges">${badge}</div>
+          ${tags ? `<div class="job-skills">${tags}</div>` : ''}
+          <div class="job-summary">${escHtml(ad.summary || '')}</div>
+          <div class="job-footer">
+            <div class="job-meta">
+              <div class="job-meta-item ad-disclosure">Paid placement · shown before sign-in</div>
+            </div>
+          </div>
+        </div>
+        <div class="job-actions" onclick="event.stopPropagation()">
+          <a class="btn-apply" href="${href}"${target} onclick="event.stopPropagation()">${escHtml(ad.cta_label || 'Learn more')}</a>
+        </div>
+      </article>`;
+  }
+
+  document.addEventListener('click', e => {
+    const card = e.target.closest('.job-card.ad-card');
+    if (!card || e.target.closest('a')) return;
+    const url = card.getAttribute('data-ad-url');
+    if (!url) return;
+    if (card.getAttribute('data-ad-external') === '1') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } else {
+      window.location.href = url;
+    }
+  });
+
   // ── RENDER JOBS ──────────────────────────────────────────────────
-  function renderJobs(jobs) {
+  function renderJobs(jobs, guestAds) {
     const list = document.getElementById('jobsList');
     if (!jobs.length) {
       list.innerHTML = `<div class="empty-state"><div class="emoji"><svg class="ico" style="color:var(--color-text-muted)"><use href="#ico-search"/></svg></div><h3>No jobs found</h3><p>Try adjusting your filters or search terms</p></div>`;
       return;
     }
-    list.innerHTML = jobs.map((job, i) => {
+    const items = interleaveGuestAds(jobs, guestAds);
+    list.innerHTML = items.map((item, i) => {
+      if (item.type === 'ad') return renderAdCard(item.ad, i);
+      const job = item.job;
       const featured = job.is_featured || job.application_count >= 10;
       const badge = getWorkBadge(job);
       const featuredBadge = featured ? '<span class="badge badge-featured"><svg class="ico" style="color:#f59e0b"><use href="#ico-star"/></svg> Featured</span>' : '';
@@ -1353,9 +1472,22 @@ function fetchJobs() {
   document.getElementById('jobsList').innerHTML = '<div style="text-align:center;padding:3rem;color:var(--color-text-muted);"><div style="display:inline-block;width:20px;height:20px;border:2px solid var(--color-border);border-top-color:var(--color-primary);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:8px;"></div> Loading...</div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
   document.getElementById('resultsCount').textContent = '…';
 
-  fetch('/api/jobs?' + params.toString(), { headers })
-    .then(r => r.json())
-    .then(data => renderJobs(Array.isArray(data) ? data : (data.jobs||[])))
+  const adsPromise = token
+    ? Promise.resolve({ ads: [] })
+    : fetch('/api/ads?page=1&slot=feed').then(r => r.json()).catch(() => ({ ads: [] }));
+
+  Promise.all([
+    fetch('/api/jobs?' + params.toString(), { headers }).then(r => r.json()),
+    adsPromise,
+  ])
+    .then(([data, adPayload]) => {
+      const jobs = Array.isArray(data) ? data : (data.jobs || []);
+      renderJobs(jobs, adPayload.ads || []);
+      if (data.pagination?.total != null) {
+        const rc = document.getElementById('resultsCount');
+        if (rc) rc.textContent = data.pagination.total;
+      }
+    })
     .catch(() => {
       document.getElementById('jobsList').innerHTML = '<p style="color:var(--color-danger);text-align:center;padding:2rem;">Failed to load jobs.</p>';
     });

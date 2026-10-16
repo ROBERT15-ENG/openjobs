@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from semantic_matcher import rank_jobs_for_resume, keyword_score
 from openjobs_chatbot import handle_message as chatbot_handle_message, fmt_salary as _fmt_salary
 from chatbot_security import client_may_use_ai, safe_refusal_reply, sanitize_history, sanitize_user_message
+from ads_catalog import ads_for_page as guest_ads_for_page
 
 # SEO infrastructure
 from seo_utils import make_job_slug, parse_job_slug, job_canonical_url, should_noindex
@@ -1599,6 +1600,27 @@ def ollama_chat():
         return jsonify({'success': True, 'response': resp.json()['message']['content']})
     except Exception:
         return jsonify({'error': 'AI request failed'}), 500
+
+# ============ GUEST ADS (pre-login only) ============
+@app.route('/api/ads', methods=['GET'])
+@limiter.limit('120 per minute')
+def get_guest_ads():
+    """
+    Sponsored / display ads for the public job feed.
+    Returns an empty list when the request includes a valid session token.
+    """
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        token = auth.split(' ', 1)[1].strip()
+        if token and _decode_token(token):
+            return jsonify({'logged_in': True, 'ads': []})
+
+    page = request.args.get('page', 1, type=int)
+    slot = request.args.get('slot', 'feed', type=str)
+    per_kind = 1 if slot == 'sidebar' else 2
+    ads = guest_ads_for_page(page=page, per_kind=per_kind)
+    return jsonify({'logged_in': False, 'ads': ads})
+
 
 # ============ WHITE-LABEL ============
 @app.route('/api/whitelabel/config', methods=['GET'])
