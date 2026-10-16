@@ -96,12 +96,8 @@ class ScrapeScheduler:
         max_pages: int,
     ):
         if profile == "teaching_sponsorship" or source == "teaching_au":
-            import os
-
-            sources = ["nsw_jobfeed"]
-            if os.environ.get("SCRAPER_ALLOW_SEEK", "").lower() in ("1", "true", "yes"):
-                sources.append("seek")
             return fetch_teaching_sponsorship_jobs(
+                sources=["nsw_jobfeed", "seek_all_states"],
                 location=location,
                 max_pages_per_query=max_pages,
                 require_sponsorship=require_sponsorship,

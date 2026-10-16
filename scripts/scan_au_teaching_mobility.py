@@ -1,107 +1,112 @@
 #!/usr/bin/env python3
 """
-Scan Australia for current teaching roles with visa/sponsorship-style language.
+Scan all Australian states/territories for teaching roles with mobility language.
 
-Sources (default): NSW DET JobFeed. Optional: SEEK (--national) for other states/employers.
+Combines NSW DET JobFeed + per-state SEEK queries (education / visa / relocation wording).
 """
 import argparse
-import os
+import json
 import sys
 from collections import Counter
+
+import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from scrapers.mobility_language import (
-    mobility_snippet,
-    mobility_tags_for_job,
-)
-from scrapers.sources.nsw_jobfeed import search_nsw_jobfeed
-from scrapers.teaching_filters import is_teaching_role
-from scrapers.teaching_au import fetch_teaching_sponsorship_jobs
-
-
-def _state_from_location(loc: str) -> str:
-    loc = loc or ""
-    for code in ("NSW", "VIC", "QLD", "WA", "SA", "TAS", "NT", "ACT"):
-        if code in loc.upper():
-            return code
-    if "NSW" in loc or "New South Wales" in loc:
-        return "NSW"
-    return "AU/other"
+from scrapers.au_states import AU_STATES, STATE_CODES
+from scrapers.mobility_language import mobility_snippet, mobility_tags_for_job
+from scrapers.teaching_all_states import fetch_teaching_mobility_all_states
 
 
 def main():
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(description="All-states teaching mobility scan")
     p.add_argument(
-        "--national",
+        "--nsw-only",
         action="store_true",
-        help="Include SEEK AU (set SCRAPER_ALLOW_SEEK) for non-NSW employers",
+        help="Only NSW JobFeed (no per-state SEEK)",
     )
+    p.add_argument("--json", action="store_true", help="Print JSON summary")
     args = p.parse_args()
 
-    all_jobs = []
+    result = fetch_teaching_mobility_all_states(
+        include_nsw_jobfeed=True,
+        include_seek_by_state=not args.nsw_only,
+        require_mobility_language=True,
+        max_pages_per_query=1,
+    )
+    jobs = result["jobs"]
+    meta = result["meta"]
+    by_state = result["by_state"]
+
     tag_counter: Counter = Counter()
-    state_counter: Counter = Counter()
     visa_explicit = []
     incentive_only = []
 
-    feed = search_nsw_jobfeed(require_mobility_or_sponsor=True)
-    print("=== NSW Department of Education JobFeed ===")
-    print(f"Feed as at: {feed.get('feed_as_at')}")
-    print(f"Applications close: {feed.get('applications_close')}")
-    all_jobs.extend(feed.get("jobs") or [])
-
-    if args.national:
-        os.environ["SCRAPER_ALLOW_SEEK"] = "true"
-        seek_jobs = fetch_teaching_sponsorship_jobs(
-            sources=["seek"],
-            require_sponsorship=True,
-            australia_only=True,
-        )
-        print(f"\n=== SEEK Australia (teaching + mobility language) ===")
-        print(f"Matched: {len(seek_jobs)}")
-        all_jobs.extend(seek_jobs)
-
-    for job in all_jobs:
-        tags = mobility_tags_for_job(job)
-        if not tags:
-            tags = job.get("mobility_tags") or []
+    for job in jobs:
+        tags = job.get("mobility_tags") or mobility_tags_for_job(job)
         for t in tags:
             tag_counter[t] += 1
-        st = _state_from_location(job.get("location", ""))
-        state_counter[st] += 1
-        blob = (job.get("description") or "") + " " + (job.get("title") or "")
         if "visa_or_sponsor" in tags:
             visa_explicit.append(job)
         elif tags:
             incentive_only.append(job)
 
-    print("\n=== Summary: teaching-related mobility language (current sources) ===")
-    print(f"Total roles with mobility language: {len(all_jobs)}")
-    print(f"  Explicit visa/sponsor-style wording: {len(visa_explicit)}")
-    print(f"  Relocation/incentive/regional only: {len(incentive_only)}")
-    print(f"By tag: {dict(tag_counter)}")
-    print(f"By state/region: {dict(state_counter)}")
+    if args.json:
+        summary = {
+            "meta": meta,
+            "total": len(jobs),
+            "visa_explicit": len(visa_explicit),
+            "incentive_only": len(incentive_only),
+            "by_state": {k: len(v) for k, v in sorted(by_state.items())},
+            "tags": dict(tag_counter),
+        }
+        print(json.dumps(summary, indent=2))
+        return
 
-    print("\n--- Examples: explicit visa/sponsor wording ---")
-    for j in visa_explicit[:8]:
+    print("=== Australia — all states & territories ===")
+    if meta.get("nsw_feed_as_at"):
+        print(f"NSW JobFeed as at: {meta['nsw_feed_as_at']}")
+        print(f"NSW applications close: {meta.get('nsw_applications_close')}")
+    if not args.nsw_only:
+        print(f"Market search: {meta.get('seek_states_queried', 0)} states/territories via SEEK")
+
+    print(f"\nTotal roles (teaching + mobility language): {len(jobs)}")
+    print(f"  Explicit visa/sponsor wording: {len(visa_explicit)}")
+    print(f"  Relocation/incentives (typical public sector): {len(incentive_only)}")
+
+    print("\nBy state/territory:")
+    for code, _, name in AU_STATES:
+        n = len(by_state.get(code, []))
+        bar = "·" * min(n, 40)
+        print(f"  {code:3} {name:28} {n:4}  {bar}")
+    other = len(by_state.get("AU", []))
+    if other:
+        print(f"  AU  (unassigned)              {other:4}")
+
+    print(f"\nBy language tag: {dict(tag_counter)}")
+
+    print("\n--- Visa / sponsorship wording (any state) ---")
+    for j in visa_explicit[:12]:
         snip = mobility_snippet(j.get("description") or j.get("title") or "")
-        print(f"  • {j.get('title')[:65]} | {j.get('location')}")
+        print(f"  [{j.get('state_code')}] {j.get('title')[:60]} | {j.get('location')}")
         if snip:
-            print(f"      …{snip}…")
+            print(f"       …{snip}…")
 
-    print("\n--- Examples: relocation / recruitment incentives (common in public schools) ---")
+    print("\n--- Relocation / incentives (sample) ---")
     for j in incentive_only[:6]:
+        if j.get("state_code") != "NSW" and j.get("source") != "nsw_jobfeed":
+            continue
         snip = mobility_snippet(j.get("description") or "")
-        print(f"  • {j.get('title')[:65]} | {j.get('location')}")
+        print(f"  [NSW] {j.get('title')[:60]}")
         if snip:
-            print(f"      …{snip}…")
+            print(f"       …{snip}…")
 
-    if not args.national:
+    empty_states = [code for code, _, name in AU_STATES if not by_state.get(code)]
+    if empty_states and not args.nsw_only:
         print(
-            "\nNote: NSW JobFeed covers NSW public schools only. "
-            "Run with --national to include SEEK for VIC/QLD/WA private & sector employers."
+            f"\nNo mobility-keyword matches this run in: {', '.join(empty_states)}. "
+            "Listings may still exist on state DET portals or under different wording."
         )
 
 

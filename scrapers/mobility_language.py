@@ -40,6 +40,24 @@ REGIONAL_PROGRAM_RE = re.compile(
     re.I,
 )
 
+NEGATIVE_SPONSOR_RE = re.compile(
+    r"\b("
+    r"sponsor(?:ship)?\s+not\s+available|no\s+sponsor(?:ship)?|"
+    r"unable\s+to\s+(?:offer\s+)?sponsor|without\s+sponsor(?:ship)?|"
+    r"does\s+not\s+(?:offer|provide)\s+sponsor"
+    r")\b",
+    re.I,
+)
+
+POSITIVE_SPONSOR_RE = re.compile(
+    r"\b("
+    r"sponsor(?:ship)?\s+available|visa\s+sponsor(?:ship)?|"
+    r"sponsorship\s+may\s+be\s+available|sponsorship\s+pathways?|"
+    r"sponsorship\s+provided|sponsorship\s+offered"
+    r")\b",
+    re.I,
+)
+
 
 def classify_mobility_text(text: str) -> List[str]:
     """Return human-readable tags for matched mobility language."""
@@ -47,7 +65,8 @@ def classify_mobility_text(text: str) -> List[str]:
         return []
     tags: List[str] = []
     if VISA_SPONSOR_RE.search(text):
-        tags.append("visa_or_sponsor")
+        if POSITIVE_SPONSOR_RE.search(text) or not NEGATIVE_SPONSOR_RE.search(text):
+            tags.append("visa_or_sponsor")
     if RELOCATION_INCENTIVE_RE.search(text):
         tags.append("relocation_or_incentive")
     if REGIONAL_PROGRAM_RE.search(text):

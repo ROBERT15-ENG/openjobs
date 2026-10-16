@@ -27,7 +27,7 @@ def trigger_scrape():
     Trigger a scrape job.
     
     Request body (JSON):
-        source: 'teaching_au' (NSW JobFeed; SEEK only if SCRAPER_ALLOW_SEEK), 'seek', 'indeed', 'linkedin', or 'all'
+        source: 'teaching_au' (all states: NSW JobFeed + per-state search), 'seek', 'indeed', 'linkedin', or 'all'
         profile: optional 'teaching_sponsorship' (same as teaching_au)
         query: Job search query (default: teacher visa sponsorship for teaching_au)
         location: Location to search (default: 'Australia')
