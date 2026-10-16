@@ -17,3 +17,4 @@ All notable changes to OpenJobs follow [Semantic Versioning](https://semver.org/
 
 ### Security
 - SSRF helper `api/http_safety.py` for outbound URL allowlisting
+- Lock down admin/CRM/applications APIs; fix IDOR on dashboard/saved jobs; production JWT guard (`api/security.py`) — see `notes/SECURITY_AUDIT.md`

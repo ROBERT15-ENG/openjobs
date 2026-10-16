@@ -24,6 +24,9 @@ from platform_db import apply_pending_migrations, check_db_ready
 from platform_flags import feature_enabled, all_flags
 from platform_idempotency import get_idempotency_key, load_stored_response, store_response
 from platform_cache import bump_jobs_list_cache, jobs_list_generation
+from security import enforce_production_secrets, require_admin, allowed_registration_role
+
+enforce_production_secrets()
 
 # SEO infrastructure
 from seo_utils import make_job_slug, parse_job_slug, job_canonical_url, should_noindex
@@ -86,6 +89,8 @@ def _platform_security_headers(response):
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'",
         )
+    if os.environ.get('FLASK_ENV') == 'production':
+        response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
     return response
 
 APP_URL = os.environ.get('APP_URL', 'http://localhost:5700')
@@ -236,7 +241,7 @@ def register():
     name = data.get('name', '').strip()
     email = data.get('email', '').strip()
     password = data.get('password', '')
-    role = data.get('role', 'user')  # Can be 'user' or 'employer'
+    role = allowed_registration_role(data.get('role', 'user'))
     
     # Validate
     if not name or not email or not password:
@@ -1266,9 +1271,26 @@ def update_user_profile():
 
 # ============ APPLICATIONS ============
 @app.route('/api/applications', methods=['GET'])
+@require_auth
 def get_applications():
     db = get_db()
-    apps = db.execute("SELECT * FROM applications ORDER BY applied_at DESC").fetchall()
+    if request.user_role == 'admin':
+        apps = db.execute("SELECT * FROM applications ORDER BY applied_at DESC LIMIT 500").fetchall()
+    elif request.user_role == 'employer':
+        apps = db.execute(
+            """
+            SELECT a.* FROM applications a
+            JOIN jobs j ON j.id = a.job_id
+            WHERE j.employer_id = ?
+            ORDER BY a.applied_at DESC
+            """,
+            (request.employer_id,),
+        ).fetchall()
+    else:
+        apps = db.execute(
+            "SELECT * FROM applications WHERE user_id = ? ORDER BY applied_at DESC",
+            (request.user_id,),
+        ).fetchall()
     return jsonify([dict(a) for a in apps])
 
 @app.route('/api/applications', methods=['POST'])
@@ -1694,18 +1716,24 @@ def list_regions():
 
 # ============ CRM ============
 @app.route('/api/crm/companies', methods=['GET'])
+@require_auth
+@require_admin
 def get_crm_companies():
     db = get_db()
     companies = db.execute("SELECT * FROM crm_companies ORDER BY created_at DESC").fetchall()
     return jsonify({'success': True, 'companies': [dict(c) for c in companies]})
 
 @app.route('/api/crm/contacts', methods=['GET'])
+@require_auth
+@require_admin
 def get_crm_contacts():
     db = get_db()
     contacts = db.execute("SELECT * FROM crm_contacts ORDER BY created_at DESC").fetchall()
     return jsonify({'success': True, 'contacts': [dict(c) for c in contacts]})
 
 @app.route('/api/crm/pipeline', methods=['GET'])
+@require_auth
+@require_admin
 def get_crm_pipeline():
     db = get_db()
     deals = db.execute("SELECT * FROM crm_pipeline ORDER BY created_at DESC").fetchall()
@@ -1713,6 +1741,8 @@ def get_crm_pipeline():
 
 # ============ ADMIN ============
 @app.route('/api/admin/stats', methods=['GET'])
+@require_auth
+@require_admin
 def admin_stats():
     db = get_db()
 
@@ -1997,11 +2027,12 @@ def search_all():
     return jsonify({'jobs': [dict(j) for j in jobs], 'companies': [dict(c) for c in companies], 'count': len(jobs) + len(companies)})
 
 @app.route('/api/recommendations', methods=['GET'])
+@require_auth
 def recommendations():
     """Get job recommendations for a user based on skills + resume_text."""
-    user_id = request.args.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'user_id required'}), 400
+    user_id = request.args.get('user_id') or request.user_id
+    if str(user_id) != str(request.user_id) and request.user_role != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
 
     db = get_db()
     user = db.execute("SELECT skills, resume_text FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -2059,10 +2090,11 @@ def trending_jobs():
 
 # ============ USER DASHBOARD STATS ============
 @app.route('/api/dashboard/seeker', methods=['GET'])
+@require_auth
 def seeker_dashboard():
     """Stats for job seeker dashboard"""
     db = get_db()
-    user_id = request.args.get('user_id', 1, type=int)
+    user_id = request.user_id
     total_jobs = db.execute("SELECT COUNT(*) FROM jobs WHERE is_active = 1").fetchone()[0]
     total_applications = db.execute("SELECT COUNT(*) FROM applications WHERE user_id = ?", (user_id,)).fetchone()[0]
     pending_apps = db.execute("SELECT COUNT(*) FROM applications WHERE user_id = ? AND status = 'pending'", (user_id,)).fetchone()[0]
@@ -2129,9 +2161,10 @@ def seeker_dashboard():
     })
 
 @app.route('/api/saved_jobs', methods=['GET'])
+@require_auth
 def get_saved_jobs():
     db = get_db()
-    user_id = request.args.get('user_id', 1, type=int)
+    user_id = request.user_id
     saved = db.execute("""
         SELECT j.*, sj.saved_at FROM jobs j
         JOIN saved_jobs sj ON j.id = sj.job_id
@@ -2141,40 +2174,53 @@ def get_saved_jobs():
     return jsonify([dict(s) for s in saved])
 
 @app.route('/api/saved_jobs', methods=['POST'])
+@require_auth
 def save_job():
-    data = request.json
+    data = request.json or {}
     db = get_db()
     db.execute("INSERT OR IGNORE INTO saved_jobs (user_id, job_id, saved_at) VALUES (?, ?, ?)",
-               (data.get('user_id', 1), data.get('job_id'), datetime.datetime.now().isoformat()))
+               (request.user_id, data.get('job_id'), datetime.datetime.now().isoformat()))
     db.commit()
     db.close()
     return jsonify({'success': True})
 
 @app.route('/api/saved_jobs', methods=['DELETE'])
+@require_auth
 def unsave_job():
-    data = request.json
+    data = request.json or {}
     db = get_db()
     db.execute("DELETE FROM saved_jobs WHERE user_id = ? AND job_id = ?",
-               (data.get('user_id', 1), data.get('job_id')))
+               (request.user_id, data.get('job_id')))
     db.commit()
     db.close()
     return jsonify({'success': True})
 
 @app.route('/api/applications/<int:app_id>', methods=['PATCH'])
+@require_auth
 def update_application(app_id):
-    auth = request.headers.get('Authorization', '')
-    if not auth.startswith('Bearer '):
-        return jsonify({'error': 'Unauthorized'}), 401
     data = request.json or {}
     new_status = data.get('status')
     VALID_STATUSES = ['pending', 'reviewing', 'interview', 'offer', 'rejected', 'withdrawn']
     if new_status and new_status not in VALID_STATUSES:
         return jsonify({'error': f'Invalid status. Must be one of: {VALID_STATUSES}'}), 400
     db = get_db()
-    app = db.execute('SELECT id FROM applications WHERE id = ?', (app_id,)).fetchone()
+    app = db.execute(
+        'SELECT a.id, a.user_id, j.employer_id FROM applications a '
+        'JOIN jobs j ON j.id = a.job_id WHERE a.id = ?',
+        (app_id,),
+    ).fetchone()
     if not app:
         db.close()
         return jsonify({'error': 'Application not found'}), 404
+    if request.user_role == 'admin':
+        pass
+    elif request.user_role == 'employer' and app['employer_id'] == request.employer_id:
+        pass
+    elif app['user_id'] == request.user_id and new_status in ('withdrawn',):
+        pass
+    else:
+        db.close()
+        return jsonify({'error': 'Forbidden'}), 403
     db.execute('UPDATE applications SET status = ? WHERE id = ?', (new_status, app_id))
     db.commit()
     updated = db.execute('SELECT * FROM applications WHERE id = ?', (app_id,)).fetchone()
@@ -2182,16 +2228,30 @@ def update_application(app_id):
     return jsonify({'success': True, 'application': dict(updated)})
 
 @app.route('/api/applications/<int:app_id>', methods=['DELETE'])
+@require_auth
 def delete_application(app_id):
     db = get_db()
+    app = db.execute(
+        'SELECT a.user_id, j.employer_id FROM applications a JOIN jobs j ON j.id = a.job_id WHERE a.id = ?',
+        (app_id,),
+    ).fetchone()
+    if not app:
+        db.close()
+        return jsonify({'error': 'Not found'}), 404
+    if request.user_role != 'admin' and app['user_id'] != request.user_id:
+        db.close()
+        return jsonify({'error': 'Forbidden'}), 403
     db.execute("DELETE FROM applications WHERE id = ?", (app_id,))
     db.commit()
     db.close()
     return jsonify({'success': True})
 
 @app.route('/api/user/profile', methods=['GET'])
+@require_auth
 def get_user_profile():
-    user_id = request.args.get('user_id', 1, type=int)
+    user_id = request.user_id
+    if request.user_role == 'admin' and request.args.get('user_id'):
+        user_id = request.args.get('user_id', type=int)
     db = get_db()
     user = db.execute("SELECT id, name, email, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
     db.close()
