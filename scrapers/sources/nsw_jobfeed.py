@@ -145,18 +145,12 @@ def search_nsw_jobfeed(
             "teaser": chunk[:300],
         }
         if require_mobility_or_sponsor:
-            blob = chunk.lower()
-            if not any(
-                k in blob
-                for k in (
-                    "visa",
-                    "sponsor",
-                    "relocation",
-                    "recruitment bonus",
-                    "international",
-                )
-            ):
+            from scrapers.mobility_language import classify_mobility_text
+
+            tags = classify_mobility_text(chunk)
+            if not tags:
                 continue
+            job["mobility_tags"] = tags
         jobs.append(job)
 
     return {

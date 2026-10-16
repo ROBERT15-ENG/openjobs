@@ -12,10 +12,18 @@ TEACHING_RE = re.compile(
     re.I,
 )
 
+from scrapers.mobility_language import (
+    RELOCATION_INCENTIVE_RE,
+    VISA_SPONSOR_RE,
+    has_mobility_language,
+)
+
 SPONSORSHIP_RE = re.compile(
     r"\b("
     r"visa|sponsor(?:ship)?|482|186|494|187|relocation|work\s+permit|"
-    r"international\s+candidate|overseas\s+applicant|migrat"
+    r"international\s+candidate|overseas\s+applicant|migrat|"
+    r"relocation\s+support|recruitment\s+bonus|nomination|tss|"
+    r"overseas\s+trained|internationally\s+qualified"
     r")\b",
     re.I,
 )
@@ -76,7 +84,10 @@ def is_teaching_role(job: Dict[str, Any]) -> bool:
 
 
 def mentions_sponsorship(job: Dict[str, Any]) -> bool:
-    return bool(SPONSORSHIP_RE.search(_text_blob(job)))
+    blob = _text_blob(job)
+    if SPONSORSHIP_RE.search(blob):
+        return True
+    return has_mobility_language(job)
 
 
 def is_australia_job(job: Dict[str, Any]) -> bool:
