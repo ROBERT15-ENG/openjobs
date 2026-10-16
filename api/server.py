@@ -25,6 +25,13 @@ from platform_flags import feature_enabled, all_flags
 from platform_idempotency import get_idempotency_key, load_stored_response, store_response
 from platform_cache import bump_jobs_list_cache, jobs_list_generation
 from security import enforce_production_secrets, require_admin, allowed_registration_role
+from data_protection import (
+    public_user,
+    public_application,
+    admin_recent_user,
+    safe_log_message,
+    scrub_row,
+)
 
 enforce_production_secrets()
 
@@ -91,6 +98,10 @@ def _platform_security_headers(response):
         )
     if os.environ.get('FLASK_ENV') == 'production':
         response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    response.headers.setdefault(
+        'Permissions-Policy',
+        'geolocation=(), microphone=(), camera=(), payment=()',
+    )
     return response
 
 APP_URL = os.environ.get('APP_URL', 'http://localhost:5700')
@@ -555,8 +566,8 @@ def me():
         db.close()
         if not user:
             return jsonify({'error': 'User not found'}), 404
-        user_dict = dict(user)
-        user_dict['employer_id'] = user_dict['id'] if user_dict['role'] == 'employer' else None
+        user_dict = public_user(dict(user), for_self=True)
+        user_dict['employer_id'] = user_dict['id'] if user_dict.get('role') == 'employer' else None
         return jsonify({'user': user_dict})
     except Exception as e:
         return jsonify({'error': 'Invalid token'}), 401
@@ -1291,7 +1302,17 @@ def get_applications():
             "SELECT * FROM applications WHERE user_id = ? ORDER BY applied_at DESC",
             (request.user_id,),
         ).fetchall()
-    return jsonify([dict(a) for a in apps])
+    out = []
+    for a in apps:
+        row = public_application(
+            dict(a),
+            viewer_role=request.user_role,
+            viewer_id=request.user_id,
+            employer_id=getattr(request, 'employer_id', None) if request.user_role == 'employer' else None,
+        )
+        if not row.get('error'):
+            out.append(row)
+    return jsonify(out)
 
 @app.route('/api/applications', methods=['POST'])
 @require_auth
@@ -1454,7 +1475,15 @@ def get_kanban(job_id):
     board = {s: [] for s in stages}
     for a in apps:
         stage = a['status'] if a['status'] in stages else 'applied'
-        board[stage].append(dict(a))
+        card = public_application(
+            dict(a),
+            viewer_role=request.user_role,
+            viewer_id=request.user_id,
+            employer_id=request.employer_id,
+        )
+        if card.get('error'):
+            continue
+        board[stage].append(card)
 
     return jsonify({'success': True, 'board': board})
 
@@ -1802,8 +1831,8 @@ def admin_stats():
         'top_employers': [dict(r) for r in top_employers],
         'by_category': [dict(r) for r in by_category],
         'by_work_type': [dict(r) for r in by_work_type],
-        'recent_applications': [dict(r) for r in recent_apps],
-        'recent_signups': [dict(r) for r in recent_signups],
+        'recent_applications': [admin_recent_user(dict(r)) for r in recent_apps],
+        'recent_signups': [admin_recent_user(dict(r)) for r in recent_signups],
     })
 
 
@@ -2253,11 +2282,146 @@ def get_user_profile():
     if request.user_role == 'admin' and request.args.get('user_id'):
         user_id = request.args.get('user_id', type=int)
     db = get_db()
-    user = db.execute("SELECT id, name, email, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = db.execute(
+        "SELECT id, name, email, role, skills, phone, company, preferred_location, experience, created_at, kyc_status "
+        "FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
     db.close()
     if not user:
         return jsonify({'error': 'User not found'}), 404
-    return jsonify(dict(user))
+    for_self = user_id == request.user_id or request.user_role == 'admin'
+    return jsonify(public_user(dict(user), for_self=for_self))
+
+
+@app.route('/api/user/privacy', methods=['GET'])
+@require_auth
+def get_privacy_prefs():
+    db = get_db()
+    try:
+        row = db.execute(
+            "SELECT marketing_opt_in, analytics_opt_in, updated_at FROM user_privacy WHERE user_id = ?",
+            (request.user_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        row = None
+    db.close()
+    if not row:
+        return jsonify({
+            'marketing_opt_in': False,
+            'analytics_opt_in': False,
+            'updated_at': None,
+        })
+    return jsonify({
+        'marketing_opt_in': bool(row['marketing_opt_in']),
+        'analytics_opt_in': bool(row['analytics_opt_in']),
+        'updated_at': row['updated_at'],
+    })
+
+
+@app.route('/api/user/privacy', methods=['PATCH'])
+@require_auth
+@limiter.limit('20 per hour')
+def update_privacy_prefs():
+    data = request.json or {}
+    marketing = 1 if data.get('marketing_opt_in') else 0
+    analytics = 1 if data.get('analytics_opt_in') else 0
+    now = datetime.datetime.utcnow().isoformat() + 'Z'
+    db = get_db()
+    try:
+        db.execute(
+            """
+            INSERT INTO user_privacy (user_id, marketing_opt_in, analytics_opt_in, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                marketing_opt_in = excluded.marketing_opt_in,
+                analytics_opt_in = excluded.analytics_opt_in,
+                updated_at = excluded.updated_at
+            """,
+            (request.user_id, marketing, analytics, now),
+        )
+        db.commit()
+    except sqlite3.OperationalError:
+        db.close()
+        return jsonify({'error': 'Privacy settings not available; run migrations.'}), 503
+    db.close()
+    return jsonify({'success': True, 'marketing_opt_in': bool(marketing), 'analytics_opt_in': bool(analytics)})
+
+
+@app.route('/api/user/data-export', methods=['GET'])
+@require_auth
+@limiter.limit('5 per day')
+def export_user_data():
+    """GDPR-style portable export for the authenticated user."""
+    db = get_db()
+    uid = request.user_id
+    user = db.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+    apps = db.execute("SELECT * FROM applications WHERE user_id = ?", (uid,)).fetchall()
+    saved = db.execute(
+        "SELECT sj.saved_at, j.id, j.title, j.company, j.location FROM saved_jobs sj "
+        "JOIN jobs j ON j.id = sj.job_id WHERE sj.user_id = ?",
+        (uid,),
+    ).fetchall()
+    try:
+        privacy = db.execute(
+            "SELECT marketing_opt_in, analytics_opt_in, updated_at FROM user_privacy WHERE user_id = ?",
+            (uid,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        privacy = None
+    db.close()
+    if not user:
+        return jsonify({'error': 'Not found'}), 404
+    payload = {
+        'exported_at': datetime.datetime.utcnow().isoformat() + 'Z',
+        'user': public_user(dict(user), for_self=True, include_resume=True),
+        'applications': [scrub_row(dict(a)) for a in apps],
+        'saved_jobs': [dict(s) for s in saved],
+        'privacy': dict(privacy) if privacy else None,
+    }
+    return jsonify(payload)
+
+
+@app.route('/api/user/delete-account', methods=['POST'])
+@require_auth
+@limiter.limit('3 per day')
+def delete_user_account():
+    data = request.json or {}
+    if not data.get('confirm'):
+        return jsonify({'error': 'Send {"confirm": true} to delete your account.'}), 400
+    db = get_db()
+    uid = request.user_id
+    anon_email = f'deleted-{uid}@deleted.openjobs.local'
+    db.execute(
+        """
+        UPDATE users SET
+            name = 'Deleted User',
+            email = ?,
+            password_hash = '',
+            phone = NULL,
+            resume_text = NULL,
+            skills = NULL,
+            address = NULL,
+            cv_link = NULL,
+            confirm_token = NULL,
+            reset_token = NULL,
+            google_id = NULL,
+            kyc_status = 'deleted'
+        WHERE id = ?
+        """,
+        (anon_email, uid),
+    )
+    db.execute("DELETE FROM saved_jobs WHERE user_id = ?", (uid,))
+    try:
+        db.execute("DELETE FROM user_privacy WHERE user_id = ?", (uid,))
+    except sqlite3.OperationalError:
+        pass
+    db.commit()
+    db.close()
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        _block_token(auth.split(' ', 1)[1])
+    return jsonify({'success': True, 'message': 'Account anonymized. Applications may be retained for employer records.'})
 
 
 # ── EMPLOYER AUTH & DASHBOARD ─────────────────────────────────────────────────
@@ -2393,7 +2557,17 @@ def employer_applications():
     qry += " ORDER BY a.applied_at DESC"
     apps = db.execute(qry, params).fetchall()
     db.close()
-    return jsonify({'applications': [dict(a) for a in apps]})
+    serialized = []
+    for a in apps:
+        row = public_application(
+            dict(a),
+            viewer_role=request.user_role,
+            viewer_id=request.user_id,
+            employer_id=emp_id,
+        )
+        if not row.get('error'):
+            serialized.append(row)
+    return jsonify({'applications': serialized})
 
 
 # ── RESUME TEXT EXTRACTION ─────────────────────────────────────────────────
