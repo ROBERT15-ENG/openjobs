@@ -23,10 +23,17 @@
 | [../notes/DATA_PROTECTION.md](../notes/DATA_PROTECTION.md) | Data protection |
 | [../notes/SCRAPERS_TEACHING_AU.md](../notes/SCRAPERS_TEACHING_AU.md) | AU teaching scrapers |
 
-## Regenerate the summary PDF
+## PDF exports
 
 ```bash
+# Six-document pack (01-06)
+python scripts/compile_project_pack_pdf.py
+
+# Shorter project overview
 python scripts/generate_project_documentation_pdf.py
 ```
 
-Output: `docs/OpenJobs_Project_Documentation.pdf`.
+Outputs:
+
+- `docs/OpenJobs_Project_Pack.pdf` — full six-document compile
+- `docs/OpenJobs_Project_Documentation.pdf` — consolidated overview
