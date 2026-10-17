@@ -70,6 +70,21 @@ OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
 
 DB_PATH = os.environ.get('DATABASE_URL', os.path.join(os.path.dirname(__file__), '..', 'jobs.db'))
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from legal_compliance import (
+    init_legal_schema,
+    render_legal_html,
+    export_user_data,
+    delete_user_account,
+    record_registration_consent,
+)
+from legal_config import PRIVACY_POLICY_VERSION, TERMS_VERSION
+
+if isinstance(DB_PATH, str) and DB_PATH.endswith('.db'):
+    init_legal_schema(DB_PATH)
+
+PUBLIC_DIR = os.path.join(os.path.dirname(__file__), '..', 'public')
+
 def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(DB_PATH)
@@ -223,6 +238,9 @@ def register():
         return jsonify({'error': 'Password must contain at least 1 lowercase letter'}), 400
     if not re.search(r'\d', password):
         return jsonify({'error': 'Password must contain at least 1 number'}), 400
+    if not data.get('terms_accepted'):
+        return jsonify({'error': 'You must accept the Terms of Service and Privacy Policy'}), 400
+    marketing_consent = bool(data.get('marketing_consent'))
     db = get_db()
     existing = db.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
     if existing:
@@ -232,6 +250,8 @@ def register():
                (name, email, hash_password(password), role, datetime.datetime.now().isoformat()))
     db.commit()
     user_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    record_registration_consent(db, user_id, marketing_consent)
+    db.commit()
     db.close()
 
     # Generate email confirmation token
@@ -301,6 +321,9 @@ def google_auth():
     google_token = data.get('token')
     if not google_token:
         return jsonify({'error': 'Google token required'}), 400
+    if not data.get('terms_accepted'):
+        return jsonify({'error': 'You must accept the Terms of Service and Privacy Policy'}), 400
+    marketing_consent = bool(data.get('marketing_consent'))
 
     try:
         from google.oauth2 import id_token as gid_token
@@ -332,6 +355,8 @@ def google_auth():
             )
             db.commit()
             uid = cur.lastrowid
+            record_registration_consent(db, uid, marketing_consent)
+            db.commit()
         except Exception as e:
             db.close()
             if 'UNIQUE' in str(e):
@@ -526,6 +551,71 @@ def me():
     except Exception as e:
         return jsonify({'error': 'Invalid token'}), 401
 
+
+@app.route('/api/legal/versions', methods=['GET'])
+def legal_versions():
+    return jsonify({
+        'privacy_policy_version': PRIVACY_POLICY_VERSION,
+        'terms_version': TERMS_VERSION,
+    })
+
+
+@app.route('/api/account/export', methods=['GET'])
+@require_auth
+def account_export():
+    db = get_db()
+    payload = export_user_data(db, request.user_id)
+    db.close()
+    if not payload:
+        return jsonify({'error': 'User not found'}), 404
+    return jsonify(payload)
+
+
+@app.route('/api/account', methods=['DELETE'])
+@require_auth
+def account_delete():
+    data = request.json or {}
+    if not data.get('confirm'):
+        return jsonify({'error': 'Set confirm: true to delete your account'}), 400
+    confirm_email = (data.get('email') or '').strip().lower()
+    db = get_db()
+    user = db.execute('SELECT email FROM users WHERE id = ?', (request.user_id,)).fetchone()
+    if not user:
+        db.close()
+        return jsonify({'error': 'User not found'}), 404
+    if confirm_email != (user['email'] or '').strip().lower():
+        db.close()
+        return jsonify({'error': 'Email confirmation does not match'}), 400
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        _block_token(auth.split(' ', 1)[1])
+    ok = delete_user_account(
+        db, request.user_id,
+        upload_dir=os.path.join(os.path.dirname(__file__), '..', 'uploads'),
+        kyc_dir=os.path.join(os.path.dirname(__file__), '..', 'kyc_uploads'),
+    )
+    db.close()
+    if not ok:
+        return jsonify({'error': 'Deletion failed'}), 500
+    return jsonify({'success': True, 'message': 'Account deleted'})
+
+
+@app.route('/api/account/privacy', methods=['PATCH'])
+@require_auth
+def account_privacy_prefs():
+    data = request.json or {}
+    if 'marketing_consent' not in data:
+        return jsonify({'error': 'marketing_consent required'}), 400
+    marketing = 1 if data.get('marketing_consent') else 0
+    now = datetime.datetime.utcnow().isoformat() + 'Z'
+    db = get_db()
+    db.execute(
+        'UPDATE users SET marketing_consent = ?, marketing_consent_at = ? WHERE id = ?',
+        (marketing, now if marketing else None, request.user_id),
+    )
+    db.commit()
+    db.close()
+    return jsonify({'success': True, 'marketing_consent': bool(marketing)})
 
 
 # ── Upload security ───────────────────────────────────────────────────────────
@@ -1770,13 +1860,51 @@ def employer_page():
 def admin_page():
     return open(os.path.join(TEMPLATES_DIR, 'admin.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'admin.html')) else jsonify({'admin':True})
 
+@app.route('/public/<path:filename>')
+def public_assets(filename):
+    safe = os.path.normpath(filename).lstrip(os.sep)
+    if '..' in safe.split(os.sep):
+        return jsonify({'error': 'Not found'}), 404
+    path = os.path.join(PUBLIC_DIR, safe)
+    if not os.path.isfile(path):
+        return jsonify({'error': 'Not found'}), 404
+    if safe.endswith('.css'):
+        return open(path, encoding='utf-8').read(), 200, {'Content-Type': 'text/css; charset=utf-8'}
+    if safe.endswith('.js'):
+        return open(path, encoding='utf-8').read(), 200, {'Content-Type': 'application/javascript; charset=utf-8'}
+    return open(path, 'rb').read()
+
+
 @app.route('/privacy')
 def privacy_page():
-    return open(os.path.join(TEMPLATES_DIR, 'privacy.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'privacy.html')) else jsonify({'privacy':True})
+    path = os.path.join(TEMPLATES_DIR, 'privacy.html')
+    if os.path.exists(path):
+        return render_legal_html(TEMPLATES_DIR, 'privacy.html')
+    return jsonify({'privacy': True})
+
 
 @app.route('/terms')
 def terms_page():
-    return open(os.path.join(TEMPLATES_DIR, 'terms.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'terms.html')) else jsonify({'terms':True})
+    path = os.path.join(TEMPLATES_DIR, 'terms.html')
+    if os.path.exists(path):
+        return render_legal_html(TEMPLATES_DIR, 'terms.html')
+    return jsonify({'terms': True})
+
+
+@app.route('/cookies')
+def cookies_page():
+    path = os.path.join(TEMPLATES_DIR, 'cookies.html')
+    if os.path.exists(path):
+        return render_legal_html(TEMPLATES_DIR, 'cookies.html')
+    return jsonify({'cookies': True})
+
+
+@app.route('/licenses')
+def licenses_page():
+    path = os.path.join(TEMPLATES_DIR, 'licenses.html')
+    if os.path.exists(path):
+        return render_legal_html(TEMPLATES_DIR, 'licenses.html')
+    return jsonify({'licenses': True})
 
 # ============ CAD API ============
 import ezdxf
@@ -2080,6 +2208,9 @@ def register_employer():
         return jsonify({'error': 'Password must contain at least 1 lowercase letter'}), 400
     if not re.search(r'\d', password):
         return jsonify({'error': 'Password must contain at least 1 number'}), 400
+    if not data.get('terms_accepted'):
+        return jsonify({'error': 'You must accept the Terms of Service and Privacy Policy'}), 400
+    marketing_consent = bool(data.get('marketing_consent'))
     db = get_db()
     if db.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone():
         db.close()
@@ -2090,6 +2221,8 @@ def register_employer():
     )
     db.commit()
     user_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    record_registration_consent(db, user_id, marketing_consent)
+    db.commit()
     db.close()
     token_payload = {
         'user_id': user_id, 'email': email, 'role': 'employer',

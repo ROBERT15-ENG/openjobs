@@ -38,6 +38,8 @@ STATIC_PAGES = [
     {'loc': '/register',  'priority': '0.3', 'changefreq': 'monthly'},
     {'loc': '/privacy',   'priority': '0.3', 'changefreq': 'yearly'},
     {'loc': '/terms',     'priority': '0.3', 'changefreq': 'yearly'},
+    {'loc': '/cookies',   'priority': '0.2', 'changefreq': 'yearly'},
+    {'loc': '/licenses',  'priority': '0.2', 'changefreq': 'yearly'},
 ]
 
 def generate_static_sitemap():
