@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy — {{ENTITY_NAME}}</title>
+  <meta name="description" content="Privacy Policy for {{ENTITY_NAME}} job seekers and employers in Australia and Kenya.">
+  <link rel="stylesheet" href="/public/legal.css">
+</head>
+<body>
+<div class="legal-wrap">
+  <nav class="legal-nav">
+    <a href="/">Home</a>
+    <a href="/terms">Terms</a>
+    <a href="/cookies">Cookies</a>
+    <a href="/licenses">Open-source licences</a>
+  </nav>
+
+  <h1>Privacy Policy</h1>
+  <p class="legal-meta">Version {{PRIVACY_VERSION}} · Effective {{EFFECTIVE_DATE}} · {{ENTITY_NAME}}</p>
+
+  <div class="legal-box">
+    <strong>Who we are.</strong> {{ENTITY_NAME}} operates a job matching platform serving users primarily in
+    <strong>Australia</strong> ({{ENTITY_AU}}) and <strong>Kenya</strong> ({{ENTITY_KE}}).
+    For privacy enquiries contact <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>.
+  </div>
+
+  <h2 id="scope">1. Scope</h2>
+  <p>This policy explains how we collect, use, disclose, store, and protect personal information when you use
+    {{APP_URL}} as a job seeker, employer, or visitor. It is designed to align with:</p>
+  <ul>
+    <li>Australia — <em>Privacy Act 1988</em> (Cth) and the Australian Privacy Principles (APPs), including the Notifiable Data Breaches scheme.</li>
+    <li>Kenya — <em>Data Protection Act, 2019</em> and regulations issued by the Office of the Data Protection Commissioner (ODPC).</li>
+  </ul>
+
+  <h2 id="data">2. Personal information we collect</h2>
+  <ul>
+    <li><strong>Account data</strong> — name, email, password hash, role (seeker/employer), sign-in method.</li>
+    <li><strong>Profile &amp; CV</strong> — resume text, skills, location, phone, work preferences, uploaded documents.</li>
+    <li><strong>Applications</strong> — jobs applied to, cover notes, application status, ATS-related scores.</li>
+    <li><strong>Employer data</strong> — company name, job listings, applicant pipeline data you access lawfully.</li>
+    <li><strong>Verification (KYC)</strong> — where enabled, identity document metadata and uploads you provide.</li>
+    <li><strong>Technical data</strong> — IP address, device/browser type, security logs, rate-limit counters.</li>
+    <li><strong>Payment metadata</strong> — processed by Stripe; we do not store full card numbers.</li>
+    <li><strong>Communications</strong> — support messages and email delivery logs.</li>
+  </ul>
+
+  <h2 id="basis">3. Legal basis / grounds for processing</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:0.9rem">
+    <tr style="border-bottom:1px solid var(--legal-border)"><th align="left">Purpose</th><th align="left">Ground</th></tr>
+    <tr><td>Provide accounts, job search, applications</td><td>Contract / service delivery</td></tr>
+    <tr><td>Match candidates to roles (including automated scoring)</td><td>Contract; legitimate interests with safeguards</td></tr>
+    <tr><td>Security, fraud prevention, abuse detection</td><td>Legitimate interests; legal obligations</td></tr>
+    <tr><td>Marketing emails about OpenJobs</td><td><strong>Consent</strong> (opt-in only)</td></tr>
+    <tr><td>Compliance with law</td><td>Legal obligation</td></tr>
+  </table>
+
+  <h2 id="ai">4. Automated processing &amp; AI</h2>
+  <p>We may use automated tools (including local or hosted language models such as Ollama) to extract skills from
+    resumes and score job fit. Resume content is treated as <strong>untrusted user data</strong>; we apply technical
+    controls to reduce manipulation (prompt-injection) risk. Automated scores are advisory — employers make hiring decisions.</p>
+  <p>You may contact us to request meaningful information about automated decisions that significantly affect you,
+    consistent with applicable law in your country.</p>
+
+  <h2 id="share">5. Who we share information with</h2>
+  <ul>
+    <li><strong>Employers</strong> — when you apply or make your profile visible, relevant application data is shared.</li>
+    <li><strong>Service providers (processors)</strong> — hosting, email (SMTP/SendGrid), payments (Stripe), optional Telegram notifications, and AI infrastructure where used.</li>
+    <li><strong>Authorities</strong> — when required by law or to protect rights and safety.</li>
+  </ul>
+  <p>We do not sell personal information. Cross-border disclosure may occur (e.g. Australian users on infrastructure
+    located outside Australia, or Kenyan users on regional cloud). We take reasonable steps to ensure overseas recipients
+    handle information consistently with this policy and applicable law.</p>
+
+  <h2 id="dpa">6. Data processing agreements</h2>
+  <p>We use written or standard contractual terms with subprocessors where required. A current subprocessor list is
+    available on request at <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>. Material changes will be reflected
+    in an updated policy version.</p>
+
+  <h2 id="retention">7. Data retention</h2>
+  <ul>
+    <li><strong>Active accounts</strong> — retained while your account is open and as needed to provide the service.</li>
+    <li><strong>Applications</strong> — retained for up to <strong>24 months</strong> after last activity unless law requires longer or you delete your account sooner.</li>
+    <li><strong>Marketing consent records</strong> — retained for <strong>7 years</strong> as evidence of consent.</li>
+    <li><strong>Security logs</strong> — typically <strong>90 days</strong>, unless investigating an incident.</li>
+    <li><strong>Deleted accounts</strong> — primary profile data removed within <strong>30 days</strong>; backups may persist up to <strong>90 days</strong>.</li>
+  </ul>
+
+  <h2 id="rights">8. Your rights (Australia &amp; Kenya)</h2>
+  <p>Depending on your location, you may have rights to:</p>
+  <ul>
+    <li>Access and receive a copy of your personal information.</li>
+    <li>Correct inaccurate information.</li>
+    <li>Delete your account and associated data (subject to legal retention).</li>
+    <li>Withdraw marketing consent at any time.</li>
+    <li>Lodge a complaint with a regulator.</li>
+  </ul>
+  <p><strong>Australia:</strong> Office of the Australian Information Commissioner (OAIC) — <a href="https://www.oaic.gov.au/" rel="noopener">oaic.gov.au</a>.</p>
+  <p><strong>Kenya:</strong> ODPC — <a href="https://www.odpc.go.ke/" rel="noopener">odpc.go.ke</a>.</p>
+  <p>In-app: Profile → <em>Privacy &amp; data</em> (export or delete). API: <code>GET /api/account/export</code>,
+    <code>DELETE /api/account</code> (authenticated).</p>
+
+  <h2 id="security">9. Security</h2>
+  <p>We use industry-standard measures including HTTPS, hashed passwords, upload validation, access controls, and
+    rate limiting. No method is 100% secure; report concerns to <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>.</p>
+
+  <h2 id="breach">10. Data breaches</h2>
+  <p>If a breach is likely to cause serious harm (Australia) or meets notification thresholds under Kenyan law, we will
+    notify affected individuals and regulators as required, and document our response.</p>
+
+  <h2 id="marketing">11. Marketing</h2>
+  <p>We send promotional email only if you opt in. You can unsubscribe via email links or update preferences in your profile.</p>
+
+  <h2 id="children">12. Children</h2>
+  <p>Our service is not directed at children under 16. We do not knowingly collect their data.</p>
+
+  <h2 id="changes">13. Changes</h2>
+  <p>We may update this policy. Material changes will be posted here with a new version ID. Continued use after notice
+    may constitute acceptance where permitted by law.</p>
+
+  <h2 id="contact">14. Contact</h2>
+  <p>
+    Privacy: <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a><br>
+    Support: <a href="mailto:{{SUPPORT_EMAIL}}">{{SUPPORT_EMAIL}}</a><br>
+    Australia: {{AU_ADDRESS}}<br>
+    Kenya: {{KE_ADDRESS}}
+  </p>
+
+  <footer class="legal-footer">
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+    <a href="/cookies">Cookies</a>
+    © {{ENTITY_NAME}}
+  </footer>
+</div>
+<script src="/public/cookie-consent.js" defer></script>
+</body>
+</html>

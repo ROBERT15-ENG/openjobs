@@ -395,11 +395,27 @@
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-header"><div class="card-title">🔒 Privacy &amp; data</div></div>
+      <p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 1rem">
+        Your rights under Australian and Kenyan privacy law.
+        <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/cookies">Cookies</a>
+      </p>
+      <label style="display:flex;gap:0.5rem;align-items:center;font-size:0.85rem;margin-bottom:1rem">
+        <input type="checkbox" id="marketingConsentProfile" onchange="saveMarketingConsent()">
+        Email me job tips and product updates
+      </label>
+      <div style="display:flex;flex-wrap:wrap;gap:0.5rem">
+        <button type="button" class="btn-save-profile" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border)" onclick="exportMyData()">⬇ Export my data</button>
+        <button type="button" class="btn-save-profile" style="background:#ef4444;color:#fff" onclick="deleteMyAccount()">Delete account</button>
+      </div>
+    </div>
+
     <button class="btn-save-profile" onclick="saveProfile()">💾 Save Profile</button>
   </div>
 </div>
 
-<footer>OpenJobs Dashboard — ⚡ Built by Alex</footer>
+<footer>OpenJobs Dashboard — <a href="/privacy" style="color:var(--primary)">Privacy</a></footer>
 
 <script>
   // ── INIT ──
@@ -632,6 +648,51 @@
     alert('✅ Profile saved successfully!');
   }
 
+  function authHeaders() {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  }
+
+  async function exportMyData() {
+    try {
+      const res = await fetch('/api/account/export', { headers: authHeaders() });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Export failed'); return; }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'openjobs-data-export.json';
+      a.click();
+    } catch (e) { alert('Export failed'); }
+  }
+
+  async function deleteMyAccount() {
+    const email = prompt('Type your account email to confirm permanent deletion:');
+    if (!email) return;
+    if (!confirm('This permanently deletes your account. Continue?')) return;
+    try {
+      const res = await fetch('/api/account', {
+        method: 'DELETE', headers: authHeaders(),
+        body: JSON.stringify({ confirm: true, email })
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Deletion failed'); return; }
+      localStorage.removeItem('token');
+      alert('Account deleted.');
+      window.location.href = '/';
+    } catch (e) { alert('Deletion failed'); }
+  }
+
+  async function saveMarketingConsent() {
+    const on = document.getElementById('marketingConsentProfile').checked;
+    try {
+      await fetch('/api/account/privacy', {
+        method: 'PATCH', headers: authHeaders(),
+        body: JSON.stringify({ marketing_consent: on })
+      });
+    } catch (e) { /* silent */ }
+  }
+
   // ── UTILITIES ──
   function formatSalaryRange(min, max) {
     if (!min && !max) return '';
@@ -658,5 +719,6 @@
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 </script>
+<script src="/public/cookie-consent.js" defer></script>
 </body>
 </html>

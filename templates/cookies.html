@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cookie Policy — {{ENTITY_NAME}}</title>
+  <link rel="stylesheet" href="/public/legal.css">
+</head>
+<body>
+<div class="legal-wrap">
+  <nav class="legal-nav">
+    <a href="/">Home</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+  </nav>
+
+  <h1>Cookie &amp; Storage Policy</h1>
+  <p class="legal-meta">Version {{PRIVACY_VERSION}} · {{EFFECTIVE_DATE}}</p>
+
+  <p>This policy explains how {{ENTITY_NAME}} uses cookies and similar technologies on {{APP_URL}} for users in
+    Australia and Kenya.</p>
+
+  <h2>What we use</h2>
+  <table style="width:100%;font-size:0.9rem;border-collapse:collapse">
+    <tr style="border-bottom:1px solid var(--legal-border)"><th align="left">Type</th><th align="left">Purpose</th><th align="left">Required?</th></tr>
+    <tr><td>Authentication token (localStorage)</td><td>Keep you signed in</td><td>Essential</td></tr>
+    <tr><td>Cookie consent preference (localStorage)</td><td>Remember your cookie choices</td><td>Essential</td></tr>
+    <tr><td>Security / rate limiting (server)</td><td>Protect accounts</td><td>Essential</td></tr>
+    <tr><td>Analytics (future)</td><td>Understand usage</td><td>Optional — off unless you accept</td></tr>
+  </table>
+
+  <h2>Your choices</h2>
+  <p>On first visit you can choose <strong>Essential only</strong> or accept optional analytics. You can change your
+    mind by clearing site data or running:</p>
+  <pre style="background:#111119;padding:1rem;border-radius:8px;overflow:auto">localStorage.removeItem('oj_cookie_consent_v1');</pre>
+  <p>Then reload the page to see the banner again.</p>
+
+  <h2>Third parties</h2>
+  <p>Stripe checkout may set cookies when you pay. Google Sign-In (if enabled) may set cookies during authentication.
+    See their policies for details.</p>
+
+  <h2>Contact</h2>
+  <p><a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></p>
+
+  <footer class="legal-footer">
+    <a href="/privacy">Privacy</a>
+    <a href="/cookies">Cookies</a>
+  </footer>
+</div>
+<script src="/public/cookie-consent.js" defer></script>
+</body>
+</html>

@@ -162,6 +162,14 @@
       <input type="email" class="auth-input" id="regEmail" placeholder="Work email address">
       <input type="password" class="auth-input" id="regPassword" placeholder="Password (min 6 chars)">
       <input type="text" class="auth-input" id="regCompany" placeholder="Company name">
+      <label style="display:flex;gap:0.5rem;align-items:flex-start;font-size:0.8rem;color:var(--text-muted);margin:0.5rem 0">
+        <input type="checkbox" id="empAgreeTerms" required style="margin-top:3px">
+        <span>I agree to the <a href="/terms" target="_blank">Terms</a> and <a href="/privacy" target="_blank">Privacy Policy</a> (AU &amp; Kenya)</span>
+      </label>
+      <label style="display:flex;gap:0.5rem;align-items:flex-start;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem">
+        <input type="checkbox" id="empMarketing" style="margin-top:3px">
+        <span>Product updates by email (optional)</span>
+      </label>
       <button class="auth-btn" onclick="doRegister()">Create Account →</button>
       <div class="auth-error" id="regError"></div>
     </div>
@@ -385,6 +393,16 @@
         </div>
       </div>
       <div class="card">
+        <div class="card-title" style="margin-bottom:0.75rem">🔒 Privacy &amp; data</div>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 1rem">
+          <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/cookies">Cookies</a>
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:0.5rem">
+          <button class="btn-submit" type="button" onclick="exportMyData()">⬇ Export my data</button>
+          <button class="btn btn-danger" type="button" onclick="deleteMyAccount()">Delete account</button>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-title" style="margin-bottom:0.75rem">🚪 Session</div>
         <button class="btn btn-danger" onclick="doLogout()">Sign Out</button>
       </div>
@@ -511,10 +529,17 @@
     err.style.display = 'none';
     if (!name || !email || !password || !company) { err.textContent = 'All fields are required.'; err.style.display = 'block'; return; }
     if (password.length < 6) { err.textContent = 'Password must be at least 6 characters.'; err.style.display = 'block'; return; }
+    if (!document.getElementById('empAgreeTerms').checked) {
+      err.textContent = 'Please accept the Terms and Privacy Policy.'; err.style.display = 'block'; return;
+    }
     try {
       const res = await fetch('/api/auth/register-employer', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, company })
+        body: JSON.stringify({
+          name, email, password, company,
+          terms_accepted: true,
+          marketing_consent: document.getElementById('empMarketing').checked
+        })
       });
       const data = await res.json();
       if (!res.ok) { err.textContent = data.error || 'Registration failed.'; err.style.display = 'block'; return; }
@@ -953,6 +978,41 @@ async function handlePostJob(e) {
     document.getElementById('authScreen').style.display = 'flex';
     document.getElementById('dashboard').style.display = 'none';
   });
+
+  async function exportMyData() {
+    const tok = getToken();
+    if (!tok) { alert('Please sign in.'); return; }
+    try {
+      const res = await fetch('/api/account/export', { headers: authHeaders() });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Export failed'); return; }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'openjobs-data-export.json';
+      a.click();
+    } catch (e) { alert('Export failed'); }
+  }
+
+  async function deleteMyAccount() {
+    const tok = getToken();
+    if (!tok) return;
+    const email = prompt('Type your account email to confirm permanent deletion:');
+    if (!email) return;
+    if (!confirm('This permanently deletes your account and cannot be undone. Continue?')) return;
+    try {
+      const res = await fetch('/api/account', {
+        method: 'DELETE',
+        headers: authHeaders(),
+        body: JSON.stringify({ confirm: true, email })
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Deletion failed'); return; }
+      await doLogout();
+      alert('Your account has been deleted.');
+      window.location.href = '/';
+    } catch (e) { alert('Deletion failed'); }
+  }
 </script>
 
 <!-- CANDIDATE DETAIL MODAL -->
@@ -1001,6 +1061,7 @@ async function handlePostJob(e) {
   </div>
 </div>
 
+<script>
 function viewApp(id) {
   var apps = window._allApplications || [];
   var a = apps.find(function(x){ return x.id === id; });
@@ -1029,5 +1090,7 @@ function updateAppStatusFromModal(status) {
   }
 }
 
+</script>
+<script src="/public/cookie-consent.js" defer></script>
 </body>
 </html>
