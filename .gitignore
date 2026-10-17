@@ -33,6 +33,8 @@ tmp/
 # Uploads
 uploads/
 *.pdf
+!OpenJobs_CodeSchematic.pdf
+!docs/OpenJobs_Project_Documentation.pdf
 *.doc
 *.docx
 

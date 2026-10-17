@@ -2,7 +2,7 @@
 
 > The smarter job board that matches candidates to roles using semantic AI — not just keyword searches. Built with Flask, SQLite, and Ollama.
 
-**Live at:** `http://localhost:5700` | **Docs:** [OpenJobs Code Schematic](./OpenJobs_CodeSchematic.pdf)
+**Live at:** `http://localhost:5700` | **Docs:** [Project documentation (PDF)](./docs/OpenJobs_Project_Documentation.pdf) · [API schematic](./OpenJobs_CodeSchematic.pdf)
 
 ---
 
