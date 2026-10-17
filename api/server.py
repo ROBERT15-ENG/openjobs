@@ -41,6 +41,7 @@ from seo_utils import job_listing_jsonld, breadcrumbs_jsonld, canonical_url, NOI
 from robots_txt import get_robots_txt
 from sitemap_generator import get_sitemap_index, get_sitemap_static, get_sitemap_jobs
 import seo_middleware as sem
+from template_utils import render_page
 
 from email_notifier import send_email, send_welcome_email, send_application_confirm
 
@@ -63,7 +64,8 @@ limiter = Limiter(
     storage_uri=limiter_storage,
 )
 
-app = Flask(__name__)
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), '..', 'static')
+app = Flask(__name__, static_folder=_STATIC_DIR, static_url_path='/static')
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max request size
 
 # ── CORS — locked to specific origins ──────────────────────────────────────
@@ -92,9 +94,11 @@ def _platform_security_headers(response):
     if not request.path.startswith('/api/'):
         response.headers.setdefault(
             'Content-Security-Policy',
-            "default-src 'self'; script-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "default-src 'self'; script-src 'self' 'unsafe-inline' https://fonts.googleapis.com "
+            "https://www.googletagmanager.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "
-            "img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'",
+            "img-src 'self' data: https:; connect-src 'self' https://www.google-analytics.com "
+            "https://region1.google-analytics.com https://www.googletagmanager.com; frame-ancestors 'none'",
         )
     if os.environ.get('FLASK_ENV') == 'production':
         response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
@@ -106,6 +110,21 @@ def _platform_security_headers(response):
 
 APP_URL = os.environ.get('APP_URL', 'http://localhost:5700')
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
+
+
+def _html_page(template_name: str, status: int = 200, **context):
+    from flask import make_response
+    body = render_page(template_name, **context)
+    resp = make_response(body, status)
+    resp.content_type = 'text/html; charset=utf-8'
+    return resp
+
+
+@app.errorhandler(404)
+def handle_not_found(e):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Not found'}), 404
+    return _html_page('404.html', status=404)
 
 DB_PATH = os.environ.get('DATABASE_URL', os.path.join(os.path.dirname(__file__), '..', 'jobs.db'))
 
@@ -1847,7 +1866,9 @@ def ai_page():
 
 @app.route('/')
 def index():
-    return open(os.path.join(TEMPLATES_DIR, 'index.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'index.html')) else jsonify({'msg':'OpenJobs API','endpoints':['/api/jobs','/api/companies','/api/ai/ollama/status']})
+    if os.path.exists(os.path.join(TEMPLATES_DIR, 'index.html')):
+        return _html_page('index.html')
+    return jsonify({'msg':'OpenJobs API','endpoints':['/api/jobs','/api/companies','/api/ai/ollama/status']})
 
 @app.route('/robots.txt')
 def robots():
@@ -1898,20 +1919,19 @@ def job_page():
     return _serve_job_html(job, canonical=canonical, jsonld=jsonld, bc_jsonld=bc_jsonld, noindex=noindex)
 
 def _serve_job_html(job, canonical, jsonld, bc_jsonld, noindex, status=200):
-    """Read job.html and inject dynamic values, then return as HTTP response."""
-    from flask import make_response
-    from jinja2 import Template
-    path = os.path.join(TEMPLATES_DIR, 'job.html')
+    """Render job.html with SEO and site context."""
     try:
-        html = open(path).read()
+        return _html_page(
+            'job.html',
+            status=status,
+            job=job or {},
+            canonical=canonical,
+            jsonld=jsonld,
+            bc_jsonld=bc_jsonld,
+            noindex=noindex,
+        )
     except Exception:
         return 'Template not found', 404
-    t = Template(html)
-    rendered = t.render(job=job or {}, canonical=canonical,
-                        jsonld=jsonld, bc_jsonld=bc_jsonld, noindex=noindex)
-    resp = make_response(rendered, status)
-    resp.content_type = 'text/html; charset=utf-8'
-    return resp
 
 @app.route('/companies')
 def companies_page():
@@ -1923,11 +1943,15 @@ def salary_page():
 
 @app.route('/login')
 def login_page():
-    return open(os.path.join(TEMPLATES_DIR, 'login.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'login.html')) else jsonify({'error':'Template not found'})
+    if os.path.exists(os.path.join(TEMPLATES_DIR, 'login.html')):
+        return _html_page('login.html')
+    return jsonify({'error':'Template not found'})
 
 @app.route('/register')
 def register_page():
-    return open(os.path.join(TEMPLATES_DIR, 'register.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'register.html')) else jsonify({'error':'Template not found'})
+    if os.path.exists(os.path.join(TEMPLATES_DIR, 'register.html')):
+        return _html_page('register.html')
+    return jsonify({'error':'Template not found'})
 
 @app.route('/forgot-password')
 def forgot_password_page():
@@ -1943,7 +1967,9 @@ def user_page():
 
 @app.route('/employer')
 def employer_page():
-    return open(os.path.join(TEMPLATES_DIR, 'employer.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'employer.html')) else jsonify({'employer':True})
+    if os.path.exists(os.path.join(TEMPLATES_DIR, 'employer.html')):
+        return _html_page('employer.html')
+    return jsonify({'employer':True})
 
 @app.route('/admin')
 def admin_page():
@@ -1951,11 +1977,22 @@ def admin_page():
 
 @app.route('/privacy')
 def privacy_page():
-    return open(os.path.join(TEMPLATES_DIR, 'privacy.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'privacy.html')) else jsonify({'privacy':True})
+    return _html_page('privacy.html')
 
 @app.route('/terms')
 def terms_page():
-    return open(os.path.join(TEMPLATES_DIR, 'terms.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'terms.html')) else jsonify({'terms':True})
+    return _html_page('terms.html')
+
+@app.route('/thank-you')
+def thank_you_page():
+    kind = request.args.get('type', 'application')
+    if kind == 'register':
+        headline = 'Welcome to OpenJobs'
+        message = 'Your account is ready. Browse jobs or complete your profile to improve matches.'
+    else:
+        headline = 'Application submitted'
+        message = 'The employer has received your application. You can track status in your dashboard.'
+    return _html_page('thank-you.html', headline=headline, message=message)
 
 # ============ CAD API ============
 import ezdxf

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
 <head>
   <!-- SVG icon sprite -->
   <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
@@ -91,24 +91,26 @@
   <meta name="description" content="OpenJobs — AI-powered job matching platform. Browse 70+ remote, hybrid and on-site jobs from top companies. Free to apply, smart recommendations.">
   <meta name="keywords" content="jobs,remote jobs,AI job matching,careers,employment,software jobs,tech jobs">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://openjobs.example.com/">
+  <link rel="canonical" href="{{ site_url }}/">
 
   <!-- Open Graph -->
   <meta property="og:title" content="OpenJobs — Matching Skills with Opportunities">
   <meta property="og:description" content="Browse 70+ jobs from top companies. AI-powered matching, real-time applications, salary insights. Free to get started.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://openjobs.example.com/">
-  <meta property="og:image" content="https://openjobs.example.com/og-image.png">
-  <meta property="og:site_name" content="OpenJobs">
+  <meta property="og:url" content="{{ site_url }}/">
+  <meta property="og:image" content="{{ site_url }}/static/og-image.svg">
+  <meta property="og:site_name" content="{{ site_name }}">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="OpenJobs — Matching Skills with Opportunities">
   <meta name="twitter:description" content="Browse 70+ jobs from top companies. AI-powered matching, real-time applications, salary insights.">
-  <meta name="twitter:image" content="https://openjobs.example.com/og-image.png">
+  <meta name="twitter:image" content="{{ site_url }}/static/og-image.svg">
 
   <title>OpenJobs — Find Your Next Dream Job</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/site-chrome.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -530,7 +532,7 @@
     ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
   </style>
 </head>
-<body>
+<body class="has-mobile-cta">
 
 <!-- HEADER -->
 <header>
@@ -855,9 +857,23 @@
 </div>
 
 <!-- FOOTER -->
-<footer>
-  <p>OpenJobs — AI-Powered Job Matching · © 2026 · Built by Alex ⚡</p>
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <div>
+      <strong>{{ site_name }}</strong> — AI job matching · © 2026<br>
+      <span>{{ contact_address }}</span><br>
+      <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>
+    </div>
+    <div class="site-footer-links">
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/employer">Employers</a>
+    </div>
+  </div>
 </footer>
+<div class="oj-mobile-cta" aria-hidden="false"><a href="/register">Sign up free — get job matches</a></div>
+{% include 'includes/cookie_banner.html' %}
+<script src="/static/site.js"></script>
 
 <script>
   // ── STATE ──────────────────────────────────────────────────────────

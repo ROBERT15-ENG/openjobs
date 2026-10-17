@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="OpenJobs privacy policy — how we collect, use, and protect your personal information.">
+  <link rel="canonical" href="{{ site_url }}/privacy">
+  <meta property="og:title" content="Privacy Policy — {{ site_name }}">
+  <meta property="og:url" content="{{ site_url }}/privacy">
+  <meta property="og:image" content="{{ site_url }}/static/og-image.svg">
+  <title>Privacy Policy — {{ site_name }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #09090f; color: #ededf0; line-height: 1.65; }
+    main { max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+    h1 { color: #00d4aa; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; }
+    a { color: #00d4aa; }
+    .muted { color: #6b6b80; font-size: 0.9rem; }
+  </style>
+  <link rel="stylesheet" href="/static/site-chrome.css">
+</head>
+<body>
+  <main>
+    <p class="muted"><a href="/">← OpenJobs</a></p>
+    <h1>Privacy Policy</h1>
+    <p class="muted">Last updated: October 2026</p>
+    <p>{{ site_name }} (“we”) operates an Australian job matching platform. This policy explains what we collect and your choices.</p>
+    <h2>Information we collect</h2>
+    <ul>
+      <li>Account details (name, email, password hash)</li>
+      <li>Profile, resume text, skills, and job applications</li>
+      <li>Usage data when you opt in to analytics cookies</li>
+    </ul>
+    <h2>How we use it</h2>
+    <p>To provide job search, applications, employer tools, security, and support. We do not sell your personal information.</p>
+    <h2>Your rights</h2>
+    <p>Logged-in users may export data, request account deletion, and manage marketing/analytics preferences via <code>/api/user/privacy</code> and dashboard settings.</p>
+    <h2>Cookies</h2>
+    <p>Essential cookies run the service. Analytics cookies are optional and controlled via the site banner.</p>
+    <h2>Contact</h2>
+    <p>{{ contact_address }}<br>Email: <a href="mailto:{{ contact_email }}">{{ contact_email }}</a></p>
+  </main>
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <span>© {{ site_name }}</span>
+      <div class="site-footer-links">
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+    </div>
+  </footer>
+  {% include 'includes/cookie_banner.html' %}
+  <script src="/static/site.js"></script>
+</body>
+</html>

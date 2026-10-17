@@ -1,18 +1,30 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.">
+  {% if job and job.title %}
+  <meta name="description" content="Apply for {{ job.title }} at {{ job.company }} — {{ job.location or 'Australia' }}. OpenJobs AI-powered job board.">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://openjobs.example.com/job.html">
-  <meta property="og:title" content="Apply for Job — OpenJobs">
-  <meta property="og:description" content="Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.">
+  <link rel="canonical" href="{{ canonical or (site_url + '/job?id=' + job.id|string) }}">
+  <meta property="og:title" content="{{ job.title }} — {{ job.company }} | {{ site_name }}">
+  <meta property="og:description" content="Apply for {{ job.title }} in {{ job.location or 'Australia' }}.">
+  <meta property="og:url" content="{{ canonical or site_url }}">
+  <title>{{ job.title }} — {{ job.company }} | {{ site_name }}</title>
+  {% else %}
+  <meta name="description" content="Job not found on OpenJobs.">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Job not found — {{ site_name }}</title>
+  {% endif %}
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://openjobs.example.com/job.html">
-  <meta property="og:site_name" content="OpenJobs">
-  <title>Job Details — OpenJobs</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <meta property="og:site_name" content="{{ site_name }}">
+  <meta property="og:image" content="{{ site_url }}/static/og-image.svg">
+  {{ noindex|safe }}
+  {{ jsonld|safe }}
+  {{ bc_jsonld|safe }}
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/site-chrome.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -517,8 +529,8 @@
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showAlert('success', 'Application submitted! Check your dashboard to track status.');
-        btn.textContent = '✅ Applied!';
+        window.location.href = '/thank-you?type=application';
+        return;
       } else if (res.status === 409) {
         showAlert('error', '⚠️ You\'ve already applied for this job.');
         btn.disabled = false;
@@ -649,5 +661,7 @@
   drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
   drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) { document.getElementById('resumeFile').files = e.dataTransfer.files; handleFile(document.getElementById('resumeFile')); } });
 </script>
+{% include 'includes/cookie_banner.html' %}
+<script src="/static/site.js"></script>
 </body>
 </html>

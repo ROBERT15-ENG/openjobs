@@ -103,7 +103,6 @@ class ScrapeScheduler:
                 require_sponsorship=require_sponsorship,
                 australia_only=australia_only,
                 extra_query=query if query != "software engineer" else None,
-                sources=sources,
             )
 
         jobs = []
