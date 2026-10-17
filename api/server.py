@@ -612,6 +612,8 @@ def upload_resume():
         text = extract_resume_text(filepath)
         if not text.strip():
             return jsonify({'error': 'Could not extract text from file. Try a different format.'}), 400
+        from resume_safety import sanitize_resume_text
+        text = sanitize_resume_text(text)
 
     finally:
         if os.path.exists(filepath):
@@ -686,12 +688,13 @@ def upload_resume():
 
     # ── Kick off Ollama parse in background (non-blocking) ────────────────────
     text_captured = text  # capture to avoid closure issues
+    skills_baseline = list(extracted_skills)
     def _parse_async():
         try:
             import sys, os
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
             from ai_matcher import parse_resume
-            parsed = parse_resume(text_captured)
+            parsed = parse_resume(text_captured, baseline_skills=skills_baseline)
             if parsed and parsed.get('skills'):
                 db3 = sqlite3.connect(db_path)
                 db3.execute('UPDATE users SET skills = ? WHERE id = ?',

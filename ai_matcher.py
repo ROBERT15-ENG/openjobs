@@ -16,6 +16,15 @@ import os
 import sqlite3
 from typing import Dict, List, Optional
 
+from resume_safety import (
+    RESUME_PARSE_SYSTEM,
+    merge_skills_safely,
+    parse_json_object,
+    sanitize_resume_text,
+    validate_parsed_resume,
+    wrap_resume_for_prompt,
+)
+
 # DB path
 DB_PATH = '/Users/agentx/.openclaw/workspace/spyder-trader/jobseek/jobs.db'
 
@@ -54,7 +63,7 @@ def is_ollama_running():
         return False
 
 
-def call_ollama(prompt: str, model: str = None, endpoint: str = 'general') -> str:
+def call_ollama(prompt: str, model: str = None, endpoint: str = 'general', system: str = None) -> str:
     """Call Ollama for AI processing"""
     if not AI_ENABLED:
         return json.dumps({"error": "AI disabled"})
@@ -63,55 +72,61 @@ def call_ollama(prompt: str, model: str = None, endpoint: str = 'general') -> st
         model = DEFAULT_MODEL
         
     try:
-        resp = requests.post(OLLAMA_URL, json={
+        payload = {
             "model": model,
             "prompt": prompt,
-            "stream": False
-        }, timeout=60)
+            "stream": False,
+        }
+        if system:
+            payload["system"] = system
+        resp = requests.post(OLLAMA_URL, json=payload, timeout=60)
         result = resp.json().get("response", "")
         track_ai_usage(endpoint, prompt, result, model)
         return result
     except Exception as e:
         return f"Error: {e}"
 
-def parse_resume(resume_text: str) -> Dict:
+def parse_resume(resume_text: str, baseline_skills: Optional[List[str]] = None) -> Dict:
     """Parse resume using Ollama - extract skills, experience, education"""
-    
-    prompt = f"""Parse this resume and extract structured information.
+    clean_text = sanitize_resume_text(resume_text)
+    baseline = baseline_skills if baseline_skills is not None else extract_skills(clean_text)
+    wrapped, injection_flag = wrap_resume_for_prompt(clean_text)
+
+    prompt = f"""Extract structured information from the resume data block below.
 Return ONLY valid JSON (no markdown, no explanation):
 
 {{
   "name": "extracted name or null",
-  "email": "extracted email or null", 
+  "email": "extracted email or null",
   "phone": "extracted phone or null",
-  "skills": ["skill1", "skill2", ...],
+  "skills": ["skill1", "skill2"],
   "experience_years": number or null,
   "job_titles": ["title1", "title2"],
   "education": "degree level or null",
   "summary": "2-3 sentence career summary"
 }}
 
-Resume:
-{resume_text[:2000]}
+{wrapped}
 """
-    
-    result = call_ollama(prompt)
-    
-    # Clean JSON from response
-    try:
-        # Find JSON in response
-        match = re.search(r'\{.*\}', result, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-    except:
-        pass
-    
-    # Fallback: basic parsing
-    return {
-        "skills": extract_skills(resume_text),
-        "experience_years": estimate_experience(resume_text),
-        "summary": ""
-    }
+    if injection_flag:
+        print("[parse_resume] injection-pattern heuristic flagged in resume text")
+
+    result = call_ollama(prompt, endpoint='parse_resume', system=RESUME_PARSE_SYSTEM)
+
+    parsed = parse_json_object(result)
+    if parsed:
+        return validate_parsed_resume(parsed, clean_text, baseline)
+
+    # Fallback: keyword-only parsing (never trust raw LLM on failure)
+    return validate_parsed_resume(
+        {
+            "skills": merge_skills_safely([], baseline, clean_text),
+            "experience_years": estimate_experience(clean_text),
+            "summary": "",
+        },
+        clean_text,
+        baseline,
+    )
 
 def extract_skills(text: str) -> List[str]:
     """Basic skill extraction fallback"""
