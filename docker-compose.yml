@@ -1,0 +1,22 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5700:5700"
+    environment:
+      - DATABASE_URL=/data/jobs.db
+      - REDIS_URL=redis://redis:6379/0
+      - ALLOWED_ORIGINS=http://localhost:5700
+      - JWT_SECRET=dev-change-me
+    volumes:
+      - openjobs_data:/data
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  openjobs_data:
