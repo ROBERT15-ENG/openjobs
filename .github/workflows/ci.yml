@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "cursor/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt gunicorn
+
+      - name: Apply migrations
+        run: python scripts/apply_migrations.py
+
+      - name: Import app
+        run: python -c "import sys; sys.path.insert(0,'api'); import server"
+
+      - name: Smoke test API
+        run: |
+          python api/server.py &
+          sleep 3
+          curl -sf http://127.0.0.1:5700/api/health
+          curl -sf http://127.0.0.1:5700/api/ready || true
+          curl -sf http://127.0.0.1:5700/api/platform/flags

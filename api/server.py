@@ -6,7 +6,7 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), '..', 'templates')
 load_dotenv()
 import sqlite3, os, json, datetime, base64
 from functools import wraps
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, make_response
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -20,6 +20,20 @@ from semantic_matcher import rank_jobs_for_resume, keyword_score
 from openjobs_chatbot import handle_message as chatbot_handle_message, fmt_salary as _fmt_salary
 from chatbot_security import client_may_use_ai, safe_refusal_reply, sanitize_history, sanitize_user_message
 from ads_catalog import ads_for_page as guest_ads_for_page
+from platform_db import apply_pending_migrations, check_db_ready
+from platform_flags import feature_enabled, all_flags
+from platform_idempotency import get_idempotency_key, load_stored_response, store_response
+from platform_cache import bump_jobs_list_cache, jobs_list_generation
+from security import enforce_production_secrets, require_admin, allowed_registration_role
+from data_protection import (
+    public_user,
+    public_application,
+    admin_recent_user,
+    safe_log_message,
+    scrub_row,
+)
+
+enforce_production_secrets()
 
 # SEO infrastructure
 from seo_utils import make_job_slug, parse_job_slug, job_canonical_url, should_noindex
@@ -27,6 +41,7 @@ from seo_utils import job_listing_jsonld, breadcrumbs_jsonld, canonical_url, NOI
 from robots_txt import get_robots_txt
 from sitemap_generator import get_sitemap_index, get_sitemap_static, get_sitemap_jobs
 import seo_middleware as sem
+from template_utils import render_page
 
 from email_notifier import send_email, send_welcome_email, send_application_confirm
 
@@ -49,7 +64,8 @@ limiter = Limiter(
     storage_uri=limiter_storage,
 )
 
-app = Flask(__name__)
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), '..', 'static')
+app = Flask(__name__, static_folder=_STATIC_DIR, static_url_path='/static')
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB max request size
 
 # ── CORS — locked to specific origins ──────────────────────────────────────
@@ -68,10 +84,56 @@ except ImportError:
 limiter.init_app(app)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev_secret_key_change_in_production')
 
+@app.after_request
+def _platform_security_headers(response):
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'DENY')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    if request.path.startswith('/api/') and 'Cache-Control' not in response.headers:
+        response.headers.setdefault('Cache-Control', 'no-store')
+    if not request.path.startswith('/api/'):
+        response.headers.setdefault(
+            'Content-Security-Policy',
+            "default-src 'self'; script-src 'self' 'unsafe-inline' https://fonts.googleapis.com "
+            "https://www.googletagmanager.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data: https:; connect-src 'self' https://www.google-analytics.com "
+            "https://region1.google-analytics.com https://www.googletagmanager.com; frame-ancestors 'none'",
+        )
+    if os.environ.get('FLASK_ENV') == 'production':
+        response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    response.headers.setdefault(
+        'Permissions-Policy',
+        'geolocation=(), microphone=(), camera=(), payment=()',
+    )
+    return response
+
 APP_URL = os.environ.get('APP_URL', 'http://localhost:5700')
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
 
+
+def _html_page(template_name: str, status: int = 200, **context):
+    from flask import make_response
+    body = render_page(template_name, **context)
+    resp = make_response(body, status)
+    resp.content_type = 'text/html; charset=utf-8'
+    return resp
+
+
+@app.errorhandler(404)
+def handle_not_found(e):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Not found'}), 404
+    return _html_page('404.html', status=404)
+
 DB_PATH = os.environ.get('DATABASE_URL', os.path.join(os.path.dirname(__file__), '..', 'jobs.db'))
+
+try:
+    _applied = apply_pending_migrations(DB_PATH)
+    if _applied:
+        print(f"[platform] migrations applied: {', '.join(_applied)}")
+except Exception as _mig_err:
+    print(f"[platform] migration skipped: {_mig_err}")
 
 def get_db():
     if 'db' not in g:
@@ -209,7 +271,7 @@ def register():
     name = data.get('name', '').strip()
     email = data.get('email', '').strip()
     password = data.get('password', '')
-    role = data.get('role', 'user')  # Can be 'user' or 'employer'
+    role = allowed_registration_role(data.get('role', 'user'))
     
     # Validate
     if not name or not email or not password:
@@ -523,8 +585,8 @@ def me():
         db.close()
         if not user:
             return jsonify({'error': 'User not found'}), 404
-        user_dict = dict(user)
-        user_dict['employer_id'] = user_dict['id'] if user_dict['role'] == 'employer' else None
+        user_dict = public_user(dict(user), for_self=True)
+        user_dict['employer_id'] = user_dict['id'] if user_dict.get('role') == 'employer' else None
         return jsonify({'user': user_dict})
     except Exception as e:
         return jsonify({'error': 'Invalid token'}), 401
@@ -990,7 +1052,7 @@ def get_jobs():
         row['salary'] = _fmt_salary(row.get('salary_min'), row.get('salary_max'), row.get('salary_currency', 'AUD'))
         result.append(row)
 
-    return jsonify({
+    payload = {
         'jobs': result,
         'pagination': {
             'page': page,
@@ -998,7 +1060,14 @@ def get_jobs():
             'total': total,
             'pages': (total + limit - 1) // limit
         }
-    })
+    }
+    resp = make_response(jsonify(payload))
+    gen = jobs_list_generation()
+    resp.headers['X-OpenJobs-Jobs-Gen'] = str(gen)
+    if not request.headers.get('Authorization') and feature_enabled('GUEST_JOB_CACHE', default=True):
+        resp.headers['Cache-Control'] = 'public, max-age=60, stale-while-revalidate=120'
+        resp.headers['Vary'] = 'Authorization'
+    return resp
 
 @app.route('/api/jobs/<int:job_id>', methods=['GET'])
 def get_job(job_id):
@@ -1078,6 +1147,7 @@ def create_job():
     except Exception as e:
         print(f"[create_job] alert error: {e}")
 
+    bump_jobs_list_cache()
     return jsonify({'success': True, 'message': 'Job created', 'job_id': job_id}), 201
 
 @app.route('/api/jobs/<int:job_id>/feature', methods=['POST'])
@@ -1094,6 +1164,7 @@ def feature_job(job_id):
     db.execute("UPDATE jobs SET is_featured = ? WHERE id = ?", (featured, job_id))
     db.commit()
     db.close()
+    bump_jobs_list_cache()
     return jsonify({'success': True, 'is_featured': bool(featured)})
 
 
@@ -1123,6 +1194,7 @@ def update_job(job_id):
     db.commit()
     updated = db.execute('SELECT * FROM jobs WHERE id = ?', (job_id,)).fetchone()
     db.close()
+    bump_jobs_list_cache()
     return jsonify({'success': True, 'job': dict(updated)})
 
 
@@ -1140,6 +1212,7 @@ def delete_job(job_id):
     db.execute('UPDATE jobs SET is_active = 0 WHERE id = ?', (job_id,))
     db.commit()
     db.close()
+    bump_jobs_list_cache()
     return jsonify({'success': True, 'message': 'Job removed'})
 
 
@@ -1228,10 +1301,37 @@ def update_user_profile():
 
 # ============ APPLICATIONS ============
 @app.route('/api/applications', methods=['GET'])
+@require_auth
 def get_applications():
     db = get_db()
-    apps = db.execute("SELECT * FROM applications ORDER BY applied_at DESC").fetchall()
-    return jsonify([dict(a) for a in apps])
+    if request.user_role == 'admin':
+        apps = db.execute("SELECT * FROM applications ORDER BY applied_at DESC LIMIT 500").fetchall()
+    elif request.user_role == 'employer':
+        apps = db.execute(
+            """
+            SELECT a.* FROM applications a
+            JOIN jobs j ON j.id = a.job_id
+            WHERE j.employer_id = ?
+            ORDER BY a.applied_at DESC
+            """,
+            (request.employer_id,),
+        ).fetchall()
+    else:
+        apps = db.execute(
+            "SELECT * FROM applications WHERE user_id = ? ORDER BY applied_at DESC",
+            (request.user_id,),
+        ).fetchall()
+    out = []
+    for a in apps:
+        row = public_application(
+            dict(a),
+            viewer_role=request.user_role,
+            viewer_id=request.user_id,
+            employer_id=getattr(request, 'employer_id', None) if request.user_role == 'employer' else None,
+        )
+        if not row.get('error'):
+            out.append(row)
+    return jsonify(out)
 
 @app.route('/api/applications', methods=['POST'])
 @require_auth
@@ -1251,6 +1351,13 @@ def submit_application():
 @require_auth
 def quick_apply(job_id):
     db = get_db()
+    route = f"apply:{job_id}"
+    idem_key = get_idempotency_key(request)
+    cached = load_stored_response(db, idem_key, request.user_id, route)
+    if cached:
+        db.close()
+        return cached
+
     user = db.execute("SELECT name, email, resume_text, kyc_status, cv_link FROM users WHERE id = ?",
                       (request.user_id,)).fetchone()
     job = db.execute("SELECT title, company FROM jobs WHERE id = ?", (job_id,)).fetchone()
@@ -1270,13 +1377,18 @@ def quick_apply(job_id):
     db.execute("INSERT INTO applications (job_id, user_id, status, applied_at, cover_note) VALUES (?, ?, 'pending', ?, ?)",
                (job_id, request.user_id, datetime.datetime.now().isoformat(), cover))
     db.execute("UPDATE jobs SET application_count = application_count + 1 WHERE id = ?", (job_id,))
-    db.commit()
 
-    # Get employer info before closing db
     employer = db.execute(
         "SELECT u.name, u.email FROM users u JOIN jobs j ON j.employer_id = u.id WHERE j.id = ?",
         (job_id,)
     ).fetchone()
+
+    body = {
+        'success': True,
+        'message': 'Applied for ' + str(job['title']) + ' at ' + str(job['company'])
+    }
+    store_response(db, idem_key, request.user_id, route, 200, body)
+    db.commit()
     db.close()
 
     # Send confirmation to seeker
@@ -1301,10 +1413,7 @@ def quick_apply(job_id):
     except Exception as e:
         print(f"[apply] employer notification error: {e}")
 
-    return jsonify({
-        'success': True,
-        'message': 'Applied for ' + str(job['title']) + ' at ' + str(job['company'])
-    })
+    return jsonify(body)
 
 
 @require_auth
@@ -1385,7 +1494,15 @@ def get_kanban(job_id):
     board = {s: [] for s in stages}
     for a in apps:
         stage = a['status'] if a['status'] in stages else 'applied'
-        board[stage].append(dict(a))
+        card = public_application(
+            dict(a),
+            viewer_role=request.user_role,
+            viewer_id=request.user_id,
+            employer_id=request.employer_id,
+        )
+        if card.get('error'):
+            continue
+        board[stage].append(card)
 
     return jsonify({'success': True, 'board': board})
 
@@ -1456,6 +1573,23 @@ def get_pricing():
     "Return pricing tiers (no auth needed)."
     return jsonify({
         'currency': 'AUD',
+        'seeker_plans': [
+            {
+                'id': 'visa_premium',
+                'name': 'Premium — Visa sponsorship',
+                'price': 9,
+                'interval': 'month',
+                'description': 'Skilled-list matched sponsor roles with alerts',
+                'features': [
+                    'MLTSSL/STSOL-style occupation matching',
+                    '482, TSS, and relocation filters',
+                    'Daily email and Telegram alerts',
+                    'Early access to new sponsor listings',
+                ],
+                'featured': True,
+                'cta_url': '/register?plan=visa_premium',
+            },
+        ],
         'plans': [
             {
                 'id': 'standard',
@@ -1615,6 +1749,9 @@ def get_guest_ads():
         if token and _decode_token(token):
             return jsonify({'logged_in': True, 'ads': []})
 
+    if not feature_enabled('ADS', default=True):
+        return jsonify({'logged_in': False, 'ads': [], 'disabled': True})
+
     page = request.args.get('page', 1, type=int)
     slot = request.args.get('slot', 'feed', type=str)
     per_kind = 1 if slot == 'sidebar' else 2
@@ -1644,18 +1781,24 @@ def list_regions():
 
 # ============ CRM ============
 @app.route('/api/crm/companies', methods=['GET'])
+@require_auth
+@require_admin
 def get_crm_companies():
     db = get_db()
     companies = db.execute("SELECT * FROM crm_companies ORDER BY created_at DESC").fetchall()
     return jsonify({'success': True, 'companies': [dict(c) for c in companies]})
 
 @app.route('/api/crm/contacts', methods=['GET'])
+@require_auth
+@require_admin
 def get_crm_contacts():
     db = get_db()
     contacts = db.execute("SELECT * FROM crm_contacts ORDER BY created_at DESC").fetchall()
     return jsonify({'success': True, 'contacts': [dict(c) for c in contacts]})
 
 @app.route('/api/crm/pipeline', methods=['GET'])
+@require_auth
+@require_admin
 def get_crm_pipeline():
     db = get_db()
     deals = db.execute("SELECT * FROM crm_pipeline ORDER BY created_at DESC").fetchall()
@@ -1663,6 +1806,8 @@ def get_crm_pipeline():
 
 # ============ ADMIN ============
 @app.route('/api/admin/stats', methods=['GET'])
+@require_auth
+@require_admin
 def admin_stats():
     db = get_db()
 
@@ -1722,8 +1867,8 @@ def admin_stats():
         'top_employers': [dict(r) for r in top_employers],
         'by_category': [dict(r) for r in by_category],
         'by_work_type': [dict(r) for r in by_work_type],
-        'recent_applications': [dict(r) for r in recent_apps],
-        'recent_signups': [dict(r) for r in recent_signups],
+        'recent_applications': [admin_recent_user(dict(r)) for r in recent_apps],
+        'recent_signups': [admin_recent_user(dict(r)) for r in recent_signups],
     })
 
 
@@ -1738,7 +1883,9 @@ def ai_page():
 
 @app.route('/')
 def index():
-    return open(os.path.join(TEMPLATES_DIR, 'index.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'index.html')) else jsonify({'msg':'OpenJobs API','endpoints':['/api/jobs','/api/companies','/api/ai/ollama/status']})
+    if os.path.exists(os.path.join(TEMPLATES_DIR, 'index.html')):
+        return _html_page('index.html')
+    return jsonify({'msg':'OpenJobs API','endpoints':['/api/jobs','/api/companies','/api/ai/ollama/status']})
 
 @app.route('/robots.txt')
 def robots():
@@ -1789,20 +1936,19 @@ def job_page():
     return _serve_job_html(job, canonical=canonical, jsonld=jsonld, bc_jsonld=bc_jsonld, noindex=noindex)
 
 def _serve_job_html(job, canonical, jsonld, bc_jsonld, noindex, status=200):
-    """Read job.html and inject dynamic values, then return as HTTP response."""
-    from flask import make_response
-    from jinja2 import Template
-    path = os.path.join(TEMPLATES_DIR, 'job.html')
+    """Render job.html with SEO and site context."""
     try:
-        html = open(path).read()
+        return _html_page(
+            'job.html',
+            status=status,
+            job=job or {},
+            canonical=canonical,
+            jsonld=jsonld,
+            bc_jsonld=bc_jsonld,
+            noindex=noindex,
+        )
     except Exception:
         return 'Template not found', 404
-    t = Template(html)
-    rendered = t.render(job=job or {}, canonical=canonical,
-                        jsonld=jsonld, bc_jsonld=bc_jsonld, noindex=noindex)
-    resp = make_response(rendered, status)
-    resp.content_type = 'text/html; charset=utf-8'
-    return resp
 
 @app.route('/companies')
 def companies_page():
@@ -1814,11 +1960,15 @@ def salary_page():
 
 @app.route('/login')
 def login_page():
-    return open(os.path.join(TEMPLATES_DIR, 'login.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'login.html')) else jsonify({'error':'Template not found'})
+    if os.path.exists(os.path.join(TEMPLATES_DIR, 'login.html')):
+        return _html_page('login.html')
+    return jsonify({'error':'Template not found'})
 
 @app.route('/register')
 def register_page():
-    return open(os.path.join(TEMPLATES_DIR, 'register.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'register.html')) else jsonify({'error':'Template not found'})
+    if os.path.exists(os.path.join(TEMPLATES_DIR, 'register.html')):
+        return _html_page('register.html')
+    return jsonify({'error':'Template not found'})
 
 @app.route('/forgot-password')
 def forgot_password_page():
@@ -1834,7 +1984,9 @@ def user_page():
 
 @app.route('/employer')
 def employer_page():
-    return open(os.path.join(TEMPLATES_DIR, 'employer.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'employer.html')) else jsonify({'employer':True})
+    if os.path.exists(os.path.join(TEMPLATES_DIR, 'employer.html')):
+        return _html_page('employer.html')
+    return jsonify({'employer':True})
 
 @app.route('/admin')
 def admin_page():
@@ -1842,11 +1994,22 @@ def admin_page():
 
 @app.route('/privacy')
 def privacy_page():
-    return open(os.path.join(TEMPLATES_DIR, 'privacy.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'privacy.html')) else jsonify({'privacy':True})
+    return _html_page('privacy.html')
 
 @app.route('/terms')
 def terms_page():
-    return open(os.path.join(TEMPLATES_DIR, 'terms.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'terms.html')) else jsonify({'terms':True})
+    return _html_page('terms.html')
+
+@app.route('/thank-you')
+def thank_you_page():
+    kind = request.args.get('type', 'application')
+    if kind == 'register':
+        headline = 'Welcome to OpenJobs'
+        message = 'Your account is ready. Browse jobs or complete your profile to improve matches.'
+    else:
+        headline = 'Application submitted'
+        message = 'The employer has received your application. You can track status in your dashboard.'
+    return _html_page('thank-you.html', headline=headline, message=message)
 
 # ============ CAD API ============
 import ezdxf
@@ -1904,8 +2067,30 @@ def cad_page():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
-    return jsonify({'status': 'healthy', 'timestamp': datetime.datetime.now().isoformat()})
+    """Liveness — process is up (P1)."""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+        'service': 'openjobs-api',
+    })
+
+
+@app.route('/api/ready', methods=['GET'])
+def readiness_check():
+    """Readiness — DB reachable (P1)."""
+    ok = check_db_ready(DB_PATH)
+    body = {
+        'ready': ok,
+        'database': 'ok' if ok else 'unavailable',
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+    }
+    return jsonify(body), 200 if ok else 503
+
+
+@app.route('/api/platform/flags', methods=['GET'])
+def platform_flags():
+    """Feature flags for clients / ops (P2)."""
+    return jsonify({'flags': all_flags()})
 
 @app.route('/api/search', methods=['GET'])
 @limiter.limit("10 per minute")
@@ -1925,11 +2110,12 @@ def search_all():
     return jsonify({'jobs': [dict(j) for j in jobs], 'companies': [dict(c) for c in companies], 'count': len(jobs) + len(companies)})
 
 @app.route('/api/recommendations', methods=['GET'])
+@require_auth
 def recommendations():
     """Get job recommendations for a user based on skills + resume_text."""
-    user_id = request.args.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'user_id required'}), 400
+    user_id = request.args.get('user_id') or request.user_id
+    if str(user_id) != str(request.user_id) and request.user_role != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
 
     db = get_db()
     user = db.execute("SELECT skills, resume_text FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -1987,10 +2173,11 @@ def trending_jobs():
 
 # ============ USER DASHBOARD STATS ============
 @app.route('/api/dashboard/seeker', methods=['GET'])
+@require_auth
 def seeker_dashboard():
     """Stats for job seeker dashboard"""
     db = get_db()
-    user_id = request.args.get('user_id', 1, type=int)
+    user_id = request.user_id
     total_jobs = db.execute("SELECT COUNT(*) FROM jobs WHERE is_active = 1").fetchone()[0]
     total_applications = db.execute("SELECT COUNT(*) FROM applications WHERE user_id = ?", (user_id,)).fetchone()[0]
     pending_apps = db.execute("SELECT COUNT(*) FROM applications WHERE user_id = ? AND status = 'pending'", (user_id,)).fetchone()[0]
@@ -2057,9 +2244,10 @@ def seeker_dashboard():
     })
 
 @app.route('/api/saved_jobs', methods=['GET'])
+@require_auth
 def get_saved_jobs():
     db = get_db()
-    user_id = request.args.get('user_id', 1, type=int)
+    user_id = request.user_id
     saved = db.execute("""
         SELECT j.*, sj.saved_at FROM jobs j
         JOIN saved_jobs sj ON j.id = sj.job_id
@@ -2069,40 +2257,53 @@ def get_saved_jobs():
     return jsonify([dict(s) for s in saved])
 
 @app.route('/api/saved_jobs', methods=['POST'])
+@require_auth
 def save_job():
-    data = request.json
+    data = request.json or {}
     db = get_db()
     db.execute("INSERT OR IGNORE INTO saved_jobs (user_id, job_id, saved_at) VALUES (?, ?, ?)",
-               (data.get('user_id', 1), data.get('job_id'), datetime.datetime.now().isoformat()))
+               (request.user_id, data.get('job_id'), datetime.datetime.now().isoformat()))
     db.commit()
     db.close()
     return jsonify({'success': True})
 
 @app.route('/api/saved_jobs', methods=['DELETE'])
+@require_auth
 def unsave_job():
-    data = request.json
+    data = request.json or {}
     db = get_db()
     db.execute("DELETE FROM saved_jobs WHERE user_id = ? AND job_id = ?",
-               (data.get('user_id', 1), data.get('job_id')))
+               (request.user_id, data.get('job_id')))
     db.commit()
     db.close()
     return jsonify({'success': True})
 
 @app.route('/api/applications/<int:app_id>', methods=['PATCH'])
+@require_auth
 def update_application(app_id):
-    auth = request.headers.get('Authorization', '')
-    if not auth.startswith('Bearer '):
-        return jsonify({'error': 'Unauthorized'}), 401
     data = request.json or {}
     new_status = data.get('status')
     VALID_STATUSES = ['pending', 'reviewing', 'interview', 'offer', 'rejected', 'withdrawn']
     if new_status and new_status not in VALID_STATUSES:
         return jsonify({'error': f'Invalid status. Must be one of: {VALID_STATUSES}'}), 400
     db = get_db()
-    app = db.execute('SELECT id FROM applications WHERE id = ?', (app_id,)).fetchone()
+    app = db.execute(
+        'SELECT a.id, a.user_id, j.employer_id FROM applications a '
+        'JOIN jobs j ON j.id = a.job_id WHERE a.id = ?',
+        (app_id,),
+    ).fetchone()
     if not app:
         db.close()
         return jsonify({'error': 'Application not found'}), 404
+    if request.user_role == 'admin':
+        pass
+    elif request.user_role == 'employer' and app['employer_id'] == request.employer_id:
+        pass
+    elif app['user_id'] == request.user_id and new_status in ('withdrawn',):
+        pass
+    else:
+        db.close()
+        return jsonify({'error': 'Forbidden'}), 403
     db.execute('UPDATE applications SET status = ? WHERE id = ?', (new_status, app_id))
     db.commit()
     updated = db.execute('SELECT * FROM applications WHERE id = ?', (app_id,)).fetchone()
@@ -2110,22 +2311,171 @@ def update_application(app_id):
     return jsonify({'success': True, 'application': dict(updated)})
 
 @app.route('/api/applications/<int:app_id>', methods=['DELETE'])
+@require_auth
 def delete_application(app_id):
     db = get_db()
+    app = db.execute(
+        'SELECT a.user_id, j.employer_id FROM applications a JOIN jobs j ON j.id = a.job_id WHERE a.id = ?',
+        (app_id,),
+    ).fetchone()
+    if not app:
+        db.close()
+        return jsonify({'error': 'Not found'}), 404
+    if request.user_role != 'admin' and app['user_id'] != request.user_id:
+        db.close()
+        return jsonify({'error': 'Forbidden'}), 403
     db.execute("DELETE FROM applications WHERE id = ?", (app_id,))
     db.commit()
     db.close()
     return jsonify({'success': True})
 
 @app.route('/api/user/profile', methods=['GET'])
+@require_auth
 def get_user_profile():
-    user_id = request.args.get('user_id', 1, type=int)
+    user_id = request.user_id
+    if request.user_role == 'admin' and request.args.get('user_id'):
+        user_id = request.args.get('user_id', type=int)
     db = get_db()
-    user = db.execute("SELECT id, name, email, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = db.execute(
+        "SELECT id, name, email, role, skills, phone, company, preferred_location, experience, created_at, kyc_status "
+        "FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
     db.close()
     if not user:
         return jsonify({'error': 'User not found'}), 404
-    return jsonify(dict(user))
+    for_self = user_id == request.user_id or request.user_role == 'admin'
+    return jsonify(public_user(dict(user), for_self=for_self))
+
+
+@app.route('/api/user/privacy', methods=['GET'])
+@require_auth
+def get_privacy_prefs():
+    db = get_db()
+    try:
+        row = db.execute(
+            "SELECT marketing_opt_in, analytics_opt_in, updated_at FROM user_privacy WHERE user_id = ?",
+            (request.user_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        row = None
+    db.close()
+    if not row:
+        return jsonify({
+            'marketing_opt_in': False,
+            'analytics_opt_in': False,
+            'updated_at': None,
+        })
+    return jsonify({
+        'marketing_opt_in': bool(row['marketing_opt_in']),
+        'analytics_opt_in': bool(row['analytics_opt_in']),
+        'updated_at': row['updated_at'],
+    })
+
+
+@app.route('/api/user/privacy', methods=['PATCH'])
+@require_auth
+@limiter.limit('20 per hour')
+def update_privacy_prefs():
+    data = request.json or {}
+    marketing = 1 if data.get('marketing_opt_in') else 0
+    analytics = 1 if data.get('analytics_opt_in') else 0
+    now = datetime.datetime.utcnow().isoformat() + 'Z'
+    db = get_db()
+    try:
+        db.execute(
+            """
+            INSERT INTO user_privacy (user_id, marketing_opt_in, analytics_opt_in, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                marketing_opt_in = excluded.marketing_opt_in,
+                analytics_opt_in = excluded.analytics_opt_in,
+                updated_at = excluded.updated_at
+            """,
+            (request.user_id, marketing, analytics, now),
+        )
+        db.commit()
+    except sqlite3.OperationalError:
+        db.close()
+        return jsonify({'error': 'Privacy settings not available; run migrations.'}), 503
+    db.close()
+    return jsonify({'success': True, 'marketing_opt_in': bool(marketing), 'analytics_opt_in': bool(analytics)})
+
+
+@app.route('/api/user/data-export', methods=['GET'])
+@require_auth
+@limiter.limit('5 per day')
+def export_user_data():
+    """GDPR-style portable export for the authenticated user."""
+    db = get_db()
+    uid = request.user_id
+    user = db.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+    apps = db.execute("SELECT * FROM applications WHERE user_id = ?", (uid,)).fetchall()
+    saved = db.execute(
+        "SELECT sj.saved_at, j.id, j.title, j.company, j.location FROM saved_jobs sj "
+        "JOIN jobs j ON j.id = sj.job_id WHERE sj.user_id = ?",
+        (uid,),
+    ).fetchall()
+    try:
+        privacy = db.execute(
+            "SELECT marketing_opt_in, analytics_opt_in, updated_at FROM user_privacy WHERE user_id = ?",
+            (uid,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        privacy = None
+    db.close()
+    if not user:
+        return jsonify({'error': 'Not found'}), 404
+    payload = {
+        'exported_at': datetime.datetime.utcnow().isoformat() + 'Z',
+        'user': public_user(dict(user), for_self=True, include_resume=True),
+        'applications': [scrub_row(dict(a)) for a in apps],
+        'saved_jobs': [dict(s) for s in saved],
+        'privacy': dict(privacy) if privacy else None,
+    }
+    return jsonify(payload)
+
+
+@app.route('/api/user/delete-account', methods=['POST'])
+@require_auth
+@limiter.limit('3 per day')
+def delete_user_account():
+    data = request.json or {}
+    if not data.get('confirm'):
+        return jsonify({'error': 'Send {"confirm": true} to delete your account.'}), 400
+    db = get_db()
+    uid = request.user_id
+    anon_email = f'deleted-{uid}@deleted.openjobs.local'
+    db.execute(
+        """
+        UPDATE users SET
+            name = 'Deleted User',
+            email = ?,
+            password_hash = '',
+            phone = NULL,
+            resume_text = NULL,
+            skills = NULL,
+            address = NULL,
+            cv_link = NULL,
+            confirm_token = NULL,
+            reset_token = NULL,
+            google_id = NULL,
+            kyc_status = 'deleted'
+        WHERE id = ?
+        """,
+        (anon_email, uid),
+    )
+    db.execute("DELETE FROM saved_jobs WHERE user_id = ?", (uid,))
+    try:
+        db.execute("DELETE FROM user_privacy WHERE user_id = ?", (uid,))
+    except sqlite3.OperationalError:
+        pass
+    db.commit()
+    db.close()
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        _block_token(auth.split(' ', 1)[1])
+    return jsonify({'success': True, 'message': 'Account anonymized. Applications may be retained for employer records.'})
 
 
 # ── EMPLOYER AUTH & DASHBOARD ─────────────────────────────────────────────────
@@ -2261,7 +2611,17 @@ def employer_applications():
     qry += " ORDER BY a.applied_at DESC"
     apps = db.execute(qry, params).fetchall()
     db.close()
-    return jsonify({'applications': [dict(a) for a in apps]})
+    serialized = []
+    for a in apps:
+        row = public_application(
+            dict(a),
+            viewer_role=request.user_role,
+            viewer_id=request.user_id,
+            employer_id=emp_id,
+        )
+        if not row.get('error'):
+            serialized.append(row)
+    return jsonify({'applications': serialized})
 
 
 # ── RESUME TEXT EXTRACTION ─────────────────────────────────────────────────
@@ -2433,6 +2793,50 @@ def kyc_admin_verify(user_id):
     return jsonify({'success': True, 'kyc_status': new_status})
 
 
+
+_scraper_scheduler = None
+try:
+    from scraper_routes import scraper_bp
+    app.register_blueprint(scraper_bp)
+
+    def _maybe_auto_start_scraper():
+        global _scraper_scheduler
+        flag = os.environ.get("SCRAPER_AUTO_START", "").lower()
+        if flag not in ("1", "true", "yes"):
+            return
+        from scrapers.scheduler import get_scheduler
+
+        source = os.environ.get("SCRAPER_AUTO_SOURCE", "visa_sponsorship_au")
+        profile = os.environ.get("SCRAPER_AUTO_PROFILE") or (
+            "visa_sponsorship_au" if source == "visa_sponsorship_au" else None
+        )
+        interval = int(os.environ.get("SCRAPER_AUTO_INTERVAL_MINUTES", "360"))
+        query = os.environ.get(
+            "SCRAPER_AUTO_QUERY",
+            "visa sponsorship Australia"
+            if source == "visa_sponsorship_au"
+            else "teacher visa sponsorship",
+        )
+        location = os.environ.get("SCRAPER_AUTO_LOCATION", "Australia")
+        require_occ = os.environ.get("SCRAPER_REQUIRE_OCCUPATION_LIST", "true").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        _scraper_scheduler = get_scheduler()
+        _scraper_scheduler.start_scheduled(
+            interval,
+            source,
+            query,
+            location,
+            profile=profile,
+            require_occupation_on_demand=require_occ,
+        )
+
+    _maybe_auto_start_scraper()
+except ImportError as _scraper_err:
+    import warnings
+    warnings.warn(f"Scraper routes not loaded: {_scraper_err}")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5700))

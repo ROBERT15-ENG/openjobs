@@ -33,6 +33,9 @@ tmp/
 # Uploads
 uploads/
 *.pdf
+!OpenJobs_CodeSchematic.pdf
+!docs/OpenJobs_Project_Documentation.pdf
+!docs/OpenJobs_Project_Pack.pdf
 *.doc
 *.docx
 
