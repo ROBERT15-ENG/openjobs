@@ -1,21 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
 <head>
 
-  <meta name="google-signin-client_id" content="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com">
+  <meta name="google-signin-client_id" content="{{ google_client_id }}">
 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Sign in to your OpenJobs account. Access your personalized job dashboard, track applications, and manage your career profile.">
   <meta name="robots" content="noindex, nofollow">
-  <link rel="canonical" href="https://openjobs.example.com/login">
-  <meta property="og:title" content="Sign In — OpenJobs">
+  <link rel="canonical" href="{{ site_url }}/login">
+  <meta property="og:title" content="Sign In — {{ site_name }}">
   <meta property="og:description" content="Sign in to access your personalized job dashboard and track your applications.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://openjobs.example.com/login">
-  <meta property="og:site_name" content="OpenJobs">
-  <title>Sign In — OpenJobs</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <meta property="og:url" content="{{ site_url }}/login">
+  <meta property="og:image" content="{{ site_url }}/static/og-image.svg">
+  <meta property="og:site_name" content="{{ site_name }}">
+  <title>Sign In — {{ site_name }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/site-chrome.css">
+  {% include 'includes/head_polish.html' %}
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -153,10 +156,11 @@
       <div class="alert alert-error" id="alertError"></div>
       <div class="alert alert-success" id="alertSuccess"></div>
 
-      <form id="loginForm" onsubmit="handleLogin(event)">
+      <form id="loginForm" data-capture-utm onsubmit="handleLogin(event)">
         <div class="form-group">
           <label class="form-label">Email Address</label>
           <input type="email" class="form-input" id="email" placeholder="you@example.com" required autocomplete="email">
+          <div class="form-field-msg" data-error-for="email"></div>
         </div>
 
         <div class="form-group">
@@ -165,6 +169,7 @@
             <input type="password" class="form-input" id="password" placeholder="••••••••" required autocomplete="current-password" style="padding-right: 3rem;">
             <button type="button" class="toggle-pass" onclick="togglePassword()">Show</button>
           </div>
+          <div class="form-field-msg" data-error-for="password"></div>
         </div>
 
         <div class="form-options">
@@ -176,6 +181,10 @@
         </div>
 
         <button type="submit" class="btn-login" id="loginBtn">Sign In →</button>
+        <p id="resendConfirm" style="display:none;margin-top:1rem;font-size:0.85rem;color:var(--text-muted);">
+          Didn&apos;t get the email?
+          <button type="button" style="background:none;border:none;color:var(--primary);font-weight:600;cursor:pointer;" onclick="resendConfirmation()">Resend confirmation</button>
+        </p>
       </form>
 
       <div class="divider"><span>or continue with</span></div>
@@ -226,6 +235,19 @@
     setRole(role);
   }
 
+  async function resendConfirmation() {
+    const box = document.getElementById('resendConfirm');
+    const email = box?.dataset.email || document.getElementById('email').value.trim();
+    if (!email) return;
+    const res = await fetch('/api/auth/resend-confirmation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json().catch(() => ({}));
+    showAlert('success', data.message || 'If unverified, we sent a new email.');
+  }
+
   function togglePassword() {
     const inp = document.getElementById('password');
     const btn = document.querySelector('.toggle-pass');
@@ -247,7 +269,10 @@
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
 
-    if (!email || !password) { showAlert('error', 'Please fill in all fields'); return; }
+    OpenJobsFieldError('email', '');
+    OpenJobsFieldError('password', '');
+    if (!email) { OpenJobsFieldError('email', 'Email is required'); showAlert('error', 'Please fill in all fields'); return; }
+    if (!password) { OpenJobsFieldError('password', 'Password is required'); return; }
 
     btn.disabled = true;
     btn.textContent = 'Signing in...';
@@ -260,47 +285,49 @@
       });
       const data = await res.json();
 
-      if (res.ok && data.success) {
+      if (res.ok && data.success && data.token) {
+        localStorage.setItem('token', data.token);
+        if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
         const role = data.user?.role || 'user';
-        // If logging in as seeker but role is employer, redirect to employer
         let redirectUrl = '/user';
         if (selectedRole === 'employer' || role === 'employer') {
           redirectUrl = '/employer';
         } else if (role === 'admin') {
           redirectUrl = '/admin';
+        } else if (!localStorage.getItem('openjobs_onboarding_v1')) {
+          redirectUrl = '/onboarding';
         }
         showAlert('success', 'Login successful! Redirecting...');
         setTimeout(() => window.location.href = redirectUrl, 600);
+      } else if (data.error === 'email_not_confirmed') {
+        showAlert('error', data.message || 'Confirm your email first.');
+        const resend = document.getElementById('resendConfirm');
+        if (resend) { resend.style.display = 'block'; resend.dataset.email = email; }
+        btn.disabled = false;
+        btn.textContent = 'Sign In →';
       } else {
-        showAlert('error', data.error || 'Invalid email or password');
+        showAlert('error', data.message || data.error || 'Invalid email or password');
         btn.disabled = false;
         btn.textContent = 'Sign In →';
       }
     } catch(err) {
-      // Demo mode fallback
-      if ((email === 'tonny@email.com' || email === 'demo@openjobs.com') && password === 'demo1234') {
-        showAlert('success', 'Demo seeker mode — redirecting...');
-        setTimeout(() => window.location.href = '/user', 600);
-      } else if (email === 'employer@openjobs.com' && password === 'employer123') {
-        showAlert('success', 'Demo employer mode — redirecting...');
-        setTimeout(() => window.location.href = '/employer', 600);
-      } else {
-        showAlert('error', 'Cannot connect to server. Add demo account first.');
-        btn.disabled = false;
-        btn.textContent = 'Sign In →';
-      }
+      showAlert('error', 'Cannot reach the server. Check your connection and try again, or use Fill on a demo account then sign in.');
+      btn.disabled = false;
+      btn.textContent = 'Sign In →';
     }
   }
 
   // ── GOOGLE SIGN-IN ───────────────────────────────────────────────
   // Google Identity Services — renders the button, handles the popup
+  const GOOGLE_CLIENT_ID = '{{ google_client_id }}';
+
   function initGoogleLogin() {
+    if (!GOOGLE_CLIENT_ID) return;
     if (typeof google === 'undefined') {
-      // GIS not loaded — silently skip, email login still works
       return;
     }
     google.accounts.id.initialize({
-      client_id: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
+      client_id: '{{ google_client_id }}',
       callback: handleGoogleResponse,
       auto_select: false,
       cancel_on_tap_outside: true
@@ -350,7 +377,8 @@
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         showAlert('success', 'Signed in with Google! Welcome, ' + (data.user.name || data.user.email) + '.');
-        setTimeout(() => window.location.href = '/user.html', 800);
+        const dest = data.user?.role === 'employer' ? '/employer' : (!localStorage.getItem('openjobs_onboarding_v1') ? '/onboarding' : '/user');
+        setTimeout(() => window.location.href = dest, 800);
       } else {
         showAlert('error', data.error || 'Google sign-in failed. Please try again.');
         if (btn) btn.disabled = false;
@@ -364,6 +392,7 @@
 
   // Load Google Identity Services
   (function() {
+    if (!GOOGLE_CLIENT_ID) return;
     const existing = document.querySelector('script[src*://accounts.google.com/gsi/client]');
     if (!existing) {
       const s = document.createElement('script');
@@ -378,5 +407,9 @@
   })();
   
 </script>
+{% include 'includes/cookie_banner.html' %}
+{% include 'includes/site_polish.html' %}
+<script src="/static/site.js"></script>
+<script src="/static/site-polish.js"></script>
 </body>
 </html>

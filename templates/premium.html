@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Premium — Visa & alerts — {{ site_name }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/site-chrome.css">
+  {% include 'includes/head_polish.html' %}
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #09090f; color: #ededf0; }
+    main { max-width: 560px; margin: 0 auto; padding: 2rem 1.25rem; }
+    h1 { color: #38bdf8; }
+    ul { line-height: 1.6; color: #a8a8b8; }
+    .price { font-size: 2rem; font-weight: 800; color: #00d4aa; margin: 1rem 0; }
+    .btn { display: inline-block; background: #00d4aa; color: #000; padding: 0.75rem 1.25rem; border-radius: 10px; font-weight: 700; text-decoration: none; }
+    .note { font-size: 0.8rem; color: #6b6b80; margin-top: 1.5rem; }
+  </style>
+</head>
+<body>
+  <main id="main-content">
+    <p><a href="/">← Home</a></p>
+    <h1>Premium — Visa sponsorship</h1>
+    <p>Extra tools for migrants and skilled workers job hunting in Australia.</p>
+    <div class="price" id="price">$9<span style="font-size:1rem;font-weight:600">/mo</span></div>
+    <ul id="features"></ul>
+    <a class="btn" href="/register?plan=visa_premium" id="cta">Create free account</a>
+    <p class="note">Paid checkout for Premium is rolling out. You can already enable <strong>visa job alerts</strong> and filters with a free account under Settings → Job alerts.</p>
+  </main>
+  <script>
+    fetch('/api/pricing').then(r => r.json()).then(data => {
+      const plan = (data.seeker_plans || [])[0];
+      if (plan) {
+        document.getElementById('price').innerHTML = '$' + plan.price + '<span style="font-size:1rem;font-weight:600">/mo</span>';
+        document.getElementById('features').innerHTML = (plan.features || []).map(f => '<li>' + f + '</li>').join('');
+      }
+      const token = localStorage.getItem('token');
+      if (token) document.getElementById('cta').href = '/user';
+      document.getElementById('cta').textContent = token ? 'Manage alerts in dashboard' : 'Sign up free';
+    });
+  </script>
+  {% include 'includes/site_polish.html' %}
+  <script src="/static/site-polish.js"></script>
+</body>
+</html>
