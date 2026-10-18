@@ -111,7 +111,8 @@
     <div class="logo">Open<span>Jobs</span><span class="logo-badge">Admin</span></div>
     <div class="header-actions">
       <a href="/" class="btn btn-ghost">← View Site</a>
-      <button class="btn btn-primary" onclick="switchTab('jobs')">+ Add Job</button>
+      <button type="button" class="btn btn-ghost" onclick="adminLogout()">Sign out</button>
+      <button class="btn btn-primary" onclick="switchTab('jobs')">All jobs</button>
     </div>
   </div>
 </header>
@@ -125,6 +126,7 @@
     <div class="nav-item" onclick="switchTab('applications')"><span class="icon">📥</span> Applications</div>
     <div class="nav-item" onclick="switchTab('users')"><span class="icon">👥</span> Users</div>
     <div class="nav-item" onclick="switchTab('analytics')"><span class="icon">📈</span> Analytics</div>
+    <div class="nav-item" onclick="switchTab('ops')"><span class="icon">🛠</span> Ops</div>
     <div class="nav-item" onclick="switchTab('settings')"><span class="icon">⚙️</span> Settings</div>
   </aside>
 
@@ -253,6 +255,9 @@
     <div class="tab-content" id="tab-users">
       <h2 class="page-title">User Management</h2>
       <p class="page-sub">Manage registered users and their roles.</p>
+      <div class="search-bar">
+        <input type="text" class="search-input" id="userSearchTab" placeholder="Search users..." oninput="loadUsers()">
+      </div>
       <div class="card">
         <div class="table-wrap">
           <table>
@@ -305,6 +310,31 @@
       </div>
     </div>
 
+    <!-- ── OPS (scrapers, KYC) ── -->
+    <div class="tab-content" id="tab-ops">
+      <h2 class="page-title">Operations</h2>
+      <p class="page-sub">Scrapers and identity review (admin API).</p>
+      <div class="card">
+        <div class="card-title">🕷 Job scrapers</div>
+        <p class="muted" style="margin-bottom:1rem">Trigger ingest or check scheduler status.</p>
+        <div class="quick-actions">
+          <button type="button" class="quick-action" onclick="runScrape('visa_sponsorship_au')">Run visa AU scrape</button>
+          <button type="button" class="quick-action" onclick="runScrape('teaching_au')">Run teaching AU</button>
+          <button type="button" class="quick-action" onclick="refreshScrapeStatus()">Refresh status</button>
+        </div>
+        <pre id="scrapeStatus" style="margin-top:1rem;padding:1rem;background:var(--bg);border-radius:10px;font-size:0.8rem;overflow:auto;max-height:200px;color:var(--text-muted)">—</pre>
+      </div>
+      <div class="card">
+        <div class="card-title">🪪 KYC queue</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Docs</th><th>Actions</th></tr></thead>
+            <tbody id="kycTable"><tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- ── SETTINGS ── -->
     <div class="tab-content" id="tab-settings">
       <h2 class="page-title">System Settings</h2>
@@ -351,7 +381,45 @@
   let allApps = [];
   let allUsers = [];
 
-  document.addEventListener('DOMContentLoaded', () => {
+  function authHeaders() {
+    const t = localStorage.getItem('token') || sessionStorage.getItem('token');
+    return t
+      ? { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }
+      : { 'Content-Type': 'application/json' };
+  }
+
+  function adminLogout() {
+    const tok = localStorage.getItem('token');
+    if (tok) {
+      fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + tok } }).catch(() => {});
+    }
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+  }
+
+  async function ensureAdmin() {
+    const t = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!t) {
+      window.location.href = '/login?next=/admin';
+      return false;
+    }
+    const res = await fetch('/api/admin/stats', { headers: authHeaders() });
+    if (res.status === 401) {
+      window.location.href = '/login?next=/admin';
+      return false;
+    }
+    if (res.status === 403) {
+      alert('Admin access required. Sign in with an admin account.');
+      window.location.href = '/';
+      return false;
+    }
+    return true;
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    const ok = await ensureAdmin();
+    if (!ok) return;
     loadStats();
     loadJobs();
     loadApplications();
@@ -365,14 +433,15 @@
     const tabEl = document.getElementById('tab-' + name);
     if (tabEl) tabEl.classList.add('active');
     const navItems = document.querySelectorAll('.nav-item');
-    const names = ['overview','jobs','applications','users','analytics','settings'];
+    const names = ['overview','jobs','applications','users','analytics','ops','settings'];
     const idx = names.indexOf(name);
     if (idx >= 0 && navItems[idx]) navItems[idx].classList.add('active');
     window.scrollTo({top: 0, behavior: 'smooth'});
+    if (name === 'ops') { refreshScrapeStatus(); loadKycQueue(); }
   }
 
   function loadStats() {
-    fetch('/api/admin/stats')
+    fetch('/api/admin/stats', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => {
         const s = d.summary || {};
@@ -418,7 +487,7 @@
       .catch(() => {});
 
     // Fill analytics tab insights
-    fetch('/api/admin/stats')
+    fetch('/api/admin/stats', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => {
         // Top employer
@@ -538,7 +607,7 @@
   }
 
   function loadJobs() {
-    fetch('/api/jobs?limit=100')
+    fetch('/api/admin/jobs?limit=200', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => {
         allJobs = d.jobs || [];
@@ -563,7 +632,7 @@
         <td>${escHtml(j.category || '—')}</td>
         <td><span class="badge badge-active">${j.is_active !== 0 ? 'Active' : 'Inactive'}</span></td>
         <td>
-          <button class="btn-sm" onclick="window.open('/job.html?id=${j.id}','_blank')">👁 View</button>
+          <button class="btn-sm" onclick="window.open('/?job=${j.id}','_blank')">👁 View</button>
           <button class="btn-sm danger" onclick="deleteJob(${j.id})">🗑</button>
         </td>
       </tr>`;
@@ -584,7 +653,7 @@
   async function deleteJob(id) {
     if (!confirm('Delete this job? This cannot be undone.')) return;
     try {
-      const res = await fetch('/api/jobs/' + id, { method: 'DELETE' });
+      const res = await fetch('/api/jobs/' + id, { method: 'DELETE', headers: authHeaders() });
       if (res.ok) {
         showAlert('jobAlert', 'success', 'Job deleted successfully.');
         loadJobs();
@@ -597,11 +666,11 @@
   }
 
   function loadApplications() {
-    fetch('/api/applications')
+    fetch('/api/applications', { headers: authHeaders() })
       .then(r => r.json())
       .then(apps => {
-        allApps = apps;
-        renderAppsTable(apps);
+        allApps = Array.isArray(apps) ? apps : [];
+        renderAppsTable(allApps);
       })
       .catch(() => renderAppsTable([]));
   }
@@ -616,16 +685,19 @@
       const statusMap = {pending:'badge-pending',applied:'badge-active',interview:'badge-active',rejected:'badge-inactive',offer:'badge-active'};
       const cls = statusMap[a.status] || 'badge-pending';
       const label = (a.status || 'pending').charAt(0).toUpperCase() + (a.status || 'pending').slice(1);
+      const seeker = a.seeker_name || a.applicant_name || '—';
+      const email = a.seeker_email || a.applicant_email || '—';
+      const jobLabel = a.job_title ? escHtml(a.job_title) + ' #' + a.job_id : escHtml(String(a.job_id));
       return `<tr>
-        <td><div class="title-cell">Tonny Tony</div></td>
-        <td>tonny@email.com</td>
-        <td>${escHtml(String(a.job_id))}</td>
+        <td><div class="title-cell">${escHtml(seeker)}</div></td>
+        <td>${escHtml(email)}</td>
+        <td>${jobLabel}</td>
         <td>${timeSince(a.applied_at)}</td>
         <td><span class="badge ${cls}">${label}</span></td>
         <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(a.notes || '—')}</td>
         <td>
-          <button class="btn-sm" onclick="updateAppStatus(${a.id},'interview')">✓</button>
-          <button class="btn-sm danger" onclick="updateAppStatus(${a.id},'rejected')">✗</button>
+          <button type="button" class="btn-sm" onclick="updateAppStatus(${a.id},'interview')">✓</button>
+          <button type="button" class="btn-sm danger" onclick="updateAppStatus(${a.id},'rejected')">✗</button>
         </td>
       </tr>`;
     }).join('');
@@ -633,31 +705,92 @@
 
   async function updateAppStatus(id, status) {
     try {
-      await fetch('/api/applications/' + id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status}) });
+      await fetch('/api/applications/' + id, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({ status }),
+      });
       loadApplications();
     } catch {}
   }
 
   function loadUsers() {
-    fetch('/api/user/profile?user_id=1')
+    const q = (document.getElementById('userSearchTab')?.value || '').trim();
+    const url = '/api/admin/users?limit=200' + (q ? '&q=' + encodeURIComponent(q) : '');
+    fetch(url, { headers: authHeaders() })
       .then(r => r.json())
-      .then(user => {
-        if (user && !user.error) {
-          allUsers = [{
-            name: user.name || 'Tonny Tony',
-            email: user.email || 'tonny@email.com',
-            role: 'user',
-            skills: user.skills || '',
-            created_at: user.created_at || '2026-01-01'
-          }];
-          renderUsersTable(allUsers);
-        }
+      .then(d => {
+        allUsers = d.users || [];
+        renderUsersTable(allUsers);
       })
-      .catch(() => renderUsersTable([{name:'Demo User',email:'demo@openjobs.com',role:'admin',skills:'Python,JavaScript',created_at:'2026-01-01'}]));
-    // Give it a moment then render with fallback
-    setTimeout(() => {
-      if (!allUsers.length) renderUsersTable([{name:'Tonny Tony',email:'tonny@email.com',role:'user',skills:'AI,Python,JavaScript',created_at:'2026-01-01'}]);
-    }, 500);
+      .catch(() => renderUsersTable([]));
+  }
+
+  async function changeUserRole(userId, currentRole) {
+    const role = prompt('Set role: user, employer, or admin', currentRole || 'user');
+    if (!role) return;
+    const res = await fetch('/api/admin/users/' + userId, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ role: role.trim().toLowerCase() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'Update failed'); return; }
+    loadUsers();
+  }
+
+  async function runScrape(source) {
+    const el = document.getElementById('scrapeStatus');
+    if (el) el.textContent = 'Starting ' + source + '…';
+    const res = await fetch('/api/scrape', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ source, insert_db: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (el) el.textContent = JSON.stringify(data, null, 2);
+    if (!res.ok) alert(data.error || 'Scrape failed');
+  }
+
+  async function refreshScrapeStatus() {
+    const el = document.getElementById('scrapeStatus');
+    const res = await fetch('/api/scrape/status', { headers: authHeaders() });
+    const data = await res.json().catch(() => ({}));
+    if (el) el.textContent = JSON.stringify(data, null, 2);
+  }
+
+  async function loadKycQueue() {
+    const tbody = document.getElementById('kycTable');
+    if (!tbody) return;
+    const res = await fetch('/api/kyc/admin/list', { headers: authHeaders() });
+    const data = await res.json().catch(() => ({}));
+    const users = data.users || [];
+    if (!users.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">No pending KYC</td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map(u => `
+      <tr>
+        <td>${escHtml(u.name || '—')}</td>
+        <td>${escHtml(u.email || '—')}</td>
+        <td><span class="badge badge-pending">${escHtml(u.kyc_status || '—')}</span></td>
+        <td class="muted">${escHtml(u.docs || '—')}</td>
+        <td>
+          <button type="button" class="btn-sm" onclick="kycAction(${u.id},'verify')">Approve</button>
+          <button type="button" class="btn-sm danger" onclick="kycAction(${u.id},'reject')">Reject</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  async function kycAction(userId, action) {
+    const res = await fetch('/api/kyc/admin/verify/' + userId, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ action }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'KYC update failed'); return; }
+    loadKycQueue();
   }
 
   function renderUsersTable(users) {
@@ -667,16 +800,16 @@
       return;
     }
     tbody.innerHTML = users.map(u => {
-      const roleBadge = u.role === 'admin' ? 'badge-admin' : 'badge-user';
+      const role = u.role || 'user';
+      const roleBadge = role === 'admin' ? 'badge-admin' : (role === 'employer' ? 'badge-pending' : 'badge-user');
       return `<tr>
-        <td><div class="title-cell">${escHtml(u.name)}</div></td>
-        <td>${escHtml(u.email)}</td>
-        <td><span class="badge ${roleBadge}">${escHtml(u.role || 'user')}</span></td>
+        <td><div class="title-cell">${escHtml(u.name || '—')}</div></td>
+        <td>${escHtml(u.email || '—')}</td>
+        <td><span class="badge ${roleBadge}">${escHtml(role)}</span></td>
         <td class="muted">${escHtml(u.skills || '—')}</td>
         <td class="muted">${timeSince(u.created_at)}</td>
         <td>
-          <button class="btn-sm" onclick="alert('Edit coming soon')">✏️</button>
-          ${u.role !== 'admin' ? '<button class="btn-sm danger" onclick="alert(\'Delete coming soon\')">🗑</button>' : ''}
+          <button type="button" class="btn-sm" onclick='changeUserRole(${u.id}, ${JSON.stringify(role)})'>Role</button>
         </td>
       </tr>`;
     }).join('');

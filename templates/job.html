@@ -1,18 +1,31 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.">
+  {% if job and job.title %}
+  <meta name="description" content="Apply for {{ job.title }} at {{ job.company }} — {{ job.location or 'Australia' }}. OpenJobs AI-powered job board.">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://openjobs.example.com/job.html">
-  <meta property="og:title" content="Apply for Job — OpenJobs">
-  <meta property="og:description" content="Apply for this job on OpenJobs. Submit your application, upload your resume, and connect with top employers.">
+  <link rel="canonical" href="{{ canonical or (site_url + '/job?id=' + job.id|string) }}">
+  <meta property="og:title" content="{{ job.title }} — {{ job.company }} | {{ site_name }}">
+  <meta property="og:description" content="Apply for {{ job.title }} in {{ job.location or 'Australia' }}.">
+  <meta property="og:url" content="{{ canonical or site_url }}">
+  <title>{{ job.title }} — {{ job.company }} | {{ site_name }}</title>
+  {% else %}
+  <meta name="description" content="Job not found on OpenJobs.">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Job not found — {{ site_name }}</title>
+  {% endif %}
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://openjobs.example.com/job.html">
-  <meta property="og:site_name" content="OpenJobs">
-  <title>Job Details — OpenJobs</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <meta property="og:site_name" content="{{ site_name }}">
+  <meta property="og:image" content="{{ site_url }}/static/og-image.svg">
+  {{ noindex|safe }}
+  {{ jsonld|safe }}
+  {{ bc_jsonld|safe }}
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/site-chrome.css">
+  {% include 'includes/head_polish.html' %}
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -76,6 +89,38 @@
     /* SKILLS */
     .skills-wrap { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     .skill-tag { padding: 0.35rem 0.875rem; border-radius: 8px; background: rgba(0,212,170,0.08); border: 1px solid rgba(0,212,170,0.2); color: var(--primary); font-size: 0.82rem; font-weight: 600; }
+
+    /* Guest ad — same visual weight as a job listing card */
+    .guest-ad-card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 1.25rem; margin-bottom: 1.25rem;
+    }
+    .guest-ad-card.promoted { border-color: rgba(0,212,170,0.35); background: linear-gradient(135deg, rgba(0,212,170,0.06), var(--bg-card) 60%); }
+    .guest-ad-card.visa-premium { border-color: rgba(56, 189, 248, 0.45); background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), var(--bg-card) 60%); }
+    .guest-ad-card.visa-premium .ga-logo { background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); color: #7dd3fc; }
+    .guest-ad-card.visa-premium .ga-cta { background: #38bdf8; color: #042f3a; }
+    .guest-ad-card .ga-badge.visa { background: rgba(56, 189, 248, 0.18); color: #7dd3fc; }
+    .guest-ad-card.standard { border-style: dashed; border-color: rgba(107,107,128,0.4); }
+    .guest-ad-card .ga-head { display: flex; gap: 0.75rem; align-items: flex-start; margin-bottom: 0.75rem; }
+    .guest-ad-card .ga-logo {
+      width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-weight: 800;
+      background: rgba(0,212,170,0.12); color: var(--primary); border: 1px solid rgba(0,212,170,0.2);
+    }
+    .guest-ad-card .ga-title { font-weight: 700; font-size: 1rem; margin-bottom: 0.2rem; }
+    .guest-ad-card .ga-sub { font-size: 0.82rem; color: var(--text-muted); }
+    .guest-ad-card .ga-badge {
+      display: inline-block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; padding: 0.2rem 0.5rem; border-radius: 6px; margin-bottom: 0.5rem;
+    }
+    .guest-ad-card .ga-badge.promoted { background: rgba(0,212,170,0.15); color: var(--primary); }
+    .guest-ad-card .ga-badge.standard { background: rgba(107,107,128,0.2); color: var(--text-muted); }
+    .guest-ad-card p { font-size: 0.85rem; color: var(--text-muted); line-height: 1.55; margin-bottom: 0.75rem; }
+    .guest-ad-card .ga-cta {
+      display: block; text-align: center; padding: 0.65rem; border-radius: 10px;
+      background: var(--primary); color: #000; font-weight: 700; font-size: 0.85rem;
+    }
+    .guest-ad-card .ga-foot { font-size: 0.68rem; color: var(--text-dim); text-align: center; margin-top: 0.5rem; }
 
     /* JOB DETAILS GRID */
     .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -154,7 +199,7 @@
   </div>
 </header>
 
-<div class="page">
+<div class="page" id="main-content">
   <a href="/" class="back-link">← Back to all jobs</a>
 
   <div class="job-hero" id="jobHero">
@@ -162,6 +207,7 @@
     <div class="job-meta">
       <h1 class="job-title" id="jobTitle">Loading...</h1>
       <div class="job-company" id="jobCompany"></div>
+      <div class="job-updated-meta" id="jobUpdatedMeta"></div>
       <div class="job-badges" id="jobBadges"></div>
     </div>
     <div class="hero-actions">
@@ -263,6 +309,9 @@
         <p style="text-align:center;font-size:0.75rem;color:var(--text-muted);margin-top:0.75rem;">Your info is kept private and only shared with the employer after you apply.</p>
       </div>
 
+      <!-- GUEST AD (job-card size, hidden when logged in) -->
+      <div class="card guest-ad-slot" id="guestAdSlot" style="display:none;padding:0;border:none;background:transparent;"></div>
+
       <!-- JOB SUMMARY -->
       <div class="card">
         <div class="card-title">📋 Job Summary</div>
@@ -284,7 +333,47 @@
   document.addEventListener('DOMContentLoaded', () => {
     loadJob(jobId);
     loadRelated(jobId);
+    loadGuestSidebarAd();
   });
+
+  function loadGuestSidebarAd() {
+    if (localStorage.getItem('token')) return;
+    fetch('/api/ads?slot=sidebar&page=1')
+      .then(r => r.json())
+      .then(data => {
+        const ad = (data.ads || [])[0];
+        const slot = document.getElementById('guestAdSlot');
+        if (!ad || !slot || data.logged_in) return;
+        const promoted = ad.kind === 'promoted';
+        const visaTheme = ad.theme === 'visa_premium';
+        const cardClass = visaTheme ? 'visa-premium promoted' : (promoted ? 'promoted' : 'standard');
+        const badgeClass = visaTheme ? 'visa' : (promoted ? 'promoted' : 'standard');
+        const badgeLabel = visaTheme ? 'Premium · Visa' : (promoted ? 'Promoted' : 'Sponsored');
+        const features = (ad.features || []).slice(0, 3).map(f => `<li>${escHtml(f)}</li>`).join('');
+        const featureBlock = features ? `<ul style="margin:0 0 0.75rem;padding-left:1.1rem;font-size:0.82rem;color:var(--text-muted)">${features}</ul>` : '';
+        const price = ad.price_hint ? ` <strong style="color:#7dd3fc">${escHtml(ad.price_hint)}</strong>` : '';
+        const external = /^https?:\/\//i.test(ad.cta_url || '');
+        const href = ad.cta_url || '/';
+        const target = external ? ' target="_blank" rel="noopener noreferrer sponsored"' : '';
+        slot.style.display = 'block';
+        slot.innerHTML = `
+          <div class="guest-ad-card ${cardClass}">
+            <span class="ga-badge ${badgeClass}">${badgeLabel}</span>
+            <div class="ga-head">
+              <div class="ga-logo">${escHtml((ad.logo_letter || 'A').toUpperCase())}</div>
+              <div>
+                <div class="ga-title">${escHtml(ad.title)}</div>
+                <div class="ga-sub">${escHtml(ad.advertiser)}</div>
+              </div>
+            </div>
+            <p>${escHtml(ad.summary || '')}${price}</p>
+            ${featureBlock}
+            <a class="ga-cta" href="${escHtml(href)}"${target}>${escHtml(ad.cta_label || 'Learn more')}</a>
+            <div class="ga-foot">Paid placement · hidden after you sign in</div>
+          </div>`;
+      })
+      .catch(() => {});
+  }
 
   function loadJob(id) {
     fetch('/api/jobs/' + id)
@@ -317,6 +406,12 @@
     document.getElementById('jobLogo').textContent = (job.company || 'J')[0].toUpperCase();
     document.getElementById('jobTitle').textContent = job.title;
     document.getElementById('jobCompany').textContent = job.company + ' · ' + job.location;
+    const updated = job.created_at || job.expires_at;
+    const metaEl = document.getElementById('jobUpdatedMeta');
+    if (metaEl && updated) {
+      const d = new Date(updated);
+      metaEl.textContent = 'Listed ' + d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
     document.getElementById('jobDesc').textContent = job.description || 'No description provided.';
 
     // Track view server-side
@@ -454,8 +549,8 @@
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showAlert('success', 'Application submitted! Check your dashboard to track status.');
-        btn.textContent = '✅ Applied!';
+        window.location.href = '/thank-you?type=application';
+        return;
       } else if (res.status === 409) {
         showAlert('error', '⚠️ You\'ve already applied for this job.');
         btn.disabled = false;
@@ -586,5 +681,9 @@
   drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
   drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) { document.getElementById('resumeFile').files = e.dataTransfer.files; handleFile(document.getElementById('resumeFile')); } });
 </script>
+{% include 'includes/cookie_banner.html' %}
+{% include 'includes/site_polish.html' %}
+<script src="/static/site.js"></script>
+<script src="/static/site-polish.js"></script>
 </body>
 </html>

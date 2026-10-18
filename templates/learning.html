@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Learning — {{ site_name }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/site-chrome.css">
+  {% include 'includes/head_polish.html' %}
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #09090f; color: #ededf0; }
+    main { max-width: 720px; margin: 0 auto; padding: 2rem 1.25rem; }
+    .card { background: #18181f; border: 1px solid #2a2a3e; border-radius: 12px; padding: 1rem; margin: 0.75rem 0; }
+    h1 { color: #00d4aa; }
+    a { color: #00d4aa; }
+  </style>
+</head>
+<body>
+  <main id="main-content">
+    <p><a href="/">← Home</a></p>
+    <h1>Learning paths</h1>
+    <p style="color:#6b6b80">Upskill for in-demand roles in Australia. Partner courses may appear as sponsored listings in the job feed.</p>
+    <div class="card">
+      <strong>Visa-friendly careers</strong>
+      <p style="color:#6b6b80;font-size:0.9rem">Explore skilled occupations aligned with teaching, healthcare, IT, and trades — then filter jobs with <a href="/?visa=1">visa sponsorship</a>.</p>
+    </div>
+    <div class="card">
+      <strong>Resume & interviews</strong>
+      <p style="color:#6b6b80;font-size:0.9rem">Complete your <a href="/user">profile</a> and upload a CV for better AI matching.</p>
+    </div>
+  </main>
+  {% include 'includes/site_polish.html' %}
+  <script src="/static/site-polish.js"></script>
+</body>
+</html>
