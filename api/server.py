@@ -12,6 +12,7 @@ from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt  # PyJWT — real HMAC-signed tokens
 import re
+import secrets
 
 # Smart semantic matcher — keyword-first, Ollama only for borderline cases
 import sys
@@ -42,6 +43,7 @@ from robots_txt import get_robots_txt
 from sitemap_generator import get_sitemap_index, get_sitemap_static, get_sitemap_jobs
 import seo_middleware as sem
 from template_utils import render_page
+from monitoring import init_error_tracking
 
 from email_notifier import send_email, send_welcome_email, send_application_confirm
 
@@ -83,6 +85,7 @@ except ImportError:
 
 limiter.init_app(app)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev_secret_key_change_in_production')
+init_error_tracking(app)
 
 @app.after_request
 def _platform_security_headers(response):
@@ -311,12 +314,23 @@ def register():
     # Send confirmation email
     confirm_link = f"{APP_URL}/api/auth/confirm-email?token={confirm_token}"
     _send_confirmation_email(email, name, confirm_link)
+    email_confirmed = False
+    if not os.environ.get('SMTP_PASS') and not os.environ.get('SENDGRID_API_KEY'):
+        db3 = get_db()
+        db3.execute("UPDATE users SET email_confirmed = 1, confirm_token = NULL WHERE id = ?", (user_id,))
+        db3.commit()
+        db3.close()
+        email_confirmed = True
 
-    return jsonify({
+    payload = {
         'success': True,
-        'message': 'Registered! Check your email to confirm your account.',
-        'email_confirmed': False
-    }), 201
+        'message': 'Registered! Check your email to confirm your account.' if not email_confirmed else 'Account created.',
+        'email_confirmed': email_confirmed,
+    }
+    if email_confirmed:
+        payload['token'] = _create_token(user_id, email, role)
+        payload['user'] = {'id': user_id, 'name': name, 'email': email, 'role': role}
+    return jsonify(payload), 201
 
 @app.route('/api/auth/login', methods=['POST'])
 @limiter.limit('10 per minute', exempt_when=lambda: False)
@@ -464,7 +478,37 @@ def confirm_email():
                (user['id'],))
     db.commit()
     db.close()
-    return jsonify({'success': True, 'message': 'Email confirmed! You can now log in.'}), 200
+    from flask import redirect
+
+    return redirect(f"{APP_URL}/thank-you?type=email-confirmed", code=302)
+
+
+@app.route('/api/auth/resend-confirmation', methods=['POST'])
+@limiter.limit('3 per hour')
+def resend_confirmation():
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+    if not email or '@' not in email:
+        return jsonify({'error': 'Valid email is required'}), 400
+    db = get_db()
+    user = db.execute(
+        "SELECT id, name, email_confirmed FROM users WHERE email = ?",
+        (email,),
+    ).fetchone()
+    if user and not user['email_confirmed']:
+        import secrets
+
+        confirm_token = secrets.token_urlsafe(32)
+        confirm_expires = (datetime.datetime.now() + datetime.timedelta(hours=24)).isoformat()
+        db.execute(
+            "UPDATE users SET confirm_token = ?, confirm_expires = ? WHERE id = ?",
+            (confirm_token, confirm_expires, user['id']),
+        )
+        db.commit()
+        confirm_link = f"{APP_URL}/api/auth/confirm-email?token={confirm_token}"
+        _send_confirmation_email(email, user['name'] or email, confirm_link)
+    db.close()
+    return jsonify({'message': 'If that account is unverified, we sent a new confirmation email.'}), 200
 
 
 @app.route('/api/auth/forgot-password', methods=['POST'])
@@ -492,7 +536,7 @@ def forgot_password():
     db.commit()
 
     # Build reset link
-    reset_link = f"{APP_URL}/reset-password.html?token={token}"
+    reset_link = f"{APP_URL}/reset-password?token={token}"
 
     user_name = user['name'] or email.split('@')[0]
     html = f"""
@@ -1988,15 +2032,20 @@ def register_page():
 
 @app.route('/forgot-password')
 def forgot_password_page():
-    return open(os.path.join(TEMPLATES_DIR, 'forgot-password.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'forgot-password.html')) else jsonify({'error':'Template not found'})
+    return _html_page('forgot-password.html')
 
+@app.route('/reset-password')
 @app.route('/reset-password.html')
 def reset_password_page():
-    return open(os.path.join(TEMPLATES_DIR, 'reset-password.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'reset-password.html')) else jsonify({'error':'Template not found'})
+    return _html_page('reset-password.html')
+
+@app.route('/onboarding')
+def onboarding_page():
+    return _html_page('onboarding.html')
 
 @app.route('/user')
 def user_page():
-    return open(os.path.join(TEMPLATES_DIR, 'user.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'user.html')) else jsonify({'dashboard':True})
+    return _html_page('user.html')
 
 @app.route('/employer')
 def employer_page():
@@ -2019,12 +2068,13 @@ def terms_page():
 @app.route('/thank-you')
 def thank_you_page():
     kind = request.args.get('type', 'application')
-    if kind == 'register':
-        headline = 'Welcome to OpenJobs'
-        message = 'Your account is ready. Browse jobs or complete your profile to improve matches.'
-    else:
-        headline = 'Application submitted'
-        message = 'The employer has received your application. You can track status in your dashboard.'
+    messages = {
+        'register': ('Welcome to OpenJobs', 'Your account is ready. Browse jobs or complete your profile to improve matches.'),
+        'email-confirmed': ('Email confirmed', 'You can sign in and start applying to roles.'),
+        'password-reset': ('Password updated', 'Sign in with your new password.'),
+        'application': ('Application submitted', 'The employer has received your application. Track status in your dashboard.'),
+    }
+    headline, message = messages.get(kind, messages['application'])
     return _html_page('thank-you.html', headline=headline, message=message)
 
 # ============ CAD API ============

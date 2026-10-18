@@ -73,6 +73,11 @@
     .trend-neutral { background: rgba(107,107,128,0.1); color: var(--text-muted); }
     .stat-value { font-size: 2rem; font-weight: 800; margin-bottom: 0.2rem; }
     .stat-label { font-size: 0.8rem; color: var(--text-muted); }
+    @media (max-width: 900px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      nav { display: none; }
+      .page-wrap { padding: 1rem; }
+    }
 
     /* PROGRESS BARS */
     .progress-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; }
@@ -210,6 +215,7 @@
     <button class="tab" onclick="switchTab('saved')">⭐ Saved Jobs</button>
     <button class="tab" onclick="switchTab('recommendations')">🎯 For You</button>
     <button class="tab" onclick="switchTab('profile')">👤 Profile</button>
+    <button class="tab" onclick="switchTab('settings')">⚙️ Settings</button>
   </div>
 
   <!-- ── OVERVIEW ── -->
@@ -397,16 +403,89 @@
 
     <button class="btn-save-profile" onclick="saveProfile()">💾 Save Profile</button>
   </div>
+
+  <div class="tab-content" id="tab-settings">
+    <div class="card">
+      <div class="card-header"><div class="card-title">Account</div></div>
+      <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;">Export or delete your data (GDPR-style).</p>
+      <button class="btn-save-profile" style="margin-bottom:0.75rem;background:transparent;border:1px solid var(--border);color:var(--text);" onclick="exportData()">⬇ Export my data</button>
+      <button class="btn-save-profile" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.35);" onclick="deleteAccount()">Delete account</button>
+      <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.75rem;">Deleting anonymizes your profile. Applications may remain for employer records.</p>
+    </div>
+    <button class="btn-save-profile" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);" onclick="doLogout()">Sign out</button>
+  </div>
 </div>
 
 <footer>OpenJobs Dashboard — ⚡ Built by Alex</footer>
+<link rel="stylesheet" href="/static/site-polish.css">
+<script src="/static/site-polish.js" defer></script>
+<div class="oj-confirm-overlay" id="oj-confirm" role="alertdialog" aria-modal="true" aria-labelledby="oj-confirm-title">
+  <div class="oj-confirm-dialog">
+    <h2 id="oj-confirm-title">Confirm</h2>
+    <p id="oj-confirm-body"></p>
+    <div class="oj-confirm-actions">
+      <button type="button" class="oj-confirm-cancel" id="oj-confirm-cancel">Cancel</button>
+      <button type="button" class="oj-confirm-ok" id="oj-confirm-ok">Confirm</button>
+    </div>
+  </div>
+</div>
 
 <script>
   // ── INIT ──
   let userProfile = { name: 'Tonny Tony', email: 'tonny@email.com', location: 'Nairobi, KE', skills: ['Python', 'JavaScript', 'AI/LangChain'] };
   let dashboardData = null;
 
+  function authHeaders() {
+    const t = localStorage.getItem('token') || sessionStorage.getItem('token');
+    return t ? { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+  }
+
+  async function doLogout() {
+    const tok = localStorage.getItem('token');
+    try {
+      if (tok) await fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + tok } });
+    } catch (_) {}
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+  }
+
+  async function exportData() {
+    const res = await fetch('/api/user/data-export', { headers: authHeaders() });
+    if (!res.ok) { alert('Export failed. Sign in again.'); return; }
+    const data = await res.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'openjobs-export.json';
+    a.click();
+  }
+
+  async function deleteAccount() {
+    const ok = window.OpenJobsConfirm
+      ? await OpenJobsConfirm({ title: 'Delete account?', message: 'This permanently anonymizes your profile.', confirmLabel: 'Delete' })
+      : confirm('Delete your account? This cannot be undone.');
+    if (!ok) return;
+    const res = await fetch('/api/user/delete-account', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ confirm: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'Delete failed'); return; }
+    localStorage.clear();
+    window.location.href = '/thank-you?type=register';
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    if (!localStorage.getItem('token') && !sessionStorage.getItem('token')) {
+      window.location.href = '/login';
+      return;
+    }
+    if (!localStorage.getItem('openjobs_onboarding_v1')) {
+      window.location.href = '/onboarding';
+      return;
+    }
     loadDashboard();
     loadUserProfile();
   });
@@ -414,7 +493,7 @@
   // ── LOAD DASHBOARD DATA ──
   async function loadDashboard() {
     try {
-      const res = await fetch('/api/dashboard/seeker?user_id=getCurrentUserId()');
+      const res = await fetch('/api/dashboard/seeker', { headers: authHeaders() });
       if (!res.ok) throw new Error('API unavailable');
       dashboardData = await res.json();
       renderDashboard(dashboardData);
@@ -441,7 +520,7 @@
   }
 
   function loadUserProfile() {
-    fetch('/api/user/profile?user_id=getCurrentUserId()')
+    fetch('/api/user/profile', { headers: authHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data && !data.error) {

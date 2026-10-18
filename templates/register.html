@@ -284,8 +284,15 @@
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showAlert('success', 'Account created! Redirecting to dashboard...');
-        setTimeout(() => window.location.href = '/thank-you?type=register', 1000);
+        if (data.token) {
+          localStorage.setItem('token', data.token);
+          if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
+          showAlert('success', 'Account created! Setting up your profile...');
+          setTimeout(() => window.location.href = '/onboarding', 800);
+        } else {
+          showAlert('success', 'Check your email to confirm your account, then sign in.');
+          setTimeout(() => window.location.href = '/login', 1500);
+        }
       } else {
         showAlert('error', data.error || 'Registration failed. Try again.');
         btn.disabled = false;
