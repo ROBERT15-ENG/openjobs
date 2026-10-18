@@ -8,6 +8,28 @@ from typing import Any, Dict, List
 # kind: "promoted" (premium placements) | "standard" (display ads)
 GUEST_ADS: List[Dict[str, Any]] = [
     {
+        "id": "promo-visa-premium",
+        "kind": "promoted",
+        "theme": "visa_premium",
+        "title": "Premium — Visa sponsorship roles",
+        "advertiser": "OpenJobs Premium",
+        "location": "Australia-wide · All skilled occupations",
+        "summary": (
+            "See employer-sponsored roles matched to MLTSSL/STSOL-style occupation lists — "
+            "not just teaching. Daily alerts, 482/TSS filters, and early access before free users."
+        ),
+        "features": [
+            "Skilled list–matched sponsors",
+            "482 / TSS & relocation filters",
+            "Email + Telegram alerts",
+        ],
+        "price_hint": "$9/mo",
+        "cta_label": "Start Premium",
+        "cta_url": "/register?plan=visa_premium",
+        "logo_letter": "V",
+        "tags": ["Visa", "Premium", "MLTSSL"],
+    },
+    {
         "id": "promo-employer-premium",
         "kind": "promoted",
         "title": "Feature your role at the top of search",

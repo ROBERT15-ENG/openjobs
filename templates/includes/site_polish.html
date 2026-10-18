@@ -1,0 +1,31 @@
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<div id="oj-scroll-progress" aria-hidden="true"></div>
+
+<div class="oj-site-search-overlay" id="oj-site-search" role="dialog" aria-label="Site search">
+  <div class="oj-site-search-panel">
+    <input type="search" id="oj-site-search-input" placeholder="Search pages and jobs… (Ctrl+K)" autocomplete="off" />
+    <div class="oj-site-search-hint">Pages, policies, and live job titles</div>
+    <div class="oj-site-search-results" id="oj-site-search-results"></div>
+    <button type="button" class="oj-site-search-hint" data-close style="width:100%;border:none;background:transparent;cursor:pointer;padding:0.75rem;">
+      Close (Esc)
+    </button>
+  </div>
+</div>
+
+<div class="oj-confirm-overlay" id="oj-confirm" role="alertdialog" aria-modal="true" aria-labelledby="oj-confirm-title">
+  <div class="oj-confirm-dialog">
+    <h2 id="oj-confirm-title">Confirm</h2>
+    <p id="oj-confirm-body"></p>
+    <div class="oj-confirm-actions">
+      <button type="button" class="oj-confirm-cancel" id="oj-confirm-cancel">Cancel</button>
+      <button type="button" class="oj-confirm-ok" id="oj-confirm-ok">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="oj-fab-stack" aria-label="Page tools">
+  <button type="button" class="oj-fab" id="oj-site-search-open" aria-label="Site search" title="Search (Ctrl+K)">⌕</button>
+  <button type="button" class="oj-fab" id="oj-theme-toggle" aria-label="Toggle color theme" title="Dark / light mode">◐</button>
+  <button type="button" class="oj-fab" id="oj-back-top" aria-label="Back to top" title="Back to top">↑</button>
+  <a class="oj-fab primary" id="oj-floating-contact" href="mailto:{{ contact_email }}" title="Contact support">Contact</a>
+</div>

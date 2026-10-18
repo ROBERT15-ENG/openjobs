@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
 <head>
   <!-- SVG icon sprite -->
   <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
@@ -19,8 +19,7 @@
     <symbol id="ico-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></symbol>
   </svg>
 
-  <!-- Skip to main content (a11y) -->
-  <a href="#main-content" class="skip-link">Skip to main content</a>
+  {% include 'includes/head_polish.html' %}
 
   <style>
     /* ── SEMANTIC COLOR TOKENS ── */
@@ -91,24 +90,26 @@
   <meta name="description" content="OpenJobs — AI-powered job matching platform. Browse 70+ remote, hybrid and on-site jobs from top companies. Free to apply, smart recommendations.">
   <meta name="keywords" content="jobs,remote jobs,AI job matching,careers,employment,software jobs,tech jobs">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://openjobs.example.com/">
+  <link rel="canonical" href="{{ site_url }}/">
 
   <!-- Open Graph -->
   <meta property="og:title" content="OpenJobs — Matching Skills with Opportunities">
   <meta property="og:description" content="Browse 70+ jobs from top companies. AI-powered matching, real-time applications, salary insights. Free to get started.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://openjobs.example.com/">
-  <meta property="og:image" content="https://openjobs.example.com/og-image.png">
-  <meta property="og:site_name" content="OpenJobs">
+  <meta property="og:url" content="{{ site_url }}/">
+  <meta property="og:image" content="{{ site_url }}/static/og-image.svg">
+  <meta property="og:site_name" content="{{ site_name }}">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="OpenJobs — Matching Skills with Opportunities">
   <meta name="twitter:description" content="Browse 70+ jobs from top companies. AI-powered matching, real-time applications, salary insights.">
-  <meta name="twitter:image" content="https://openjobs.example.com/og-image.png">
+  <meta name="twitter:image" content="{{ site_url }}/static/og-image.svg">
 
   <title>OpenJobs — Find Your Next Dream Job</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/site-chrome.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -353,6 +354,43 @@
       border-color: rgba(0,212,170,0.35);
       background: linear-gradient(135deg, rgba(0,212,170,0.06), var(--color-card) 55%);
     }
+    .job-card.ad-card.visa-premium {
+      border-color: rgba(56, 189, 248, 0.45);
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), var(--color-card) 58%);
+    }
+    .job-card.ad-card.visa-premium .job-logo {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #7dd3fc;
+    }
+    .job-card.ad-card.visa-premium .match-badge.ad-cta-pill {
+      background: rgba(56, 189, 248, 0.14);
+      color: #7dd3fc;
+      border-color: rgba(56, 189, 248, 0.35);
+    }
+    .job-card.ad-card.visa-premium .job-actions .btn-apply {
+      background: #38bdf8;
+      color: #042f3a;
+    }
+    .badge-ad-visa-premium {
+      background: rgba(56, 189, 248, 0.18);
+      color: #7dd3fc;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+    }
+    .ad-feature-list {
+      margin: 0.35rem 0 0.5rem;
+      padding-left: 1.1rem;
+      font-size: var(--type-small);
+      color: var(--color-text-muted);
+      line-height: 1.45;
+    }
+    .ad-feature-list li { margin-bottom: 0.2rem; }
+    .ad-price-hint {
+      font-size: var(--type-caption);
+      font-weight: 700;
+      color: #7dd3fc;
+      margin-left: 0.35rem;
+    }
     .job-card.ad-card.standard {
       border-color: rgba(107,107,128,0.35);
       border-style: dashed;
@@ -530,7 +568,7 @@
     ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
   </style>
 </head>
-<body>
+<body class="has-mobile-cta has-oj-chat">
 
 <!-- HEADER -->
 <header>
@@ -854,10 +892,28 @@
   </div>
 </div>
 
+{% include 'includes/faq.html' %}
+
 <!-- FOOTER -->
-<footer>
-  <p>OpenJobs — AI-Powered Job Matching · © 2026 · Built by Alex ⚡</p>
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <div>
+      <strong>{{ site_name }}</strong> — AI job matching · © 2026<br>
+      <span>{{ contact_address }}</span><br>
+      <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>
+    </div>
+    <div class="site-footer-links">
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/employer">Employers</a>
+    </div>
+  </div>
 </footer>
+<div class="oj-mobile-cta" aria-hidden="false"><a href="/register">Sign up free — get job matches</a></div>
+{% include 'includes/cookie_banner.html' %}
+{% include 'includes/site_polish.html' %}
+<script src="/static/site.js"></script>
+<script src="/static/site-polish.js"></script>
 
 <script>
   // ── STATE ──────────────────────────────────────────────────────────
@@ -903,6 +959,7 @@
     const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
     const adsUrl = `/api/ads?page=${currentPage}&slot=feed`;
 
+    if (window.OpenJobsJobsLoading) OpenJobsJobsLoading('jobsList');
     const jobsPromise = fetch(url, { headers }).then(r => r.json());
     const adsPromise = token
       ? Promise.resolve({ ads: [] })
@@ -947,10 +1004,21 @@
 
   function renderAdCard(ad, i) {
     const promoted = ad.kind === 'promoted';
-    const cardClass = promoted ? 'promoted' : 'standard';
-    const badge = promoted
+    const visaTheme = ad.theme === 'visa_premium';
+    const cardClass = visaTheme ? 'visa-premium promoted' : (promoted ? 'promoted' : 'standard');
+    const badge = visaTheme
+      ? '<span class="badge badge-ad-visa-premium">Premium · Visa</span>'
+      : promoted
       ? '<span class="badge badge-ad-promoted">⭐ Promoted</span>'
       : '<span class="badge badge-ad-standard">Ad</span>';
+    const pillLabel = visaTheme ? 'Premium' : (promoted ? 'Promoted' : 'Sponsored');
+    const features = (ad.features || []).slice(0, 3);
+    const featureHtml = features.length
+      ? `<ul class="ad-feature-list">${features.map(f => `<li>${escHtml(f)}</li>`).join('')}</ul>`
+      : '';
+    const priceHint = ad.price_hint
+      ? `<span class="ad-price-hint">${escHtml(ad.price_hint)}</span>`
+      : '';
     const tags = (ad.tags || []).slice(0, 3).map(t =>
       `<span class="skill-tag">${escHtml(t)}</span>`
     ).join('');
@@ -969,11 +1037,12 @@
               <div class="job-title">${escHtml(ad.title)}</div>
               <div class="job-company">${escHtml(ad.advertiser)} · ${escHtml(ad.location || '')}</div>
             </div>
-            <div class="match-badge ad-cta-pill ad-disclosure">${promoted ? 'Promoted' : 'Sponsored'}</div>
+            <div class="match-badge ad-cta-pill ad-disclosure">${pillLabel}</div>
           </div>
           <div class="badges">${badge}</div>
           ${tags ? `<div class="job-skills">${tags}</div>` : ''}
-          <div class="job-summary">${escHtml(ad.summary || '')}</div>
+          <div class="job-summary">${escHtml(ad.summary || '')}${priceHint}</div>
+          ${featureHtml}
           <div class="job-footer">
             <div class="job-meta">
               <div class="job-meta-item ad-disclosure">Paid placement · shown before sign-in</div>
@@ -1469,7 +1538,8 @@ function fetchJobs() {
   const token = localStorage.getItem('token');
   const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
 
-  document.getElementById('jobsList').innerHTML = '<div style="text-align:center;padding:3rem;color:var(--color-text-muted);"><div style="display:inline-block;width:20px;height:20px;border:2px solid var(--color-border);border-top-color:var(--color-primary);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:8px;"></div> Loading...</div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+  if (window.OpenJobsJobsLoading) OpenJobsJobsLoading('jobsList');
+  else document.getElementById('jobsList').innerHTML = '<div style="text-align:center;padding:3rem;color:var(--color-text-muted);">Loading…</div>';
   document.getElementById('resultsCount').textContent = '…';
 
   const adsPromise = token
