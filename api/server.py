@@ -1247,9 +1247,10 @@ def update_job(job_id):
     if not existing:
         db.close()
         return jsonify({'error': 'Job not found'}), 404
-    if existing['employer_id'] and existing['employer_id'] != request.employer_id:
-        db.close()
-        return jsonify({'error': 'Not authorized to update this job'}), 403
+    if request.user_role != 'admin':
+        if existing['employer_id'] and existing['employer_id'] != request.employer_id:
+            db.close()
+            return jsonify({'error': 'Not authorized to update this job'}), 403
     db.execute(f'UPDATE jobs SET {set_clause} WHERE id = ?', values)
     db.commit()
     updated = db.execute('SELECT * FROM jobs WHERE id = ?', (job_id,)).fetchone()
@@ -1266,9 +1267,10 @@ def delete_job(job_id):
     if not existing:
         db.close()
         return jsonify({'error': 'Job not found'}), 404
-    if existing['employer_id'] and existing['employer_id'] != request.employer_id:
-        db.close()
-        return jsonify({'error': 'Not authorized to delete this job'}), 403
+    if request.user_role != 'admin':
+        if existing['employer_id'] and existing['employer_id'] != request.employer_id:
+            db.close()
+            return jsonify({'error': 'Not authorized to delete this job'}), 403
     db.execute('UPDATE jobs SET is_active = 0 WHERE id = ?', (job_id,))
     db.commit()
     db.close()
@@ -1365,7 +1367,16 @@ def update_user_profile():
 def get_applications():
     db = get_db()
     if request.user_role == 'admin':
-        apps = db.execute("SELECT * FROM applications ORDER BY applied_at DESC LIMIT 500").fetchall()
+        apps = db.execute(
+            """
+            SELECT a.*, u.name AS seeker_name, u.email AS seeker_email, j.title AS job_title
+            FROM applications a
+            JOIN users u ON u.id = a.user_id
+            JOIN jobs j ON j.id = a.job_id
+            ORDER BY a.applied_at DESC
+            LIMIT 500
+            """
+        ).fetchall()
     elif request.user_role == 'employer':
         apps = db.execute(
             """
@@ -1383,8 +1394,11 @@ def get_applications():
         ).fetchall()
     out = []
     for a in apps:
+        row = dict(a)
+        if request.user_role == 'admin':
+            row = admin_recent_user(row)
         row = public_application(
-            dict(a),
+            row,
             viewer_role=request.user_role,
             viewer_id=request.user_id,
             employer_id=getattr(request, 'employer_id', None) if request.user_role == 'employer' else None,
@@ -1873,7 +1887,9 @@ def admin_stats():
 
     total_jobs      = db.execute("SELECT COUNT(*) FROM jobs WHERE is_active=1").fetchone()[0]
     total_apps      = db.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
-    total_seekers   = db.execute("SELECT COUNT(*) FROM users WHERE role='seeker'").fetchone()[0]
+    total_seekers   = db.execute(
+        "SELECT COUNT(*) FROM users WHERE role IN ('seeker', 'user') OR (role IS NULL OR role = '')"
+    ).fetchone()[0]
     total_employers = db.execute("SELECT COUNT(*) FROM users WHERE role='employer'").fetchone()[0]
 
     app_rows = db.execute("SELECT status, COUNT(*) as cnt FROM applications GROUP BY status").fetchall()
@@ -1931,6 +1947,95 @@ def admin_stats():
         'recent_signups': [admin_recent_user(dict(r)) for r in recent_signups],
     })
 
+
+@app.route('/api/admin/users', methods=['GET'])
+@require_auth
+@require_admin
+def admin_list_users():
+    limit = min(request.args.get('limit', 100, type=int), 500)
+    offset = max(request.args.get('offset', 0, type=int), 0)
+    q = (request.args.get('q') or '').strip()
+    db = get_db()
+    if q:
+        like = f'%{q}%'
+        rows = db.execute(
+            """
+            SELECT id, name, email, role, skills, created_at, kyc_status
+            FROM users
+            WHERE name LIKE ? OR email LIKE ?
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (like, like, limit, offset),
+        ).fetchall()
+        total = db.execute(
+            "SELECT COUNT(*) FROM users WHERE name LIKE ? OR email LIKE ?",
+            (like, like),
+        ).fetchone()[0]
+    else:
+        rows = db.execute(
+            """
+            SELECT id, name, email, role, skills, created_at, kyc_status
+            FROM users
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ).fetchall()
+        total = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    db.close()
+    users = [admin_recent_user(dict(r)) for r in rows]
+    return jsonify({'users': users, 'total': total, 'limit': limit, 'offset': offset})
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['PATCH'])
+@require_auth
+@require_admin
+@limiter.limit('60 per hour')
+def admin_update_user(user_id):
+    data = request.json or {}
+    new_role = (data.get('role') or '').strip().lower()
+    if new_role and new_role not in ('user', 'seeker', 'employer', 'admin'):
+        return jsonify({'error': 'role must be user, seeker, employer, or admin'}), 400
+    if new_role == 'seeker':
+        new_role = 'user'
+    db = get_db()
+    target = db.execute("SELECT id, role FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not target:
+        db.close()
+        return jsonify({'error': 'User not found'}), 404
+    if target['role'] == 'admin' and new_role and new_role != 'admin' and user_id == request.user_id:
+        db.close()
+        return jsonify({'error': 'Cannot demote your own admin account'}), 400
+    if new_role:
+        db.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, user_id))
+        db.commit()
+    updated = db.execute(
+        "SELECT id, name, email, role, skills, created_at, kyc_status FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    db.close()
+    return jsonify({'success': True, 'user': admin_recent_user(dict(updated))})
+
+
+@app.route('/api/admin/jobs', methods=['GET'])
+@require_auth
+@require_admin
+def admin_list_jobs():
+    limit = min(request.args.get('limit', 200, type=int), 500)
+    db = get_db()
+    jobs = db.execute(
+        """
+        SELECT id, title, company, location, salary_min, salary_max, category,
+               is_active, created_at, work_type
+        FROM jobs
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    db.close()
+    return jsonify({'jobs': [dict(j) for j in jobs]})
 
 
 @app.route('/ai')
@@ -2063,7 +2168,9 @@ def employer_page():
 
 @app.route('/admin')
 def admin_page():
-    return open(os.path.join(TEMPLATES_DIR, 'admin.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'admin.html')) else jsonify({'admin':True})
+    if os.path.exists(os.path.join(TEMPLATES_DIR, 'admin.html')):
+        return _html_page('admin.html')
+    return jsonify({'admin': True})
 
 @app.route('/privacy')
 def privacy_page():

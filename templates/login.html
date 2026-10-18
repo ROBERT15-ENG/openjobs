@@ -297,6 +297,8 @@
         } else if (!localStorage.getItem('openjobs_onboarding_v1')) {
           redirectUrl = '/onboarding';
         }
+        const next = new URLSearchParams(window.location.search).get('next');
+        if (next && next.startsWith('/') && !next.startsWith('//')) redirectUrl = next;
         showAlert('success', 'Login successful! Redirecting...');
         setTimeout(() => window.location.href = redirectUrl, 600);
       } else if (data.error === 'email_not_confirmed') {
