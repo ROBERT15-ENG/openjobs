@@ -1573,6 +1573,23 @@ def get_pricing():
     "Return pricing tiers (no auth needed)."
     return jsonify({
         'currency': 'AUD',
+        'seeker_plans': [
+            {
+                'id': 'visa_premium',
+                'name': 'Premium — Visa sponsorship',
+                'price': 9,
+                'interval': 'month',
+                'description': 'Skilled-list matched sponsor roles with alerts',
+                'features': [
+                    'MLTSSL/STSOL-style occupation matching',
+                    '482, TSS, and relocation filters',
+                    'Daily email and Telegram alerts',
+                    'Early access to new sponsor listings',
+                ],
+                'featured': True,
+                'cta_url': '/register?plan=visa_premium',
+            },
+        ],
         'plans': [
             {
                 'id': 'standard',

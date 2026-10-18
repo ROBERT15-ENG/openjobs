@@ -355,6 +355,43 @@
       border-color: rgba(0,212,170,0.35);
       background: linear-gradient(135deg, rgba(0,212,170,0.06), var(--color-card) 55%);
     }
+    .job-card.ad-card.visa-premium {
+      border-color: rgba(56, 189, 248, 0.45);
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), var(--color-card) 58%);
+    }
+    .job-card.ad-card.visa-premium .job-logo {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #7dd3fc;
+    }
+    .job-card.ad-card.visa-premium .match-badge.ad-cta-pill {
+      background: rgba(56, 189, 248, 0.14);
+      color: #7dd3fc;
+      border-color: rgba(56, 189, 248, 0.35);
+    }
+    .job-card.ad-card.visa-premium .job-actions .btn-apply {
+      background: #38bdf8;
+      color: #042f3a;
+    }
+    .badge-ad-visa-premium {
+      background: rgba(56, 189, 248, 0.18);
+      color: #7dd3fc;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+    }
+    .ad-feature-list {
+      margin: 0.35rem 0 0.5rem;
+      padding-left: 1.1rem;
+      font-size: var(--type-small);
+      color: var(--color-text-muted);
+      line-height: 1.45;
+    }
+    .ad-feature-list li { margin-bottom: 0.2rem; }
+    .ad-price-hint {
+      font-size: var(--type-caption);
+      font-weight: 700;
+      color: #7dd3fc;
+      margin-left: 0.35rem;
+    }
     .job-card.ad-card.standard {
       border-color: rgba(107,107,128,0.35);
       border-style: dashed;
@@ -963,10 +1000,21 @@
 
   function renderAdCard(ad, i) {
     const promoted = ad.kind === 'promoted';
-    const cardClass = promoted ? 'promoted' : 'standard';
-    const badge = promoted
+    const visaTheme = ad.theme === 'visa_premium';
+    const cardClass = visaTheme ? 'visa-premium promoted' : (promoted ? 'promoted' : 'standard');
+    const badge = visaTheme
+      ? '<span class="badge badge-ad-visa-premium">Premium · Visa</span>'
+      : promoted
       ? '<span class="badge badge-ad-promoted">⭐ Promoted</span>'
       : '<span class="badge badge-ad-standard">Ad</span>';
+    const pillLabel = visaTheme ? 'Premium' : (promoted ? 'Promoted' : 'Sponsored');
+    const features = (ad.features || []).slice(0, 3);
+    const featureHtml = features.length
+      ? `<ul class="ad-feature-list">${features.map(f => `<li>${escHtml(f)}</li>`).join('')}</ul>`
+      : '';
+    const priceHint = ad.price_hint
+      ? `<span class="ad-price-hint">${escHtml(ad.price_hint)}</span>`
+      : '';
     const tags = (ad.tags || []).slice(0, 3).map(t =>
       `<span class="skill-tag">${escHtml(t)}</span>`
     ).join('');
@@ -985,11 +1033,12 @@
               <div class="job-title">${escHtml(ad.title)}</div>
               <div class="job-company">${escHtml(ad.advertiser)} · ${escHtml(ad.location || '')}</div>
             </div>
-            <div class="match-badge ad-cta-pill ad-disclosure">${promoted ? 'Promoted' : 'Sponsored'}</div>
+            <div class="match-badge ad-cta-pill ad-disclosure">${pillLabel}</div>
           </div>
           <div class="badges">${badge}</div>
           ${tags ? `<div class="job-skills">${tags}</div>` : ''}
-          <div class="job-summary">${escHtml(ad.summary || '')}</div>
+          <div class="job-summary">${escHtml(ad.summary || '')}${priceHint}</div>
+          ${featureHtml}
           <div class="job-footer">
             <div class="job-meta">
               <div class="job-meta-item ad-disclosure">Paid placement · shown before sign-in</div>
