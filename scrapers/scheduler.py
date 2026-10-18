@@ -12,6 +12,7 @@ from scrapers.db_insert import insert_jobs
 from scrapers.sources import linkedin_au, seek_au
 from scrapers.teaching_au import fetch_teaching_sponsorship_jobs
 from scrapers.teaching_filters import is_teaching_with_sponsorship
+from scrapers.visa_sponsorship_au import fetch_visa_sponsorship_jobs
 
 _lock = threading.Lock()
 _status: Dict[str, Any] = {
@@ -42,6 +43,8 @@ class ScrapeScheduler:
         require_sponsorship: bool = True,
         australia_only: bool = True,
         max_pages: int = 2,
+        require_occupation_on_demand: bool = True,
+        min_occupation_score: int = 3,
     ) -> Dict[str, Any]:
         with _lock:
             if _status.get("state") == "running":
@@ -57,7 +60,15 @@ class ScrapeScheduler:
 
         try:
             jobs = self._collect(
-                source, query, location, profile, require_sponsorship, australia_only, max_pages
+                source,
+                query,
+                location,
+                profile,
+                require_sponsorship,
+                australia_only,
+                max_pages,
+                require_occupation_on_demand,
+                min_occupation_score,
             )
             db_stats = {"inserted": 0, "skipped": 0}
             if insert_db and jobs:
@@ -94,7 +105,20 @@ class ScrapeScheduler:
         require_sponsorship: bool,
         australia_only: bool,
         max_pages: int,
+        require_occupation_on_demand: bool,
+        min_occupation_score: int,
     ):
+        if profile == "visa_sponsorship_au" or source == "visa_sponsorship_au":
+            return fetch_visa_sponsorship_jobs(
+                location=location,
+                max_pages_per_query=max_pages,
+                require_sponsorship=require_sponsorship,
+                australia_only=australia_only,
+                require_occupation_on_demand=require_occupation_on_demand,
+                min_occupation_score=min_occupation_score,
+                extra_queries=[query] if query and query not in ("software engineer",) else None,
+            )
+
         if profile == "teaching_sponsorship" or source == "teaching_au":
             return fetch_teaching_sponsorship_jobs(
                 sources=["nsw_jobfeed", "seek_all_states"],
@@ -154,6 +178,7 @@ class ScrapeScheduler:
         query: str,
         location: str,
         profile: str | None = None,
+        require_occupation_on_demand: bool = True,
     ) -> threading.Thread:
         self.stop_scheduled()
         self._scheduled_stop.clear()
@@ -166,6 +191,7 @@ class ScrapeScheduler:
                     location=location,
                     insert_db=True,
                     profile=profile,
+                    require_occupation_on_demand=require_occupation_on_demand,
                 )
                 self._scheduled_stop.wait(interval_minutes * 60)
 

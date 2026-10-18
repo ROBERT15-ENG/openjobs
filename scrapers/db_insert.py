@@ -63,7 +63,9 @@ def insert_job(conn: sqlite3.Connection, job: Dict[str, Any]) -> Tuple[bool, str
             job.get("location"),
             desc[:8000],
             job.get("salary") or "",
-            job.get("category", "Education & Training"),
+            job.get("category")
+            or job.get("occupation_title")
+            or "Skilled migration",
             1,
             now,
             job.get("work_type", "full_time"),

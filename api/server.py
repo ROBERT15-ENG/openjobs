@@ -2777,9 +2777,46 @@ def kyc_admin_verify(user_id):
 
 
 
+_scraper_scheduler = None
 try:
     from scraper_routes import scraper_bp
     app.register_blueprint(scraper_bp)
+
+    def _maybe_auto_start_scraper():
+        global _scraper_scheduler
+        flag = os.environ.get("SCRAPER_AUTO_START", "").lower()
+        if flag not in ("1", "true", "yes"):
+            return
+        from scrapers.scheduler import get_scheduler
+
+        source = os.environ.get("SCRAPER_AUTO_SOURCE", "visa_sponsorship_au")
+        profile = os.environ.get("SCRAPER_AUTO_PROFILE") or (
+            "visa_sponsorship_au" if source == "visa_sponsorship_au" else None
+        )
+        interval = int(os.environ.get("SCRAPER_AUTO_INTERVAL_MINUTES", "360"))
+        query = os.environ.get(
+            "SCRAPER_AUTO_QUERY",
+            "visa sponsorship Australia"
+            if source == "visa_sponsorship_au"
+            else "teacher visa sponsorship",
+        )
+        location = os.environ.get("SCRAPER_AUTO_LOCATION", "Australia")
+        require_occ = os.environ.get("SCRAPER_REQUIRE_OCCUPATION_LIST", "true").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        _scraper_scheduler = get_scheduler()
+        _scraper_scheduler.start_scheduled(
+            interval,
+            source,
+            query,
+            location,
+            profile=profile,
+            require_occupation_on_demand=require_occ,
+        )
+
+    _maybe_auto_start_scraper()
 except ImportError as _scraper_err:
     import warnings
     warnings.warn(f"Scraper routes not loaded: {_scraper_err}")

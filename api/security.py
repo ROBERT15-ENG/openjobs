@@ -5,6 +5,7 @@ Auth helpers and production safety checks.
 import os
 from functools import wraps
 
+import jwt
 from flask import jsonify, request
 
 _INSECURE_JWT_DEFAULTS = {
@@ -22,6 +23,36 @@ def enforce_production_secrets():
         raise RuntimeError(
             "Production requires JWT_SECRET (or SECRET_KEY) of at least 32 random characters."
         )
+
+
+def _jwt_secret() -> str:
+    return (
+        os.environ.get("JWT_SECRET")
+        or os.environ.get("SECRET_KEY")
+        or "dev_secret_do_not_use_in_production"
+    )
+
+
+def require_auth(f):
+    """JWT bearer auth for API routes (used by scraper blueprint and others)."""
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return jsonify({"error": "Missing or invalid Authorization header"}), 401
+        token = auth.split(" ", 1)[1]
+        try:
+            payload = jwt.decode(token, _jwt_secret(), algorithms=["HS256"])
+        except jwt.PyJWTError:
+            return jsonify({"error": "Invalid or expired token"}), 401
+        request.user_id = int(payload.get("user_id", 0))
+        request.user_role = payload.get("role", "user")
+        request.user_email = payload.get("email", "")
+        request.employer_id = payload.get("employer_id") or payload.get("user_id")
+        return f(*args, **kwargs)
+
+    return decorated
 
 
 def require_admin(f):
