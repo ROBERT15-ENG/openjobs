@@ -2,7 +2,7 @@
 <html lang="en" data-ga-id="{{ ga_measurement_id }}">
 <head>
 
-  <meta name="google-signin-client_id" content="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com">
+  <meta name="google-signin-client_id" content="{{ google_client_id }}">
 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -299,17 +299,20 @@
         btn.textContent = 'Create Account →';
       }
     } catch(err) {
-      // Demo mode fallback
-      showAlert('success', 'Demo account created! Redirecting...');
-      setTimeout(() => window.location.href = '/thank-you?type=register', 1000);
+      showAlert('error', 'Cannot reach the server. Check your connection and try again.');
+      btn.disabled = false;
+      btn.textContent = 'Create Account →';
     }
   }
 
     // ── GOOGLE SIGN-IN ───────────────────────────────────────────────
+  const GOOGLE_CLIENT_ID = '{{ google_client_id }}';
+
   function initGoogleRegister() {
+    if (!GOOGLE_CLIENT_ID) return;
     if (typeof google === 'undefined') return;
     google.accounts.id.initialize({
-      client_id: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
+      client_id: GOOGLE_CLIENT_ID,
       callback: handleGoogleRegister,
       auto_select: false
     });
@@ -358,6 +361,7 @@
   }
 
   (function() {
+    if (!GOOGLE_CLIENT_ID) return;
     const existing = document.querySelector('script[src*="accounts.google.com/gsi/client"]');
     if (!existing) {
       const s = document.createElement('script');

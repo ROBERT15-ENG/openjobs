@@ -1344,7 +1344,7 @@ def update_user_profile():
     except Exception:
         return jsonify({'error': 'Invalid token'}), 401
     data = request.json or {}
-    ALLOWED = ['name', 'skills', 'phone', 'preferred_location', 'experience', 'company']
+    ALLOWED = ['name', 'skills', 'phone', 'preferred_location', 'experience', 'company', 'resume_text']
     updates = {k: v for k, v in data.items() if k in ALLOWED}
     if not updates:
         return jsonify({'error': f'No valid fields. Allowed: {ALLOWED}'}), 400
@@ -2012,11 +2012,19 @@ def _serve_job_html(job, canonical, jsonld, bc_jsonld, noindex, status=200):
 
 @app.route('/companies')
 def companies_page():
-    return open(os.path.join(TEMPLATES_DIR, 'company.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'company.html')) else jsonify({'companies':[]})
+    return _html_page('companies.html')
 
 @app.route('/salary')
 def salary_page():
-    return open(os.path.join(TEMPLATES_DIR, 'salary.html')).read() if os.path.exists(os.path.join(TEMPLATES_DIR, 'salary.html')) else jsonify({'predict':True})
+    return _html_page('salary.html')
+
+@app.route('/learning')
+def learning_page():
+    return _html_page('learning.html')
+
+@app.route('/premium')
+def premium_page():
+    return _html_page('premium.html')
 
 @app.route('/login')
 def login_page():
@@ -2403,7 +2411,7 @@ def get_user_profile():
         user_id = request.args.get('user_id', type=int)
     db = get_db()
     user = db.execute(
-        "SELECT id, name, email, role, skills, phone, company, preferred_location, experience, created_at, kyc_status "
+        "SELECT id, name, email, role, skills, phone, company, preferred_location, experience, created_at, kyc_status, cv_link "
         "FROM users WHERE id = ?",
         (user_id,),
     ).fetchone()
@@ -2466,6 +2474,107 @@ def update_privacy_prefs():
         return jsonify({'error': 'Privacy settings not available; run migrations.'}), 503
     db.close()
     return jsonify({'success': True, 'marketing_opt_in': bool(marketing), 'analytics_opt_in': bool(analytics)})
+
+
+@app.route('/api/user/job-alerts', methods=['GET'])
+@require_auth
+def get_job_alerts():
+    db = get_db()
+    try:
+        row = db.execute(
+            "SELECT visa_sponsorship, keywords, enabled, updated_at FROM user_job_alerts WHERE user_id = ?",
+            (request.user_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        db.close()
+        return jsonify({
+            'visa_sponsorship': False,
+            'keywords': '',
+            'enabled': False,
+            'updated_at': None,
+        })
+    db.close()
+    if not row:
+        return jsonify({
+            'visa_sponsorship': False,
+            'keywords': '',
+            'enabled': False,
+            'updated_at': None,
+        })
+    return jsonify({
+        'visa_sponsorship': bool(row['visa_sponsorship']),
+        'keywords': row['keywords'] or '',
+        'enabled': bool(row['enabled']),
+        'updated_at': row['updated_at'],
+    })
+
+
+@app.route('/api/user/job-alerts', methods=['PATCH'])
+@require_auth
+@limiter.limit('30 per hour')
+def update_job_alerts():
+    data = request.json or {}
+    visa = 1 if data.get('visa_sponsorship') else 0
+    enabled = 1 if data.get('enabled', True) else 0
+    keywords = (data.get('keywords') or '').strip()[:500]
+    now = datetime.datetime.utcnow().isoformat() + 'Z'
+    db = get_db()
+    try:
+        db.execute(
+            """
+            INSERT INTO user_job_alerts (user_id, visa_sponsorship, keywords, enabled, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                visa_sponsorship = excluded.visa_sponsorship,
+                keywords = excluded.keywords,
+                enabled = excluded.enabled,
+                updated_at = excluded.updated_at
+            """,
+            (request.user_id, visa, keywords, enabled, now),
+        )
+        db.commit()
+    except sqlite3.OperationalError:
+        db.close()
+        return jsonify({'error': 'Job alerts not available; run migrations.'}), 503
+    db.close()
+    return jsonify({
+        'success': True,
+        'visa_sponsorship': bool(visa),
+        'keywords': keywords,
+        'enabled': bool(enabled),
+    })
+
+
+@app.route('/api/user/change-password', methods=['POST'])
+@require_auth
+@limiter.limit('10 per hour')
+def change_password():
+    data = request.json or {}
+    current = data.get('current_password') or ''
+    new_pw = data.get('new_password') or ''
+    if not current or not new_pw:
+        return jsonify({'error': 'current_password and new_password are required'}), 400
+    ok, msg = _check_password_complexity(new_pw)
+    if not ok:
+        return jsonify({'error': msg}), 400
+    db = get_db()
+    user = db.execute(
+        "SELECT password_hash FROM users WHERE id = ?",
+        (request.user_id,),
+    ).fetchone()
+    if not user or not verify_password(current, user['password_hash']):
+        db.close()
+        return jsonify({'error': 'Current password is incorrect'}), 400
+    db.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (hash_password(new_pw), request.user_id),
+    )
+    db.commit()
+    db.close()
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        _block_token(auth.split(' ', 1)[1])
+    return jsonify({'success': True, 'message': 'Password updated. Please sign in again.'})
 
 
 @app.route('/api/user/data-export', methods=['GET'])

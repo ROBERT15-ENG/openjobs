@@ -15,6 +15,7 @@ def site_config() -> dict:
             "CONTACT_ADDRESS", "Level 1, 1 Market Street, Sydney NSW 2000, Australia"
         ),
         "ga_measurement_id": os.environ.get("GA_MEASUREMENT_ID", "").strip(),
+        "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", "").strip(),
     }
 
 

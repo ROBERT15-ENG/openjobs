@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Browse employers hiring on OpenJobs Australia.">
+  <link rel="canonical" href="{{ site_url }}/companies">
+  <title>Companies — {{ site_name }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/site-chrome.css">
+  {% include 'includes/head_polish.html' %}
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #09090f; color: #ededf0; }
+    main { max-width: 900px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+    h1 { color: #00d4aa; }
+    .card { background: #18181f; border: 1px solid #2a2a3e; border-radius: 12px; padding: 1rem; margin-top: 1rem; }
+    a { color: #00d4aa; }
+    #companyList { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <main id="main-content">
+    <p><a href="/">← Home</a></p>
+    <h1>Companies hiring</h1>
+    <p>Employers with active listings on OpenJobs. Select a company to search their jobs on the home feed.</p>
+    <div id="companyList">Loading…</div>
+  </main>
+  {% include 'includes/site_polish.html' %}
+  <script src="/static/site.js"></script>
+  <script src="/static/site-polish.js"></script>
+  <script>
+    fetch('/api/companies')
+      .then(r => r.json())
+      .then(data => {
+        const list = data.companies || data || [];
+        const el = document.getElementById('companyList');
+        if (!list.length) {
+          el.innerHTML = '<p class="card">No companies yet. <a href="/">Browse all jobs</a>.</p>';
+          return;
+        }
+        el.innerHTML = list.slice(0, 40).map(c => {
+          const name = c.name || c.company || c;
+          const q = encodeURIComponent(name);
+          return `<div class="card"><strong>${name}</strong><br><a href="/?q=${q}">View jobs</a></div>`;
+        }).join('');
+      })
+      .catch(() => {
+        document.getElementById('companyList').innerHTML = '<p class="card">Could not load companies. <a href="/">Browse jobs</a>.</p>';
+      });
+  </script>
+</body>
+</html>

@@ -73,10 +73,45 @@
     .trend-neutral { background: rgba(107,107,128,0.1); color: var(--text-muted); }
     .stat-value { font-size: 2rem; font-weight: 800; margin-bottom: 0.2rem; }
     .stat-label { font-size: 0.8rem; color: var(--text-muted); }
+    .mobile-nav-btn {
+      display: none;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.4rem 0.65rem;
+      color: var(--text);
+      font-size: 1.1rem;
+      cursor: pointer;
+    }
+    .mobile-nav-panel {
+      display: none;
+      position: absolute;
+      top: 64px;
+      left: 0;
+      right: 0;
+      background: rgba(9,9,15,0.98);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1rem 1rem;
+      flex-direction: column;
+      gap: 0.25rem;
+      z-index: 99;
+    }
+    .mobile-nav-panel.open { display: flex; }
+    .mobile-nav-panel a {
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 0.6rem 0.75rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .mobile-nav-panel a:hover { background: var(--bg-card); color: var(--text); }
     @media (max-width: 900px) {
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
       nav { display: none; }
+      .mobile-nav-btn { display: inline-flex; }
       .page-wrap { padding: 1rem; }
+      header { position: relative; }
     }
 
     /* PROGRESS BARS */
@@ -182,13 +217,23 @@
       <a href="/">🏠 Home</a>
       <a href="/user" class="active">📊 Dashboard</a>
       <a href="/">🔍 Find Jobs</a>
-      <a href="/">💼 Companies</a>
-      <a href="/">📚 Learning</a>
+      <a href="/companies">💼 Companies</a>
+      <a href="/learning">📚 Learning</a>
     </nav>
+    <button type="button" class="mobile-nav-btn" id="mobileNavBtn" aria-expanded="false" aria-controls="mobileNavPanel" onclick="toggleMobileNav()">☰</button>
+    <div class="mobile-nav-panel" id="mobileNavPanel" role="navigation">
+      <a href="/">🏠 Home</a>
+      <a href="/user">📊 Dashboard</a>
+      <a href="/">🔍 Find Jobs</a>
+      <a href="/companies">💼 Companies</a>
+      <a href="/learning">📚 Learning</a>
+      <a href="/salary">💰 Salary</a>
+      <a href="/premium">⭐ Premium</a>
+    </div>
     <div class="header-right">
-      <button class="notif-btn">
+      <button type="button" class="notif-btn" title="Application updates" onclick="switchTab('applications')">
         🔔
-        <div class="notif-dot"></div>
+        <div class="notif-dot" id="notifDot" style="display:none"></div>
       </button>
       <div class="avatar" id="userAvatar">T</div>
     </div>
@@ -210,12 +255,12 @@
 
   <!-- TABS -->
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('overview')">📊 Overview</button>
-    <button class="tab" onclick="switchTab('applications')">📋 Applications</button>
-    <button class="tab" onclick="switchTab('saved')">⭐ Saved Jobs</button>
-    <button class="tab" onclick="switchTab('recommendations')">🎯 For You</button>
-    <button class="tab" onclick="switchTab('profile')">👤 Profile</button>
-    <button class="tab" onclick="switchTab('settings')">⚙️ Settings</button>
+    <button class="tab active" data-tab="overview" onclick="switchTab('overview')">📊 Overview</button>
+    <button class="tab" data-tab="applications" onclick="switchTab('applications')">📋 Applications</button>
+    <button class="tab" data-tab="saved" onclick="switchTab('saved')">⭐ Saved Jobs</button>
+    <button class="tab" data-tab="recommendations" onclick="switchTab('recommendations')">🎯 For You</button>
+    <button class="tab" data-tab="profile" onclick="switchTab('profile')">👤 Profile</button>
+    <button class="tab" data-tab="settings" onclick="switchTab('settings')">⚙️ Settings</button>
   </div>
 
   <!-- ── OVERVIEW ── -->
@@ -401,10 +446,44 @@
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-header"><div class="card-title">📄 Resume</div></div>
+      <p id="resumeStatus" style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;">Upload PDF or DOCX (max 5 MB) to improve matches.</p>
+      <input type="file" id="resumeFile" accept=".pdf,.doc,.docx" style="margin-bottom:0.75rem;color:var(--text-muted);font-size:0.85rem;">
+      <button type="button" class="btn-save-profile" style="background:transparent;border:1px solid var(--border);color:var(--text);" onclick="uploadResume()">Upload resume</button>
+    </div>
+
     <button class="btn-save-profile" onclick="saveProfile()">💾 Save Profile</button>
   </div>
 
   <div class="tab-content" id="tab-settings">
+    <div class="card">
+      <div class="card-header"><div class="card-title">Job alerts</div></div>
+      <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;">Email alerts when new roles match (saved to your account).</p>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.9rem;margin-bottom:0.75rem;">
+        <input type="checkbox" id="alertVisa"> Visa / sponsorship roles
+      </label>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.9rem;margin-bottom:0.75rem;">
+        <input type="checkbox" id="alertEnabled" checked> Alerts enabled
+      </label>
+      <div class="profile-field">
+        <div class="profile-label">Keywords (optional)</div>
+        <input type="text" class="profile-input" id="alertKeywords" placeholder="e.g. Python, Sydney">
+      </div>
+      <button type="button" class="btn-save-profile" onclick="saveJobAlerts()">Save alert preferences</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Change password</div></div>
+      <div class="profile-field">
+        <div class="profile-label">Current password</div>
+        <input type="password" class="profile-input" id="pwCurrent" autocomplete="current-password">
+      </div>
+      <div class="profile-field">
+        <div class="profile-label">New password</div>
+        <input type="password" class="profile-input" id="pwNew" autocomplete="new-password">
+      </div>
+      <button type="button" class="btn-save-profile" onclick="changePassword()">Update password</button>
+    </div>
     <div class="card">
       <div class="card-header"><div class="card-title">Account</div></div>
       <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;">Export or delete your data (GDPR-style).</p>
@@ -488,7 +567,15 @@
     }
     loadDashboard();
     loadUserProfile();
+    loadJobAlerts();
   });
+
+  function toggleMobileNav() {
+    const panel = document.getElementById('mobileNavPanel');
+    const btn = document.getElementById('mobileNavBtn');
+    const open = panel.classList.toggle('open');
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
 
   // ── LOAD DASHBOARD DATA ──
   async function loadDashboard() {
@@ -519,18 +606,123 @@
     }
   }
 
+  function parseSkillsField(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    const s = String(raw).trim();
+    if (!s) return [];
+    if (s.startsWith('[')) {
+      try { return JSON.parse(s); } catch (_) {}
+    }
+    return s.split(',').map(x => x.trim()).filter(Boolean);
+  }
+
+  function renderSkillsTags(skillList) {
+    skills = skillList.length ? [...skillList] : [];
+    const container = document.getElementById('skillsContainer');
+    const addBtn = container.querySelector('.skill-add');
+    container.querySelectorAll('.skill-tag').forEach(t => t.remove());
+    skills.forEach(skill => {
+      const tag = document.createElement('span');
+      tag.className = 'skill-tag';
+      tag.innerHTML = escHtml(skill) + ' <button type="button" onclick="removeSkill(this)">×</button>';
+      container.insertBefore(tag, addBtn);
+    });
+  }
+
   function loadUserProfile() {
     fetch('/api/user/profile', { headers: authHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data && !data.error) {
           userProfile = data;
-          document.getElementById('userName').textContent = (data.name || 'Tonny').split(' ')[0];
-          document.getElementById('userAvatar').textContent = (data.name || 'T')[0].toUpperCase();
+          const first = (data.name || 'User').split(' ')[0];
+          document.getElementById('userName').textContent = first;
+          document.getElementById('userAvatar').textContent = (data.name || 'U')[0].toUpperCase();
           document.getElementById('profileName').value = data.name || '';
           document.getElementById('profileEmail').value = data.email || '';
+          document.getElementById('profileLocation').value = data.preferred_location || '';
+          document.getElementById('profilePhone').value = data.phone || '';
+          const exp = data.experience || '';
+          if (document.getElementById('prefWorkType') && exp) document.getElementById('prefWorkType').value = exp;
+          renderSkillsTags(parseSkillsField(data.skills));
+          const rs = document.getElementById('resumeStatus');
+          if (rs) {
+            rs.textContent = data.cv_link
+              ? '✅ Resume on file — upload a new file to replace it.'
+              : 'Upload PDF or DOCX (max 5 MB) to improve matches.';
+          }
+          if (data.cv_link) {
+            document.getElementById('resumeBar').style.width = '100%';
+            document.getElementById('resumePct').textContent = '100%';
+          }
         }
       });
+  }
+
+  async function loadJobAlerts() {
+    try {
+      const res = await fetch('/api/user/job-alerts', { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      const visaEl = document.getElementById('alertVisa');
+      const enEl = document.getElementById('alertEnabled');
+      const kwEl = document.getElementById('alertKeywords');
+      if (visaEl) visaEl.checked = !!data.visa_sponsorship;
+      if (enEl) enEl.checked = data.enabled !== false;
+      if (kwEl) kwEl.value = data.keywords || '';
+    } catch (_) {}
+  }
+
+  async function saveJobAlerts() {
+    const body = {
+      visa_sponsorship: !!document.getElementById('alertVisa')?.checked,
+      enabled: !!document.getElementById('alertEnabled')?.checked,
+      keywords: (document.getElementById('alertKeywords')?.value || '').trim(),
+    };
+    const res = await fetch('/api/user/job-alerts', {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'Could not save alerts'); return; }
+    alert('✅ Alert preferences saved');
+  }
+
+  async function changePassword() {
+    const current = document.getElementById('pwCurrent')?.value || '';
+    const newPw = document.getElementById('pwNew')?.value || '';
+    if (!current || !newPw) { alert('Enter current and new password'); return; }
+    const res = await fetch('/api/user/change-password', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ current_password: current, new_password: newPw }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'Password update failed'); return; }
+    alert(data.message || 'Password updated. Sign in again.');
+    localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
+    window.location.href = '/login';
+  }
+
+  async function uploadResume() {
+    const input = document.getElementById('resumeFile');
+    if (!input?.files?.length) { alert('Choose a file first'); return; }
+    const fd = new FormData();
+    fd.append('file', input.files[0]);
+    const t = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const res = await fetch('/api/resume/upload', {
+      method: 'POST',
+      headers: t ? { Authorization: 'Bearer ' + t } : {},
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'Upload failed'); return; }
+    alert('✅ Resume uploaded');
+    loadUserProfile();
+    input.value = '';
   }
 
   // ── RENDER ──
@@ -544,6 +736,9 @@
     renderRecJobs(d.recommended || []);
     renderAllRecJobs(d.recommended || []);
     updateProgress(s);
+    const pending = (s.pending || 0) + (s.interviews || 0);
+    const dot = document.getElementById('notifDot');
+    if (dot) dot.style.display = pending > 0 ? 'block' : 'none';
   }
 
   function updateProgress(s) {
@@ -646,22 +841,26 @@
   function switchTab(name) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    // Activate clicked tab button
-    const btns = document.querySelectorAll('.tab');
-    const names = ['overview','applications','saved','recommendations','profile'];
-    const idx = names.indexOf(name);
-    if (idx >= 0 && btns[idx]) btns[idx].classList.add('active');
+    const btn = document.querySelector('.tab[data-tab="' + name + '"]');
+    if (btn) btn.classList.add('active');
     const content = document.getElementById('tab-' + name);
     if (content) content.classList.add('active');
     window.scrollTo({top: 0, behavior: 'smooth'});
+    const panel = document.getElementById('mobileNavPanel');
+    if (panel) panel.classList.remove('open');
 
     if (name === 'saved') loadSavedJobs();
     if (name === 'applications') renderApplications();
+    if (name === 'settings') loadJobAlerts();
   }
 
   async function loadSavedJobs() {
     try {
-      const res = await fetch('/api/saved_jobs?user_id=' + getCurrentUserId());
+      const res = await fetch('/api/saved_jobs', { headers: authHeaders() });
+      if (res.status === 401) {
+        window.location.href = '/login';
+        return;
+      }
       const jobs = await res.json();
       const el = document.getElementById('savedJobsList');
       if (!jobs.length) {
@@ -675,7 +874,7 @@
   }
 
   // ── PROFILE ──
-  let skills = ['Python', 'JavaScript', 'AI/LangChain'];
+  let skills = [];
   function removeSkill(btn) {
     const tag = btn.parentElement;
     const skill = tag.textContent.replace('×','').trim();
@@ -694,16 +893,33 @@
       container.insertBefore(tag, btn);
     }
   }
-  function saveProfile() {
-    const name = document.getElementById('profileName').value;
-    const location = document.getElementById('profileLocation').value;
-    const headline = document.getElementById('profileHeadline')?.value || '';
-    const bio = document.getElementById('profileBio')?.value || '';
-    userProfile = { ...userProfile, name, location, skills };
-    document.getElementById('userName').textContent = (name || 'Tonny').split(' ')[0];
-    document.getElementById('userAvatar').textContent = (name || 'T')[0].toUpperCase();
-    document.getElementById('greetingSub').textContent = 'Profile updated! Keep building your profile for better matches.';
-    // Update progress
+  async function saveProfile() {
+    const name = document.getElementById('profileName').value.trim();
+    const preferred_location = document.getElementById('profileLocation').value.trim();
+    const phone = document.getElementById('profilePhone').value.trim();
+    const experience = document.getElementById('prefWorkType')?.value || '';
+    const body = {
+      name,
+      preferred_location,
+      phone,
+      skills: skills.join(','),
+      experience,
+    };
+    const res = await fetch('/api/user/profile', {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || 'Could not save profile');
+      return;
+    }
+    userProfile = { ...userProfile, name, preferred_location, phone, skills };
+    document.getElementById('userName').textContent = (name || 'User').split(' ')[0];
+    document.getElementById('userAvatar').textContent = (name || 'U')[0].toUpperCase();
+    const sub = document.getElementById('greetingSub');
+    if (sub) sub.textContent = 'Profile saved. Keep building for better matches.';
     document.getElementById('profileBar').style.width = '85%';
     document.getElementById('profilePct').textContent = '85%';
     document.getElementById('skillsBar').style.width = Math.min(100, skills.length * 25) + '%';

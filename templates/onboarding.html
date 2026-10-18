@@ -94,8 +94,17 @@
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
           body: JSON.stringify(body),
         });
+        await fetch('/api/user/job-alerts', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({
+            visa_sponsorship: visa === 'yes',
+            enabled: true,
+            keywords: '',
+          }),
+        });
       } catch (_) {}
-      location.href = '/user';
+      location.href = visa === 'yes' ? '/?visa=1' : '/user';
     }
   </script>
 </body>

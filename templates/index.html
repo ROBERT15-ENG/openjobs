@@ -621,6 +621,7 @@
       <button class="quick-chip" data-country="part_time" onclick="setQuickFilter(this, 'part_time')">Part-time</button>
       <button class="quick-chip" data-country="contract" onclick="setQuickFilter(this, 'contract')">Contract</button>
       <button class="quick-chip" data-country="internship" onclick="setQuickFilter(this, 'internship')">Internship</button>
+      <button class="quick-chip" id="visaFilterChip" type="button" data-country="visa" onclick="toggleVisaFilter(this)" title="Jobs mentioning visa or sponsorship">🛂 Visa sponsorship</button>
     </div>
     <!-- City sub-filter — shown when a country/region is selected -->
     <div class="quick-filters city-subfilter" id="citySubfilter" style="display:none; margin-top:0.4rem;">
@@ -920,9 +921,31 @@
   let currentPage = 1;
   let currentJob = null;
   const PAGE_SIZE = 20;
+  let visaSponsorshipOnly = false;
+
+  function setVisaFilter(on, refetch) {
+    visaSponsorshipOnly = !!on;
+    const chip = document.getElementById('visaFilterChip');
+    if (chip) chip.classList.toggle('active', visaSponsorshipOnly);
+    if (visaSponsorshipOnly) localStorage.setItem('openjobs_visa_filter', '1');
+    else localStorage.removeItem('openjobs_visa_filter');
+    if (refetch !== false) fetchJobs();
+  }
+
+  function toggleVisaFilter(btn) {
+    setVisaFilter(!visaSponsorshipOnly);
+  }
+
+  function applyVisaFilterFromUrlAndStorage() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('visa') === '1' || localStorage.getItem('openjobs_visa_filter') === '1') {
+      setVisaFilter(true, false);
+    }
+  }
 
   // ── INIT ──────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
+    applyVisaFilterFromUrlAndStorage();
     fetchJobs();
     document.getElementById('searchInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
     document.getElementById('locationInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
@@ -954,6 +977,7 @@
     if (locationFilter) url += `&location=${encodeURIComponent(locationFilter)}`;
     if (workTypes.length)  url += `&work_type=${workTypes.join(',')}`;
     if (workArr.length)    url += `&work_arrangement=${workArr.join(',')}`;
+    if (visaSponsorshipOnly) url += '&visa=1';
 
     const token = localStorage.getItem('token');
     const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
@@ -1386,8 +1410,14 @@
   }
 
   // ── UTILITIES ─────────────────────────────────────────────────────
+  function jobMentionsVisa(job) {
+    const blob = ((job.title || '') + ' ' + (job.description || '') + ' ' + (job.search_summary || '')).toLowerCase();
+    return /\bvisa\b|sponsor|sponsorship|subclass\s*(482|494|186|407)/.test(blob);
+  }
+
   function getWorkBadge(job) {
     const parts = [];
+    if (jobMentionsVisa(job)) parts.push('<span class="badge badge-ad-visa-premium">🛂 Visa</span>');
     if (job.is_remote || (job.location||'').toLowerCase().includes('remote')) parts.push('<span class="badge badge-remote"><svg class="ico" style="color:var(--color-primary)"><use href="#ico-globe"/></svg> Remote</span>');
     else if (job.work_arrangement === 'hybrid') parts.push('<span class="badge badge-hybrid">🔀 Hybrid</span>');
     else parts.push('<span class="badge badge-onsite">🏢 On-site</span>');
@@ -1534,6 +1564,7 @@ function fetchJobs() {
   }
   params.set('sort', sort);
   params.set('limit', '30');
+  if (visaSponsorshipOnly) params.set('visa', '1');
 
   const token = localStorage.getItem('token');
   const headers = token ? { 'Authorization': 'Bearer ' + token } : {};

@@ -25,7 +25,7 @@ GUEST_ADS: List[Dict[str, Any]] = [
         ],
         "price_hint": "$9/mo",
         "cta_label": "Start Premium",
-        "cta_url": "/register?plan=visa_premium",
+        "cta_url": "/premium",
         "logo_letter": "V",
         "tags": ["Visa", "Premium", "MLTSSL"],
     },

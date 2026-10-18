@@ -2,7 +2,7 @@
 <html lang="en" data-ga-id="{{ ga_measurement_id }}">
 <head>
 
-  <meta name="google-signin-client_id" content="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com">
+  <meta name="google-signin-client_id" content="{{ google_client_id }}">
 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -311,30 +311,23 @@
         btn.textContent = 'Sign In →';
       }
     } catch(err) {
-      // Demo mode fallback
-      if ((email === 'tonny@email.com' || email === 'demo@openjobs.com') && password === 'demo1234') {
-        showAlert('success', 'Demo seeker mode — redirecting...');
-        setTimeout(() => window.location.href = '/user', 600);
-      } else if (email === 'employer@openjobs.com' && password === 'employer123') {
-        showAlert('success', 'Demo employer mode — redirecting...');
-        setTimeout(() => window.location.href = '/employer', 600);
-      } else {
-        showAlert('error', 'Cannot connect to server. Add demo account first.');
-        btn.disabled = false;
-        btn.textContent = 'Sign In →';
-      }
+      showAlert('error', 'Cannot reach the server. Check your connection and try again, or use Fill on a demo account then sign in.');
+      btn.disabled = false;
+      btn.textContent = 'Sign In →';
     }
   }
 
   // ── GOOGLE SIGN-IN ───────────────────────────────────────────────
   // Google Identity Services — renders the button, handles the popup
+  const GOOGLE_CLIENT_ID = '{{ google_client_id }}';
+
   function initGoogleLogin() {
+    if (!GOOGLE_CLIENT_ID) return;
     if (typeof google === 'undefined') {
-      // GIS not loaded — silently skip, email login still works
       return;
     }
     google.accounts.id.initialize({
-      client_id: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
+      client_id: '{{ google_client_id }}',
       callback: handleGoogleResponse,
       auto_select: false,
       cancel_on_tap_outside: true
@@ -384,7 +377,8 @@
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         showAlert('success', 'Signed in with Google! Welcome, ' + (data.user.name || data.user.email) + '.');
-        setTimeout(() => window.location.href = '/user.html', 800);
+        const dest = data.user?.role === 'employer' ? '/employer' : (!localStorage.getItem('openjobs_onboarding_v1') ? '/onboarding' : '/user');
+        setTimeout(() => window.location.href = dest, 800);
       } else {
         showAlert('error', data.error || 'Google sign-in failed. Please try again.');
         if (btn) btn.disabled = false;
@@ -398,6 +392,7 @@
 
   // Load Google Identity Services
   (function() {
+    if (!GOOGLE_CLIENT_ID) return;
     const existing = document.querySelector('script[src*://accounts.google.com/gsi/client]');
     if (!existing) {
       const s = document.createElement('script');
