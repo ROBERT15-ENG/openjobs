@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Salary guide — {{ site_name }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/site-chrome.css">
+  {% include 'includes/head_polish.html' %}
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #09090f; color: #ededf0; }
+    main { max-width: 520px; margin: 0 auto; padding: 2rem 1.25rem; }
+    input, button { width: 100%; padding: 0.65rem; margin-top: 0.5rem; border-radius: 10px; border: 1px solid #2a2a3e; background: #18181f; color: #ededf0; box-sizing: border-box; }
+    button { background: #00d4aa; color: #000; font-weight: 700; border: none; cursor: pointer; }
+    #result { margin-top: 1.25rem; padding: 1rem; background: #18181f; border-radius: 12px; display: none; }
+  </style>
+</head>
+<body>
+  <main id="main-content">
+    <p><a href="/">← Home</a></p>
+    <h1 style="color:#00d4aa">Salary estimate</h1>
+    <p style="color:#6b6b80">Quick AUD estimate from job title (indicative only).</p>
+    <label for="title">Job title</label>
+    <input id="title" placeholder="e.g. Software Engineer">
+    <label for="loc">Location</label>
+    <input id="loc" placeholder="e.g. Sydney">
+    <button type="button" onclick="estimate()">Estimate</button>
+    <div id="result"></div>
+  </main>
+  {% include 'includes/site_polish.html' %}
+  <script src="/static/site-polish.js"></script>
+  <script>
+    async function estimate() {
+      const res = await fetch('/api/salary/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: document.getElementById('title').value, location: document.getElementById('loc').value }),
+      });
+      const data = await res.json();
+      const el = document.getElementById('result');
+      el.style.display = 'block';
+      if (!res.ok) { el.textContent = data.error || 'Estimate unavailable'; return; }
+      const r = data.range || {};
+      el.innerHTML = `<strong>~AUD ${Math.round(data.predicted || 0).toLocaleString()}</strong><br>Range: ${Math.round(r.min||0).toLocaleString()} – ${Math.round(r.max||0).toLocaleString()}`;
+    }
+  </script>
+</body>
+</html>

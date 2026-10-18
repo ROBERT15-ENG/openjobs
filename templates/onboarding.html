@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Welcome — {{ site_name }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/site-chrome.css">
+  {% include 'includes/head_polish.html' %}
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #09090f; color: #ededf0; min-height: 100vh; padding: 2rem 1.25rem; }
+    .wrap { max-width: 520px; margin: 0 auto; }
+    .step { display: none; background: #18181f; border: 1px solid #2a2a3e; border-radius: 14px; padding: 1.5rem; }
+    .step.active { display: block; }
+    h1 { font-size: 1.4rem; color: #00d4aa; margin: 0 0 0.5rem; }
+    p { color: #6b6b80; line-height: 1.55; font-size: 0.9rem; }
+    label { display: block; font-size: 0.8rem; font-weight: 600; margin: 1rem 0 0.35rem; }
+    input, select { width: 100%; padding: 0.65rem; border-radius: 10px; border: 1px solid #2a2a3e; background: #09090f; color: #ededf0; box-sizing: border-box; }
+    .dots { display: flex; gap: 0.35rem; margin-bottom: 1rem; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #2a2a3e; }
+    .dot.on { background: #00d4aa; }
+    .actions { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
+    button { flex: 1; padding: 0.7rem; border-radius: 10px; border: none; font-weight: 700; cursor: pointer; }
+    .primary { background: #00d4aa; color: #000; }
+    .ghost { background: transparent; border: 1px solid #2a2a3e; color: #ededf0; }
+  </style>
+</head>
+<body>
+  <main class="wrap" id="main-content">
+    <div class="dots"><span class="dot on" id="d0"></span><span class="dot" id="d1"></span><span class="dot" id="d2"></span></div>
+
+    <section class="step active" data-step="0">
+      <h1>Welcome to OpenJobs</h1>
+      <p>We match your skills to live roles across Australia — including visa-friendly listings when you opt in.</p>
+      <div class="actions"><button type="button" class="primary" onclick="next()">Get started</button></div>
+    </section>
+
+    <section class="step" data-step="1">
+      <h1>Your location</h1>
+      <p>Helps us rank jobs and salary guides for your market.</p>
+      <label for="location">Preferred location</label>
+      <input id="location" placeholder="e.g. Sydney NSW or Remote">
+      <div class="actions">
+        <button type="button" class="ghost" onclick="prev()">Back</button>
+        <button type="button" class="primary" onclick="next()">Continue</button>
+      </div>
+    </section>
+
+    <section class="step" data-step="2">
+      <h1>What are you looking for?</h1>
+      <label for="workType">Work type</label>
+      <select id="workType">
+        <option value="full_time">Full-time</option>
+        <option value="part_time">Part-time</option>
+        <option value="contract">Contract</option>
+        <option value="internship">Internship</option>
+      </select>
+      <label for="visaInterest">Visa sponsorship</label>
+      <select id="visaInterest">
+        <option value="no">Not a priority</option>
+        <option value="yes">Yes — show visa-friendly roles</option>
+      </select>
+      <div class="actions">
+        <button type="button" class="ghost" onclick="prev()">Back</button>
+        <button type="button" class="primary" onclick="finish()">Go to dashboard</button>
+      </div>
+    </section>
+  </main>
+  <script>
+    let step = 0;
+    const token = localStorage.getItem('token');
+    if (!token) location.href = '/login';
+
+    function showStep(n) {
+      step = n;
+      document.querySelectorAll('.step').forEach((el, i) => el.classList.toggle('active', i === n));
+      [0,1,2].forEach(i => document.getElementById('d'+i).classList.toggle('on', i <= n));
+    }
+    function next() { if (step < 2) showStep(step + 1); }
+    function prev() { if (step > 0) showStep(step - 1); }
+
+    async function finish() {
+      const body = {
+        preferred_location: document.getElementById('location').value.trim(),
+        experience: document.getElementById('workType').value,
+      };
+      const visa = document.getElementById('visaInterest').value;
+      localStorage.setItem('openjobs_onboarding_v1', '1');
+      if (visa === 'yes') localStorage.setItem('openjobs_visa_filter', '1');
+      try {
+        await fetch('/api/user/profile', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify(body),
+        });
+        await fetch('/api/user/job-alerts', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({
+            visa_sponsorship: visa === 'yes',
+            enabled: true,
+            keywords: '',
+          }),
+        });
+      } catch (_) {}
+      location.href = visa === 'yes' ? '/?visa=1' : '/user';
+    }
+  </script>
+</body>
+</html>

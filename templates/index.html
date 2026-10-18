@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-ga-id="{{ ga_measurement_id }}">
 <head>
   <!-- SVG icon sprite -->
   <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
@@ -19,8 +19,7 @@
     <symbol id="ico-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></symbol>
   </svg>
 
-  <!-- Skip to main content (a11y) -->
-  <a href="#main-content" class="skip-link">Skip to main content</a>
+  {% include 'includes/head_polish.html' %}
 
   <style>
     /* ── SEMANTIC COLOR TOKENS ── */
@@ -91,24 +90,26 @@
   <meta name="description" content="OpenJobs — AI-powered job matching platform. Browse 70+ remote, hybrid and on-site jobs from top companies. Free to apply, smart recommendations.">
   <meta name="keywords" content="jobs,remote jobs,AI job matching,careers,employment,software jobs,tech jobs">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://openjobs.example.com/">
+  <link rel="canonical" href="{{ site_url }}/">
 
   <!-- Open Graph -->
   <meta property="og:title" content="OpenJobs — Matching Skills with Opportunities">
   <meta property="og:description" content="Browse 70+ jobs from top companies. AI-powered matching, real-time applications, salary insights. Free to get started.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://openjobs.example.com/">
-  <meta property="og:image" content="https://openjobs.example.com/og-image.png">
-  <meta property="og:site_name" content="OpenJobs">
+  <meta property="og:url" content="{{ site_url }}/">
+  <meta property="og:image" content="{{ site_url }}/static/og-image.svg">
+  <meta property="og:site_name" content="{{ site_name }}">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="OpenJobs — Matching Skills with Opportunities">
   <meta name="twitter:description" content="Browse 70+ jobs from top companies. AI-powered matching, real-time applications, salary insights.">
-  <meta name="twitter:image" content="https://openjobs.example.com/og-image.png">
+  <meta name="twitter:image" content="{{ site_url }}/static/og-image.svg">
 
   <title>OpenJobs — Find Your Next Dream Job</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/site-chrome.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -343,6 +344,73 @@
     .badge-contract { background: rgba(251,146,60,0.12); color: #fb923c; }
     .badge-internship { background: rgba(236,72,153,0.12); color: #f472b6; }
     .badge-featured { background: rgba(251,191,36,0.15); color: #fbbf24; }
+    .badge-ad-promoted { background: rgba(0,212,170,0.18); color: var(--color-primary); border: 1px solid rgba(0,212,170,0.35); }
+    .badge-ad-standard { background: rgba(107,107,128,0.2); color: var(--color-text-muted); }
+    .job-card.ad-card {
+      cursor: pointer;
+      position: relative;
+    }
+    .job-card.ad-card.promoted {
+      border-color: rgba(0,212,170,0.35);
+      background: linear-gradient(135deg, rgba(0,212,170,0.06), var(--color-card) 55%);
+    }
+    .job-card.ad-card.visa-premium {
+      border-color: rgba(56, 189, 248, 0.45);
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), var(--color-card) 58%);
+    }
+    .job-card.ad-card.visa-premium .job-logo {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #7dd3fc;
+    }
+    .job-card.ad-card.visa-premium .match-badge.ad-cta-pill {
+      background: rgba(56, 189, 248, 0.14);
+      color: #7dd3fc;
+      border-color: rgba(56, 189, 248, 0.35);
+    }
+    .job-card.ad-card.visa-premium .job-actions .btn-apply {
+      background: #38bdf8;
+      color: #042f3a;
+    }
+    .badge-ad-visa-premium {
+      background: rgba(56, 189, 248, 0.18);
+      color: #7dd3fc;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+    }
+    .ad-feature-list {
+      margin: 0.35rem 0 0.5rem;
+      padding-left: 1.1rem;
+      font-size: var(--type-small);
+      color: var(--color-text-muted);
+      line-height: 1.45;
+    }
+    .ad-feature-list li { margin-bottom: 0.2rem; }
+    .ad-price-hint {
+      font-size: var(--type-caption);
+      font-weight: 700;
+      color: #7dd3fc;
+      margin-left: 0.35rem;
+    }
+    .job-card.ad-card.standard {
+      border-color: rgba(107,107,128,0.35);
+      border-style: dashed;
+    }
+    .job-card.ad-card .ad-disclosure {
+      font-size: var(--type-caption);
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+    .job-card.ad-card .match-badge.ad-cta-pill {
+      background: rgba(0,212,170,0.12);
+      color: var(--color-primary);
+      border: 1px solid rgba(0,212,170,0.25);
+    }
+    .job-card.ad-card .job-actions .btn-apply {
+      background: var(--color-primary);
+      color: #04120e;
+    }
     .job-rating { display: flex; align-items: center; gap: 2px; font-size: var(--type-caption); color: #fbbf24; }
     .job-rating .empty { color: var(--color-border); }
     .job-applicants { font-size: var(--type-caption); color: var(--color-text-muted); }
@@ -500,7 +568,7 @@
     ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
   </style>
 </head>
-<body>
+<body class="has-mobile-cta has-oj-chat">
 
 <!-- HEADER -->
 <header>
@@ -553,6 +621,7 @@
       <button class="quick-chip" data-country="part_time" onclick="setQuickFilter(this, 'part_time')">Part-time</button>
       <button class="quick-chip" data-country="contract" onclick="setQuickFilter(this, 'contract')">Contract</button>
       <button class="quick-chip" data-country="internship" onclick="setQuickFilter(this, 'internship')">Internship</button>
+      <button class="quick-chip" id="visaFilterChip" type="button" data-country="visa" onclick="toggleVisaFilter(this)" title="Jobs mentioning visa or sponsorship">🛂 Visa sponsorship</button>
     </div>
     <!-- City sub-filter — shown when a country/region is selected -->
     <div class="quick-filters city-subfilter" id="citySubfilter" style="display:none; margin-top:0.4rem;">
@@ -757,22 +826,130 @@
   </div>
 </div>
 
+<!-- OpenJobs Assistant -->
+<style>
+  #oj-chat-launcher {
+    position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 1200;
+    width: 3.25rem; height: 3.25rem; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(135deg, var(--primary), #00ff88);
+    color: #04120e; font-size: 1.35rem; box-shadow: 0 8px 28px rgba(0,212,170,0.35);
+  }
+  #oj-chat-panel {
+    position: fixed; right: 1.25rem; bottom: 5rem; z-index: 1200;
+    width: min(22rem, calc(100vw - 2rem)); max-height: min(28rem, 70vh);
+    display: none; flex-direction: column;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.45); overflow: hidden;
+  }
+  #oj-chat-panel.open { display: flex; }
+  .oj-chat-head {
+    padding: 0.85rem 1rem; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    background: rgba(0,212,170,0.06);
+  }
+  .oj-chat-head strong { font-size: 0.95rem; }
+  .oj-chat-messages {
+    flex: 1; overflow-y: auto; padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.65rem;
+    font-size: 0.88rem; line-height: 1.45;
+  }
+  .oj-msg { padding: 0.55rem 0.7rem; border-radius: 10px; max-width: 95%; white-space: pre-wrap; }
+  .oj-msg.bot { background: #15151f; border: 1px solid var(--border); align-self: flex-start; }
+  .oj-msg.user { background: rgba(0,212,170,0.15); border: 1px solid rgba(0,212,170,0.35); align-self: flex-end; }
+  .oj-chat-jobs { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.35rem; }
+  .oj-chat-job-btn {
+    text-align: left; background: #0d0d14; border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 0.45rem 0.55rem; cursor: pointer; font-size: 0.8rem;
+  }
+  .oj-chat-job-btn:hover { border-color: var(--primary); }
+  .oj-chat-suggestions { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0 1rem 0.5rem; }
+  .oj-chat-chip {
+    font-size: 0.72rem; padding: 0.25rem 0.5rem; border-radius: 999px;
+    border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer;
+  }
+  .oj-chat-chip:hover { border-color: var(--primary); color: var(--primary); }
+  .oj-chat-input-row {
+    display: flex; gap: 0.4rem; padding: 0.65rem; border-top: 1px solid var(--border);
+  }
+  .oj-chat-input-row input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.55rem 0.65rem; color: var(--text); font-size: 0.88rem;
+  }
+  .oj-chat-input-row button {
+    background: var(--primary); border: none; border-radius: 8px; padding: 0 0.85rem;
+    font-weight: 600; cursor: pointer; color: #04120e;
+  }
+</style>
+<button type="button" id="oj-chat-launcher" aria-label="Open OpenJobs assistant" title="Ask OpenJobs">💬</button>
+<div id="oj-chat-panel" role="dialog" aria-label="OpenJobs assistant">
+  <div class="oj-chat-head">
+    <strong>⚡ OpenJobs Assistant</strong>
+    <button type="button" id="oj-chat-close" aria-label="Close" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem;">×</button>
+  </div>
+  <div class="oj-chat-messages" id="ojChatMessages"></div>
+  <div class="oj-chat-suggestions" id="ojChatSuggestions"></div>
+  <div class="oj-chat-input-row">
+    <input type="text" id="ojChatInput" placeholder="Ask about jobs, remote work, visa…" autocomplete="off" maxlength="500" />
+    <button type="button" id="ojChatSend">Send</button>
+  </div>
+</div>
+
+{% include 'includes/faq.html' %}
+
 <!-- FOOTER -->
-<footer>
-  <p>OpenJobs — AI-Powered Job Matching · © 2026 · Built by Alex ⚡</p>
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <div>
+      <strong>{{ site_name }}</strong> — AI job matching · © 2026<br>
+      <span>{{ contact_address }}</span><br>
+      <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>
+    </div>
+    <div class="site-footer-links">
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/employer">Employers</a>
+    </div>
+  </div>
 </footer>
+<div class="oj-mobile-cta" aria-hidden="false"><a href="/register">Sign up free — get job matches</a></div>
+{% include 'includes/cookie_banner.html' %}
+{% include 'includes/site_polish.html' %}
+<script src="/static/site.js"></script>
+<script src="/static/site-polish.js"></script>
 
 <script>
   // ── STATE ──────────────────────────────────────────────────────────
   let currentPage = 1;
   let currentJob = null;
   const PAGE_SIZE = 20;
+  let visaSponsorshipOnly = false;
+
+  function setVisaFilter(on, refetch) {
+    visaSponsorshipOnly = !!on;
+    const chip = document.getElementById('visaFilterChip');
+    if (chip) chip.classList.toggle('active', visaSponsorshipOnly);
+    if (visaSponsorshipOnly) localStorage.setItem('openjobs_visa_filter', '1');
+    else localStorage.removeItem('openjobs_visa_filter');
+    if (refetch !== false) fetchJobs();
+  }
+
+  function toggleVisaFilter(btn) {
+    setVisaFilter(!visaSponsorshipOnly);
+  }
+
+  function applyVisaFilterFromUrlAndStorage() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('visa') === '1' || localStorage.getItem('openjobs_visa_filter') === '1') {
+      setVisaFilter(true, false);
+    }
+  }
 
   // ── INIT ──────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
+    applyVisaFilterFromUrlAndStorage();
     fetchJobs();
     document.getElementById('searchInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
     document.getElementById('locationInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
+    initOpenJobsChat();
   });
 
   // ── FETCH JOBS ────────────────────────────────────────────────────
@@ -800,28 +977,131 @@
     if (locationFilter) url += `&location=${encodeURIComponent(locationFilter)}`;
     if (workTypes.length)  url += `&work_type=${workTypes.join(',')}`;
     if (workArr.length)    url += `&work_arrangement=${workArr.join(',')}`;
+    if (visaSponsorshipOnly) url += '&visa=1';
 
-    fetch(url)
-      .then(r => r.json())
-      .then(data => {
+    const token = localStorage.getItem('token');
+    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    const adsUrl = `/api/ads?page=${currentPage}&slot=feed`;
+
+    if (window.OpenJobsJobsLoading) OpenJobsJobsLoading('jobsList');
+    const jobsPromise = fetch(url, { headers }).then(r => r.json());
+    const adsPromise = token
+      ? Promise.resolve({ ads: [] })
+      : fetch(adsUrl).then(r => r.json()).catch(() => ({ ads: [] }));
+
+    Promise.all([jobsPromise, adsPromise])
+      .then(([data, adPayload]) => {
         let jobs = data.jobs || [];
         if (sort === 'salary_high') jobs.sort((a,b) => (b.salary_max||0) - (a.salary_max||0));
         if (sort === 'salary_low') jobs.sort((a,b) => (a.salary_min||0) - (b.salary_min||0));
-        renderJobs(jobs);
+        renderJobs(jobs, adPayload.ads || []);
         document.getElementById('resultsCount').textContent = data.pagination?.total || jobs.length;
         renderPagination(data.pagination);
       })
       .catch(() => renderError());
   }
 
+  function isUserLoggedIn() {
+    return !!localStorage.getItem('token');
+  }
+
+  function interleaveGuestAds(jobs, ads) {
+    if (!ads?.length || isUserLoggedIn()) return jobs.map(j => ({ type: 'job', job: j }));
+    const queue = [...ads].sort((a, b) => {
+      const rank = k => (k === 'promoted' ? 0 : 1);
+      return rank(a.kind) - rank(b.kind);
+    });
+    const out = [];
+    let adPtr = 0;
+    const firstAdAt = 2;
+    const adEvery = 6;
+    jobs.forEach((job, idx) => {
+      if (idx === firstAdAt || (idx > firstAdAt && (idx - firstAdAt) % adEvery === 0)) {
+        if (adPtr < queue.length) {
+          out.push({ type: 'ad', ad: queue[adPtr++] });
+        }
+      }
+      out.push({ type: 'job', job });
+    });
+    return out;
+  }
+
+  function renderAdCard(ad, i) {
+    const promoted = ad.kind === 'promoted';
+    const visaTheme = ad.theme === 'visa_premium';
+    const cardClass = visaTheme ? 'visa-premium promoted' : (promoted ? 'promoted' : 'standard');
+    const badge = visaTheme
+      ? '<span class="badge badge-ad-visa-premium">Premium · Visa</span>'
+      : promoted
+      ? '<span class="badge badge-ad-promoted">⭐ Promoted</span>'
+      : '<span class="badge badge-ad-standard">Ad</span>';
+    const pillLabel = visaTheme ? 'Premium' : (promoted ? 'Promoted' : 'Sponsored');
+    const features = (ad.features || []).slice(0, 3);
+    const featureHtml = features.length
+      ? `<ul class="ad-feature-list">${features.map(f => `<li>${escHtml(f)}</li>`).join('')}</ul>`
+      : '';
+    const priceHint = ad.price_hint
+      ? `<span class="ad-price-hint">${escHtml(ad.price_hint)}</span>`
+      : '';
+    const tags = (ad.tags || []).slice(0, 3).map(t =>
+      `<span class="skill-tag">${escHtml(t)}</span>`
+    ).join('');
+    const letter = escHtml((ad.logo_letter || (ad.advertiser || 'A')[0] || 'A').toUpperCase());
+    const external = /^https?:\/\//i.test(ad.cta_url || '');
+    const href = escHtml(ad.cta_url || '/');
+    const target = external ? ' target="_blank" rel="noopener noreferrer sponsored"' : '';
+    return `
+      <article class="job-card ad-card ${cardClass} animate-in" style="animation-delay:${i*40}ms"
+        data-ad-id="${escHtml(ad.id)}" role="listitem" aria-label="Sponsored listing"
+        data-ad-url="${href}" data-ad-external="${external ? '1' : '0'}">
+        <div class="job-logo">${letter}</div>
+        <div class="job-content">
+          <div class="job-top">
+            <div>
+              <div class="job-title">${escHtml(ad.title)}</div>
+              <div class="job-company">${escHtml(ad.advertiser)} · ${escHtml(ad.location || '')}</div>
+            </div>
+            <div class="match-badge ad-cta-pill ad-disclosure">${pillLabel}</div>
+          </div>
+          <div class="badges">${badge}</div>
+          ${tags ? `<div class="job-skills">${tags}</div>` : ''}
+          <div class="job-summary">${escHtml(ad.summary || '')}${priceHint}</div>
+          ${featureHtml}
+          <div class="job-footer">
+            <div class="job-meta">
+              <div class="job-meta-item ad-disclosure">Paid placement · shown before sign-in</div>
+            </div>
+          </div>
+        </div>
+        <div class="job-actions" onclick="event.stopPropagation()">
+          <a class="btn-apply" href="${href}"${target} onclick="event.stopPropagation()">${escHtml(ad.cta_label || 'Learn more')}</a>
+        </div>
+      </article>`;
+  }
+
+  document.addEventListener('click', e => {
+    const card = e.target.closest('.job-card.ad-card');
+    if (!card || e.target.closest('a')) return;
+    const url = card.getAttribute('data-ad-url');
+    if (!url) return;
+    if (card.getAttribute('data-ad-external') === '1') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } else {
+      window.location.href = url;
+    }
+  });
+
   // ── RENDER JOBS ──────────────────────────────────────────────────
-  function renderJobs(jobs) {
+  function renderJobs(jobs, guestAds) {
     const list = document.getElementById('jobsList');
     if (!jobs.length) {
       list.innerHTML = `<div class="empty-state"><div class="emoji"><svg class="ico" style="color:var(--color-text-muted)"><use href="#ico-search"/></svg></div><h3>No jobs found</h3><p>Try adjusting your filters or search terms</p></div>`;
       return;
     }
-    list.innerHTML = jobs.map((job, i) => {
+    const items = interleaveGuestAds(jobs, guestAds);
+    list.innerHTML = items.map((item, i) => {
+      if (item.type === 'ad') return renderAdCard(item.ad, i);
+      const job = item.job;
       const featured = job.is_featured || job.application_count >= 10;
       const badge = getWorkBadge(job);
       const featuredBadge = featured ? '<span class="badge badge-featured"><svg class="ico" style="color:#f59e0b"><use href="#ico-star"/></svg> Featured</span>' : '';
@@ -1130,8 +1410,14 @@
   }
 
   // ── UTILITIES ─────────────────────────────────────────────────────
+  function jobMentionsVisa(job) {
+    const blob = ((job.title || '') + ' ' + (job.description || '') + ' ' + (job.search_summary || '')).toLowerCase();
+    return /\bvisa\b|sponsor|sponsorship|subclass\s*(482|494|186|407)/.test(blob);
+  }
+
   function getWorkBadge(job) {
     const parts = [];
+    if (jobMentionsVisa(job)) parts.push('<span class="badge badge-ad-visa-premium">🛂 Visa</span>');
     if (job.is_remote || (job.location||'').toLowerCase().includes('remote')) parts.push('<span class="badge badge-remote"><svg class="ico" style="color:var(--color-primary)"><use href="#ico-globe"/></svg> Remote</span>');
     else if (job.work_arrangement === 'hybrid') parts.push('<span class="badge badge-hybrid">🔀 Hybrid</span>');
     else parts.push('<span class="badge badge-onsite">🏢 On-site</span>');
@@ -1278,16 +1564,31 @@ function fetchJobs() {
   }
   params.set('sort', sort);
   params.set('limit', '30');
+  if (visaSponsorshipOnly) params.set('visa', '1');
 
   const token = localStorage.getItem('token');
   const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
 
-  document.getElementById('jobsList').innerHTML = '<div style="text-align:center;padding:3rem;color:var(--color-text-muted);"><div style="display:inline-block;width:20px;height:20px;border:2px solid var(--color-border);border-top-color:var(--color-primary);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:8px;"></div> Loading...</div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+  if (window.OpenJobsJobsLoading) OpenJobsJobsLoading('jobsList');
+  else document.getElementById('jobsList').innerHTML = '<div style="text-align:center;padding:3rem;color:var(--color-text-muted);">Loading…</div>';
   document.getElementById('resultsCount').textContent = '…';
 
-  fetch('/api/jobs?' + params.toString(), { headers })
-    .then(r => r.json())
-    .then(data => renderJobs(Array.isArray(data) ? data : (data.jobs||[])))
+  const adsPromise = token
+    ? Promise.resolve({ ads: [] })
+    : fetch('/api/ads?page=1&slot=feed').then(r => r.json()).catch(() => ({ ads: [] }));
+
+  Promise.all([
+    fetch('/api/jobs?' + params.toString(), { headers }).then(r => r.json()),
+    adsPromise,
+  ])
+    .then(([data, adPayload]) => {
+      const jobs = Array.isArray(data) ? data : (data.jobs || []);
+      renderJobs(jobs, adPayload.ads || []);
+      if (data.pagination?.total != null) {
+        const rc = document.getElementById('resultsCount');
+        if (rc) rc.textContent = data.pagination.total;
+      }
+    })
     .catch(() => {
       document.getElementById('jobsList').innerHTML = '<p style="color:var(--color-danger);text-align:center;padding:2rem;">Failed to load jobs.</p>';
     });
@@ -1304,6 +1605,103 @@ function setQuickFilter(btn, value) {
   if (sub) sub.style.display = 'none';
   document.getElementById('cityChips').innerHTML = '';
   fetchJobs();
+}
+
+// ── OpenJobs chat assistant ─────────────────────────────────────────
+let ojChatHistory = [];
+const OJ_CHAT_MAX_HISTORY = 6;
+const OJ_CHAT_MAX_LEN = 500;
+
+function initOpenJobsChat() {
+  const panel = document.getElementById('oj-chat-panel');
+  const launcher = document.getElementById('oj-chat-launcher');
+  const closeBtn = document.getElementById('oj-chat-close');
+  const input = document.getElementById('ojChatInput');
+  const sendBtn = document.getElementById('ojChatSend');
+  if (!panel || !launcher) return;
+
+  const welcome = "Hi! I can search OpenJobs listings — try “remote Python in Sydney” or tap a suggestion below.";
+  appendOjChatMessage('bot', welcome);
+
+  launcher.addEventListener('click', () => {
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) input.focus();
+  });
+  closeBtn.addEventListener('click', () => panel.classList.remove('open'));
+  sendBtn.addEventListener('click', () => sendOjChat());
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') sendOjChat(); });
+}
+
+function appendOjChatMessage(role, text, jobs) {
+  const box = document.getElementById('ojChatMessages');
+  if (!box) return;
+  const div = document.createElement('div');
+  div.className = 'oj-msg ' + (role === 'user' ? 'user' : 'bot');
+  div.textContent = text.replace(/\*\*/g, '');
+  if (jobs && jobs.length) {
+    const list = document.createElement('div');
+    list.className = 'oj-chat-jobs';
+    jobs.forEach(j => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'oj-chat-job-btn';
+      btn.textContent = (j.title || 'Role') + ' · ' + (j.company || '');
+      btn.addEventListener('click', () => { if (typeof openJob === 'function') openJob(j.id); });
+      list.appendChild(btn);
+    });
+    div.appendChild(list);
+  }
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderOjSuggestions(items) {
+  const row = document.getElementById('ojChatSuggestions');
+  if (!row) return;
+  row.innerHTML = '';
+  (items || []).slice(0, 4).forEach(label => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'oj-chat-chip';
+    chip.textContent = label;
+    chip.addEventListener('click', () => {
+      document.getElementById('ojChatInput').value = label;
+      sendOjChat();
+    });
+    row.appendChild(chip);
+  });
+}
+
+async function sendOjChat() {
+  const input = document.getElementById('ojChatInput');
+  const text = (input.value || '').trim().slice(0, OJ_CHAT_MAX_LEN);
+  if (!text) return;
+  input.value = '';
+  appendOjChatMessage('user', text);
+  ojChatHistory.push({ role: 'user', content: text });
+  if (ojChatHistory.length > OJ_CHAT_MAX_HISTORY * 2) {
+    ojChatHistory = ojChatHistory.slice(-OJ_CHAT_MAX_HISTORY * 2);
+  }
+
+  const sendBtn = document.getElementById('ojChatSend');
+  if (sendBtn) sendBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/chatbot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, history: ojChatHistory, use_ai: false }),
+    });
+    const data = await res.json();
+    const reply = data.reply || data.error || 'Something went wrong. Please try again.';
+    appendOjChatMessage('bot', reply, data.jobs || []);
+    ojChatHistory.push({ role: 'assistant', content: reply });
+    renderOjSuggestions(data.suggestions);
+  } catch (err) {
+    appendOjChatMessage('bot', 'Could not reach the assistant. Check your connection and try again.');
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
+  }
 }
 
 </script>
