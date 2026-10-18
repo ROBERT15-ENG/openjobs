@@ -3,6 +3,8 @@
 Audit date: 2026-10-16  
 Scope: checklist items 4–20 + extended review (secrets, RBAC, injection, headers).
 
+**Quick reel checklist (21 items):** see `notes/SECURITY_CHECKLIST_21.md` and `scripts/security_smoke_untrusted.sh`.
+
 ---
 
 ## Summary

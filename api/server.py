@@ -7,8 +7,7 @@ load_dotenv()
 import sqlite3, os, json, datetime, base64
 from functools import wraps
 from flask import Flask, request, jsonify, g, make_response
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
+from limiter_shared import limiter
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt  # PyJWT — real HMAC-signed tokens
 import re
@@ -55,16 +54,6 @@ if not JWT_SECRET:
     JWT_SECRET = 'dev_secret_do_not_use_in_production'
 
 ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5700').split(',')
-
-# ── Rate Limiter (Redis when available, memory fallback) ──────────────────
-REDIS_URL = os.environ.get('REDIS_URL')
-limiter_storage = REDIS_URL or "memory://"
-limiter = Limiter(
-    app=None,  # will call limiter.init_app after app creation
-    key_func=get_remote_address,
-    default_limits=["500 per day", "100 per hour", "20 per minute"],
-    storage_uri=limiter_storage,
-)
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), '..', 'static')
 app = Flask(__name__, static_folder=_STATIC_DIR, static_url_path='/static')
@@ -123,11 +112,50 @@ def _html_page(template_name: str, status: int = 200, **context):
     return resp
 
 
+def _production_mode() -> bool:
+    return os.environ.get('FLASK_ENV') == 'production'
+
+
 @app.errorhandler(404)
 def handle_not_found(e):
     if request.path.startswith('/api/'):
         return jsonify({'error': 'Not found'}), 404
     return _html_page('404.html', status=404)
+
+
+@app.errorhandler(500)
+def handle_internal_error(e):
+    app.logger.exception('Internal server error: %s', e)
+    if request.path.startswith('/api/'):
+        body = {'error': 'Internal server error'}
+        if not _production_mode():
+            body['detail'] = str(e)
+        return jsonify(body), 500
+    return _html_page('404.html', status=500)
+
+
+@app.errorhandler(429)
+def handle_rate_limit(e):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Too many requests. Try again later.'}), 429
+    return _html_page('404.html', status=429)
+
+
+@app.errorhandler(Exception)
+def handle_uncaught_exception(e):
+    from werkzeug.exceptions import HTTPException
+
+    if isinstance(e, HTTPException):
+        if request.path.startswith('/api/'):
+            return jsonify({'error': e.description or e.name}), e.code
+        return e.get_response()
+    app.logger.exception('Unhandled exception')
+    if request.path.startswith('/api/'):
+        body = {'error': 'Internal server error'}
+        if not _production_mode():
+            body['detail'] = str(e)
+        return jsonify(body), 500
+    raise e
 
 DB_PATH = os.environ.get('DATABASE_URL', os.path.join(os.path.dirname(__file__), '..', 'jobs.db'))
 
@@ -1855,6 +1883,7 @@ def list_regions():
 
 # ============ CRM ============
 @app.route('/api/crm/companies', methods=['GET'])
+@limiter.limit('120 per hour')
 @require_auth
 @require_admin
 def get_crm_companies():
@@ -1863,6 +1892,7 @@ def get_crm_companies():
     return jsonify({'success': True, 'companies': [dict(c) for c in companies]})
 
 @app.route('/api/crm/contacts', methods=['GET'])
+@limiter.limit('120 per hour')
 @require_auth
 @require_admin
 def get_crm_contacts():
@@ -1871,6 +1901,7 @@ def get_crm_contacts():
     return jsonify({'success': True, 'contacts': [dict(c) for c in contacts]})
 
 @app.route('/api/crm/pipeline', methods=['GET'])
+@limiter.limit('120 per hour')
 @require_auth
 @require_admin
 def get_crm_pipeline():
@@ -1880,6 +1911,7 @@ def get_crm_pipeline():
 
 # ============ ADMIN ============
 @app.route('/api/admin/stats', methods=['GET'])
+@limiter.limit('120 per hour')
 @require_auth
 @require_admin
 def admin_stats():
@@ -1949,6 +1981,7 @@ def admin_stats():
 
 
 @app.route('/api/admin/users', methods=['GET'])
+@limiter.limit('120 per hour')
 @require_auth
 @require_admin
 def admin_list_users():
@@ -2019,6 +2052,7 @@ def admin_update_user(user_id):
 
 
 @app.route('/api/admin/jobs', methods=['GET'])
+@limiter.limit('120 per hour')
 @require_auth
 @require_admin
 def admin_list_jobs():

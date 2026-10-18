@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify, request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scrapers.scheduler import get_scheduler
+from limiter_shared import limiter
 from security import require_auth, require_admin
 
 # Create Blueprint
@@ -27,6 +28,7 @@ _VALID_SOURCES = (
 
 
 @scraper_bp.route('/api/scrape', methods=['POST'])
+@limiter.limit('20 per hour')
 @require_auth
 @require_admin
 def trigger_scrape():
@@ -94,6 +96,7 @@ def trigger_scrape():
 
 
 @scraper_bp.route('/api/scrape/status', methods=['GET'])
+@limiter.limit('120 per hour')
 @require_auth
 @require_admin
 def get_scrape_status():
@@ -109,6 +112,7 @@ def get_scrape_status():
 
 
 @scraper_bp.route('/api/scrape/scheduled/start', methods=['POST'])
+@limiter.limit('10 per hour')
 @require_auth
 @require_admin
 def start_scheduled_scrape():
