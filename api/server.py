@@ -840,7 +840,23 @@ def _seo_normalize_url():
         clean = {k: v for k, v in request.args.items() if k not in blocked}
         if clean != dict(request.args):
             qs = urllib.parse.urlencode(clean) if clean else ''
-            return _redirect_raw(path + ('?' + qs if qs else ''), 307)
+            resp = _redirect_raw(path + ('?' + qs if qs else ''), 307)
+            utm_payload = {
+                k: request.args.get(k)
+                for k in blocked
+                if k.startswith('utm_') and request.args.get(k)
+            }
+            if utm_payload:
+                import json as _json
+
+                resp.set_cookie(
+                    'oj_utm',
+                    _json.dumps(utm_payload),
+                    max_age=30 * 86400,
+                    samesite='Lax',
+                    secure=os.environ.get('FLASK_ENV') == 'production',
+                )
+            return resp
 
 def _redirect_raw(target, code):
     from flask import make_response

@@ -14,12 +14,17 @@
     a.btn { display: inline-block; margin-top: 1.5rem; background: #00d4aa; color: #000; padding: 0.75rem 1.5rem; border-radius: 10px; font-weight: 700; text-decoration: none; }
   </style>
   <link rel="stylesheet" href="/static/site-chrome.css">
+  {% include 'includes/head_polish.html' %}
 </head>
 <body class="has-mobile-cta">
+  <main id="main-content">
   <h1>404</h1>
   <p>This page doesn’t exist or may have moved. Try searching for jobs on the home page.</p>
   <a class="btn" href="/">Back to jobs</a>
+  </main>
   {% include 'includes/cookie_banner.html' %}
+  {% include 'includes/site_polish.html' %}
   <script src="/static/site.js"></script>
+  <script src="/static/site-polish.js"></script>
 </body>
 </html>

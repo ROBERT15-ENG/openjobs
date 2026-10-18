@@ -19,8 +19,7 @@
     <symbol id="ico-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></symbol>
   </svg>
 
-  <!-- Skip to main content (a11y) -->
-  <a href="#main-content" class="skip-link">Skip to main content</a>
+  {% include 'includes/head_polish.html' %}
 
   <style>
     /* ── SEMANTIC COLOR TOKENS ── */
@@ -569,7 +568,7 @@
     ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
   </style>
 </head>
-<body class="has-mobile-cta">
+<body class="has-mobile-cta has-oj-chat">
 
 <!-- HEADER -->
 <header>
@@ -893,6 +892,8 @@
   </div>
 </div>
 
+{% include 'includes/faq.html' %}
+
 <!-- FOOTER -->
 <footer class="site-footer">
   <div class="site-footer-inner">
@@ -910,7 +911,9 @@
 </footer>
 <div class="oj-mobile-cta" aria-hidden="false"><a href="/register">Sign up free — get job matches</a></div>
 {% include 'includes/cookie_banner.html' %}
+{% include 'includes/site_polish.html' %}
 <script src="/static/site.js"></script>
+<script src="/static/site-polish.js"></script>
 
 <script>
   // ── STATE ──────────────────────────────────────────────────────────
@@ -956,6 +959,7 @@
     const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
     const adsUrl = `/api/ads?page=${currentPage}&slot=feed`;
 
+    if (window.OpenJobsJobsLoading) OpenJobsJobsLoading('jobsList');
     const jobsPromise = fetch(url, { headers }).then(r => r.json());
     const adsPromise = token
       ? Promise.resolve({ ads: [] })
@@ -1534,7 +1538,8 @@ function fetchJobs() {
   const token = localStorage.getItem('token');
   const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
 
-  document.getElementById('jobsList').innerHTML = '<div style="text-align:center;padding:3rem;color:var(--color-text-muted);"><div style="display:inline-block;width:20px;height:20px;border:2px solid var(--color-border);border-top-color:var(--color-primary);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:8px;"></div> Loading...</div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+  if (window.OpenJobsJobsLoading) OpenJobsJobsLoading('jobsList');
+  else document.getElementById('jobsList').innerHTML = '<div style="text-align:center;padding:3rem;color:var(--color-text-muted);">Loading…</div>';
   document.getElementById('resultsCount').textContent = '…';
 
   const adsPromise = token

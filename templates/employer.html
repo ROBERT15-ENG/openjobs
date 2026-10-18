@@ -11,6 +11,7 @@
   <title>Post a Job — {{ site_name }}</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/site-chrome.css">
+  {% include 'includes/head_polish.html' %}
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -117,6 +118,12 @@
     .auth-form.active { display: block; }
     .auth-input { width: 100%; padding: 0.75rem 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 0.875rem; outline: none; transition: border-color 0.2s; margin-bottom: 0.875rem; font-family: 'Inter', sans-serif; }
     .auth-input:focus { border-color: var(--primary); }
+    .auth-pass-wrap { position: relative; margin-bottom: 0.875rem; }
+    .auth-pass-wrap .auth-input { margin-bottom: 0; padding-right: 3.5rem; }
+    .auth-pass-toggle {
+      position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%);
+      border: none; background: transparent; color: var(--text-muted); font-size: 0.75rem; font-weight: 600; cursor: pointer;
+    }
     .auth-btn { width: 100%; padding: 0.8rem; background: var(--primary); color: #000; border: none; border-radius: 10px; font-size: 0.9rem; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; }
     .auth-btn:hover { background: var(--primary-dark); }
     .auth-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -159,14 +166,20 @@
     </div>
     <div class="auth-form active" id="auth-login">
       <input type="email" class="auth-input" id="loginEmail" placeholder="Email address" value="employer@openjobs.com">
-      <input type="password" class="auth-input" id="loginPassword" placeholder="Password" value="Employer123">
+      <div class="auth-pass-wrap">
+        <input type="password" class="auth-input" id="loginPassword" placeholder="Password" value="Employer123">
+        <button type="button" class="auth-pass-toggle" onclick="toggleEmployerPass('loginPassword', this)">Show</button>
+      </div>
       <button class="auth-btn" onclick="doLogin()">Sign In →</button>
       <div class="auth-error" id="loginError"></div>
     </div>
     <div class="auth-form" id="auth-register">
       <input type="text" class="auth-input" id="regName" placeholder="Your full name">
       <input type="email" class="auth-input" id="regEmail" placeholder="Work email address">
-      <input type="password" class="auth-input" id="regPassword" placeholder="Password (min 6 chars)">
+      <div class="auth-pass-wrap">
+        <input type="password" class="auth-input" id="regPassword" placeholder="Password (min 6 chars)">
+        <button type="button" class="auth-pass-toggle" onclick="toggleEmployerPass('regPassword', this)">Show</button>
+      </div>
       <input type="text" class="auth-input" id="regCompany" placeholder="Company name">
       <button class="auth-btn" onclick="doRegister()">Create Account →</button>
       <div class="auth-error" id="regError"></div>
@@ -790,7 +803,12 @@ async function handlePostJob(e) {
           // No Stripe — post free in demo mode
           document.getElementById('freeNotice').textContent = '🧪 Demo: Stripe not configured. Posting free.';
         } else if (ck.checkout_url) {
-          if (confirm('Redirect to Stripe to complete payment for $199 AUD?')) {
+          if (await ojConfirm({
+            title: 'Complete payment?',
+            message: 'Redirect to Stripe to complete payment for $199 AUD?',
+            confirmLabel: 'Continue',
+            neutral: true,
+          })) {
             window.location.href = ck.checkout_url;
           }
           btn.disabled = false; btn.textContent = '🚀 Publish Job →';
@@ -868,9 +886,26 @@ async function handlePostJob(e) {
     } catch { alert('Failed to update job.'); }
   }
 
+  function toggleEmployerPass(id, btn) {
+    const inp = document.getElementById(id);
+    if (!inp) return;
+    if (inp.type === 'password') { inp.type = 'text'; btn.textContent = 'Hide'; }
+    else { inp.type = 'password'; btn.textContent = 'Show'; }
+  }
+
+  async function ojConfirm(opts) {
+    if (window.OpenJobsConfirm) return OpenJobsConfirm(opts);
+    return confirm(opts.message || opts.title);
+  }
+
   async function confirmDeleteJob() {
     const id = document.getElementById('editJobId').value;
-    if (!confirm('🗑 Delete this job permanently? This cannot be undone.')) return;
+    const ok = await ojConfirm({
+      title: 'Delete job?',
+      message: 'This permanently removes the listing. This cannot be undone.',
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
     try {
       const res = await fetch('/api/jobs/' + id, { method: 'DELETE', headers: authHeaders() });
       if (!res.ok) throw new Error();
@@ -881,7 +916,12 @@ async function handlePostJob(e) {
   }
 
   async function deleteJob(jobId) {
-    if (!confirm('Delete this job? This cannot be undone.')) return;
+    const ok = await ojConfirm({
+      title: 'Delete job?',
+      message: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
     try {
       const res = await fetch('/api/jobs/' + jobId, { method: 'DELETE', headers: authHeaders() });
       if (!res.ok) throw new Error();
@@ -1036,6 +1076,8 @@ function updateAppStatusFromModal(status) {
 }
 
 {% include 'includes/cookie_banner.html' %}
+{% include 'includes/site_polish.html' %}
 <script src="/static/site.js"></script>
+<script src="/static/site-polish.js"></script>
 </body>
 </html>

@@ -19,9 +19,10 @@
     .muted { color: #6b6b80; font-size: 0.9rem; }
   </style>
   <link rel="stylesheet" href="/static/site-chrome.css">
+  {% include 'includes/head_polish.html' %}
 </head>
 <body>
-  <main>
+  <main id="main-content">
     <p class="muted"><a href="/">← OpenJobs</a></p>
     <h1>Privacy Policy</h1>
     <p class="muted">Last updated: October 2026</p>
@@ -51,6 +52,8 @@
     </div>
   </footer>
   {% include 'includes/cookie_banner.html' %}
+  {% include 'includes/site_polish.html' %}
   <script src="/static/site.js"></script>
+  <script src="/static/site-polish.js"></script>
 </body>
 </html>

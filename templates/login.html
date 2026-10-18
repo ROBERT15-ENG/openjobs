@@ -18,6 +18,7 @@
   <title>Sign In — {{ site_name }}</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/site-chrome.css">
+  {% include 'includes/head_polish.html' %}
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -155,10 +156,11 @@
       <div class="alert alert-error" id="alertError"></div>
       <div class="alert alert-success" id="alertSuccess"></div>
 
-      <form id="loginForm" onsubmit="handleLogin(event)">
+      <form id="loginForm" data-capture-utm onsubmit="handleLogin(event)">
         <div class="form-group">
           <label class="form-label">Email Address</label>
           <input type="email" class="form-input" id="email" placeholder="you@example.com" required autocomplete="email">
+          <div class="form-field-msg" data-error-for="email"></div>
         </div>
 
         <div class="form-group">
@@ -167,6 +169,7 @@
             <input type="password" class="form-input" id="password" placeholder="••••••••" required autocomplete="current-password" style="padding-right: 3rem;">
             <button type="button" class="toggle-pass" onclick="togglePassword()">Show</button>
           </div>
+          <div class="form-field-msg" data-error-for="password"></div>
         </div>
 
         <div class="form-options">
@@ -249,7 +252,10 @@
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
 
-    if (!email || !password) { showAlert('error', 'Please fill in all fields'); return; }
+    OpenJobsFieldError('email', '');
+    OpenJobsFieldError('password', '');
+    if (!email) { OpenJobsFieldError('email', 'Email is required'); showAlert('error', 'Please fill in all fields'); return; }
+    if (!password) { OpenJobsFieldError('password', 'Password is required'); return; }
 
     btn.disabled = true;
     btn.textContent = 'Signing in...';
@@ -381,6 +387,8 @@
   
 </script>
 {% include 'includes/cookie_banner.html' %}
+{% include 'includes/site_polish.html' %}
 <script src="/static/site.js"></script>
+<script src="/static/site-polish.js"></script>
 </body>
 </html>
